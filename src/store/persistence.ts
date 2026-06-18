@@ -1,6 +1,24 @@
 import { nanoid } from "nanoid";
-import type { AppState, Task, TaskId, TaskPriority, ThemeName } from "../types";
-import { SCHEMA_VERSION, emptyState } from "../types";
+import type {
+  AppState,
+  LogAction,
+  LogEntry,
+  Project,
+  ProjectId,
+  Task,
+  TaskId,
+  TaskPriority,
+  ThemeName,
+  TrashedTask,
+} from "../types";
+import {
+  DEFAULT_PROJECT_ID,
+  PROJECT_COLORS,
+  SCHEMA_VERSION,
+  defaultProject,
+  emptyState,
+} from "../types";
+import { normalizeChildProjects } from "./tasks";
 
 // Bridge exposed by electron/preload.cjs. In the browser (pnpm dev) it's absent
 // and we fall back to localStorage, so the renderer runs either way.
@@ -67,6 +85,36 @@ function coerceTheme(x: unknown): ThemeName {
   return x === "ivory" || x === "carbon" || x === "bordeaux" ? x : "slate";
 }
 
+function coerceProject(raw: unknown, index: number): Project {
+  const o = isObject(raw) ? raw : {};
+  const fallbackColor = PROJECT_COLORS[index % PROJECT_COLORS.length];
+  return {
+    id: (str(o.id) || nanoid()) as ProjectId,
+    name: str(o.name, `Project ${index + 1}`).trim() || `Project ${index + 1}`,
+    color: str(o.color, fallbackColor).trim() || fallbackColor,
+    createdAt: num(o.createdAt, Date.now()),
+  };
+}
+
+function coerceProjects(raw: unknown): Project[] {
+  const seen = new Set<ProjectId>();
+  const projects = [defaultProject()];
+  seen.add(DEFAULT_PROJECT_ID);
+
+  const raws = Array.isArray(raw) ? raw : [];
+  for (let i = 0; i < raws.length; i++) {
+    const project = coerceProject(raws[i], i);
+    if (seen.has(project.id)) {
+      if (project.id === DEFAULT_PROJECT_ID) projects[0] = { ...projects[0], ...project };
+      continue;
+    }
+    seen.add(project.id);
+    projects.push(project);
+  }
+
+  return projects;
+}
+
 function coerceTask(raw: unknown): Task {
   const o = isObject(raw) ? raw : {};
   const children = Array.isArray(o.children) ? o.children.map(coerceTask) : [];
@@ -75,6 +123,7 @@ function coerceTask(raw: unknown): Task {
     : [];
   return {
     id: (str(o.id) || nanoid()) as TaskId,
+    projectId: (str(o.projectId) || DEFAULT_PROJECT_ID) as ProjectId,
     text: str(o.text),
     notes: str(o.notes),
     completed: bool(o.completed),
@@ -88,11 +137,60 @@ function coerceTask(raw: unknown): Task {
   };
 }
 
+function coerceTrashed(raw: unknown): TrashedTask {
+  const o = isObject(raw) ? raw : {};
+  return { task: coerceTask(o.task), deletedAt: num(o.deletedAt, Date.now()) };
+}
+
+const LOG_ACTIONS: ReadonlySet<string> = new Set([
+  "completed",
+  "uncompleted",
+  "postponed",
+  "dropped",
+  "brokeDown",
+]);
+
+function coerceLogAction(x: unknown): LogAction {
+  return typeof x === "string" && LOG_ACTIONS.has(x)
+    ? (x as LogAction)
+    : "completed";
+}
+
+function coerceLogEntry(raw: unknown): LogEntry {
+  const o = isObject(raw) ? raw : {};
+  return {
+    id: str(o.id) || nanoid(),
+    taskId: str(o.taskId) as TaskId,
+    taskText: str(o.taskText),
+    action: coerceLogAction(o.action),
+    reason: strOrNull(o.reason),
+    at: num(o.at, Date.now()),
+    date: str(o.date),
+  };
+}
+
 export function coerceState(raw: unknown): AppState {
   if (!isObject(raw)) return emptyState();
+  const projects = coerceProjects(raw.projects);
+  const projectIds = new Set(projects.map((project) => project.id));
+  const tasks = Array.isArray(raw.tasks) ? raw.tasks.map(coerceTask) : [];
+  const trash = Array.isArray(raw.trash) ? raw.trash.map(coerceTrashed) : [];
+
+  const normalizeProject = (task: Task): Task => ({
+    ...task,
+    projectId: projectIds.has(task.projectId) ? task.projectId : DEFAULT_PROJECT_ID,
+    children: task.children.map(normalizeProject),
+  });
+
   return {
     schemaVersion: num(raw.schemaVersion, SCHEMA_VERSION),
-    tasks: Array.isArray(raw.tasks) ? raw.tasks.map(coerceTask) : [],
+    projects,
+    tasks: normalizeChildProjects(tasks.map(normalizeProject)),
+    trash: trash.map((entry) => ({
+      ...entry,
+      task: normalizeChildProjects([normalizeProject(entry.task)])[0],
+    })),
+    log: Array.isArray(raw.log) ? raw.log.map(coerceLogEntry) : [],
     theme: coerceTheme(raw.theme),
     lastOpenedDate: strOrNull(raw.lastOpenedDate),
     devDateOverride: strOrNull(raw.devDateOverride),

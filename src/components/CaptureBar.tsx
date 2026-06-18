@@ -5,10 +5,12 @@ export function CaptureBar({
   inputRef,
   placeholder,
   onAdd,
+  onArrowDown,
 }: {
   inputRef: RefObject<HTMLInputElement>;
   placeholder: string;
   onAdd: (raw: string) => void;
+  onArrowDown: () => void;
 }) {
   const [value, setValue] = useState("");
 
@@ -31,6 +33,11 @@ export function CaptureBar({
             e.stopPropagation();
             setValue("");
             inputRef.current?.blur();
+          } else if (e.key === "ArrowDown") {
+            e.preventDefault();
+            e.stopPropagation();
+            inputRef.current?.blur();
+            onArrowDown();
           }
         }}
         placeholder={placeholder}

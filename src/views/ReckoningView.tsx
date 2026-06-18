@@ -137,6 +137,8 @@ export function ReckoningView({
   cursorId,
   today,
   breakdownTask,
+  reason,
+  onReasonChange,
   onSelect,
   onComplete,
   onBacklog,
@@ -149,6 +151,8 @@ export function ReckoningView({
   cursorId: TaskId | null;
   today: ISODate;
   breakdownTask: Task | null;
+  reason: string;
+  onReasonChange: (v: string) => void;
   onSelect: (id: TaskId) => void;
   onComplete: (id: TaskId) => void;
   onBacklog: (id: TaskId) => void;
@@ -185,29 +189,45 @@ export function ReckoningView({
             {leftovers.map((t) => {
               const selected = cursorId === t.id;
               return (
-                <div
-                  key={t.id}
-                  onClick={() => onSelect(t.id)}
-                  className={[
-                    "relative flex items-center gap-3 rounded px-3 py-2.5",
-                    selected ? "bg-surface-2" : "hover:bg-surface-2/60",
-                  ].join(" ")}
-                >
-                  {selected && (
-                    <span className="absolute left-0 top-2 bottom-2 w-[2px] bg-accent" />
-                  )}
-                  <span className="mono shrink-0 text-[11px] text-bad">
-                    {relativeLabel(t.plannedFor ?? today, today)}
-                  </span>
-                  <span className="flex-1 truncate text-[14px] text-ink">
-                    {t.text === "" ? "Untitled" : t.text}
-                  </span>
-                  <div className="flex shrink-0 items-center gap-1.5">
-                    <ActionChip label="Done" hint="e" tone="good" onClick={() => onComplete(t.id)} />
-                    <ActionChip label="Break down" hint="b" tone="accent" onClick={() => onStartBreakdown(t.id)} />
-                    <ActionChip label="Backlog" hint="s" tone="soft" onClick={() => onBacklog(t.id)} />
-                    <ActionChip label="Drop" hint="d" tone="bad" onClick={() => onDrop(t.id)} />
+                <div key={t.id}>
+                  <div
+                    onClick={() => onSelect(t.id)}
+                    className={[
+                      "relative flex items-center gap-3 rounded px-3 py-2.5",
+                      selected ? "bg-surface-2" : "hover:bg-surface-2/60",
+                    ].join(" ")}
+                  >
+                    {selected && (
+                      <span className="absolute left-0 top-2 bottom-2 w-[2px] bg-accent" />
+                    )}
+                    <span className="mono shrink-0 text-[11px] text-bad">
+                      {relativeLabel(t.plannedFor ?? today, today)}
+                    </span>
+                    <span className="flex-1 truncate text-[14px] text-ink">
+                      {t.text === "" ? "Untitled" : t.text}
+                    </span>
+                    <div className="flex shrink-0 items-center gap-1.5">
+                      <ActionChip label="Done" hint="e" tone="good" onClick={() => onComplete(t.id)} />
+                      <ActionChip label="Break down" hint="b" tone="accent" onClick={() => onStartBreakdown(t.id)} />
+                      <ActionChip label="Backlog" hint="s" tone="soft" onClick={() => onBacklog(t.id)} />
+                      <ActionChip label="Drop" hint="d" tone="bad" onClick={() => onDrop(t.id)} />
+                    </div>
                   </div>
+                  {selected && (
+                    <input
+                      value={reason}
+                      onChange={(e) => onReasonChange(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Escape") {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          e.currentTarget.blur();
+                        }
+                      }}
+                      placeholder="Why didn't this get done? (optional — attached to your choice)"
+                      className="mb-1 ml-3 mt-1 w-[calc(100%-1.5rem)] rounded-sm border border-line bg-surface px-2.5 py-1.5 text-[12px] text-ink outline-none placeholder:text-ink-faint focus:border-line-strong"
+                    />
+                  )}
                 </div>
               );
             })}

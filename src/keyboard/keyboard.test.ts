@@ -21,9 +21,16 @@ describe("toCombo", () => {
   it("normalizes modifiers in a fixed order", () => {
     expect(toCombo(fakeEvent({ key: "Enter", metaKey: true }))).toBe("Meta+Enter");
     expect(toCombo(fakeEvent({ key: "Tab", shiftKey: true }))).toBe("Shift+Tab");
-    expect(
-      toCombo(fakeEvent({ key: "k", metaKey: true, shiftKey: true }))
-    ).toBe("Meta+Shift+k");
+  });
+  it("keeps Shift only for non-printable keys", () => {
+    // shift+/ → "?" (printable): Shift dropped so it matches a "?" binding.
+    expect(toCombo(fakeEvent({ key: "?", shiftKey: true }))).toBe("?");
+    // shift+letter: Shift dropped (the char already differs).
+    expect(toCombo(fakeEvent({ key: "k", metaKey: true, shiftKey: true }))).toBe("Meta+k");
+    // Shift kept for arrows (multi-select) and Tab (outdent).
+    expect(toCombo(fakeEvent({ key: "ArrowUp", shiftKey: true }))).toBe("Shift+ArrowUp");
+    expect(toCombo(fakeEvent({ key: "ArrowDown", metaKey: true }))).toBe("Meta+ArrowDown");
+    expect(toCombo(fakeEvent({ key: "ArrowDown", altKey: true }))).toBe("Alt+ArrowDown");
   });
 });
 

@@ -1,11 +1,16 @@
 import { nanoid } from "nanoid";
-import type { Task, TaskId } from "../types";
+import type { Project, ProjectId, Task, TaskId } from "../types";
+import { DEFAULT_PROJECT_ID } from "../types";
 
 // ─── Construction ───────────────────────────────────────────────────
 
-export function makeTask(text: string): Task {
+export function makeTask(
+  text: string,
+  projectId: ProjectId = DEFAULT_PROJECT_ID
+): Task {
   return {
     id: nanoid() as TaskId,
+    projectId,
     text,
     notes: "",
     completed: false,
@@ -116,6 +121,30 @@ export function countAll(task: Task): { done: number; total: number } {
     total += sub.total;
   }
   return { done, total };
+}
+
+export function assignProjectDeep(task: Task, projectId: ProjectId): Task {
+  return {
+    ...task,
+    projectId,
+    children: task.children.map((child) => assignProjectDeep(child, projectId)),
+  };
+}
+
+export function setProjectForIds(
+  tasks: Task[],
+  selected: Set<TaskId>,
+  projectId: ProjectId
+): Task[] {
+  return tasks.map((task) =>
+    selected.has(task.id)
+      ? assignProjectDeep(task, projectId)
+      : { ...task, children: setProjectForIds(task.children, selected, projectId) }
+  );
+}
+
+export function normalizeChildProjects(tasks: Task[]): Task[] {
+  return tasks.map((task) => assignProjectDeep(task, task.projectId));
 }
 
 /** Flat, ordered list of visible task ids, respecting collapsed nodes. */
@@ -262,6 +291,159 @@ export function outdentTask(tasks: Task[], id: TaskId): Task[] {
     return { list: newList, done: changed };
   }
   return recur(tasks).list;
+}
+
+// ─── Reorder (multi-select; adapted from nutriapp moveSelectedItems) ─
+
+/**
+ * Bubble selected items one slot up/down within a single array, skipping over
+ * other selected items so a contiguous block moves together.
+ */
+export function moveSelectedItems<T extends { id: TaskId }>(
+  items: T[],
+  selected: Set<TaskId>,
+  dir: "up" | "down"
+): T[] {
+  if (selected.size === 0) return items;
+  const next = [...items];
+  if (dir === "up") {
+    for (let i = 1; i < next.length; i++) {
+      if (selected.has(next[i].id) && !selected.has(next[i - 1].id)) {
+        [next[i - 1], next[i]] = [next[i], next[i - 1]];
+      }
+    }
+    return next;
+  }
+  for (let i = next.length - 2; i >= 0; i--) {
+    if (selected.has(next[i].id) && !selected.has(next[i + 1].id)) {
+      [next[i], next[i + 1]] = [next[i + 1], next[i]];
+    }
+  }
+  return next;
+}
+
+function replaceProjectRootOrder(
+  tasks: Task[],
+  projectId: ProjectId,
+  desiredIds: TaskId[]
+): Task[] {
+  const desired = new Set(desiredIds);
+  const byId = new Map(tasks.map((task) => [task.id, task]));
+  let cursor = 0;
+  return tasks.map((task) => {
+    if (task.projectId !== projectId || !desired.has(task.id)) return task;
+    const replacement = byId.get(desiredIds[cursor]);
+    cursor += 1;
+    return replacement ?? task;
+  });
+}
+
+function insertIndexForEmptyProject(
+  tasks: Task[],
+  projects: Project[],
+  targetProjectId: ProjectId
+): number {
+  const order = new Map(projects.map((project, index) => [project.id, index]));
+  const targetIndex = order.get(targetProjectId) ?? 0;
+  const laterIndex = tasks.findIndex(
+    (task) => (order.get(task.projectId) ?? Number.MAX_SAFE_INTEGER) > targetIndex
+  );
+  return laterIndex === -1 ? tasks.length : laterIndex;
+}
+
+function moveRootBlockToProject(
+  tasks: Task[],
+  selectedIds: TaskId[],
+  targetProjectId: ProjectId,
+  projects: Project[],
+  position: "start" | "end"
+): Task[] {
+  const selected = new Set(selectedIds);
+  const block = tasks
+    .filter((task) => selected.has(task.id))
+    .map((task) => assignProjectDeep(task, targetProjectId));
+  if (block.length === 0) return tasks;
+
+  const rest = tasks.filter((task) => !selected.has(task.id));
+  const targetIndexes = rest
+    .map((task, index) => (task.projectId === targetProjectId ? index : -1))
+    .filter((index) => index !== -1);
+
+  const insertAt =
+    targetIndexes.length === 0
+      ? insertIndexForEmptyProject(rest, projects, targetProjectId)
+      : position === "start"
+        ? targetIndexes[0]
+        : targetIndexes[targetIndexes.length - 1] + 1;
+
+  return [...rest.slice(0, insertAt), ...block, ...rest.slice(insertAt)];
+}
+
+export function reorderSelectedAcrossProjects(
+  tasks: Task[],
+  selected: Set<TaskId>,
+  dir: "up" | "down",
+  projects: Project[]
+): Task[] {
+  if (selected.size === 0) return tasks;
+  if (![...selected].every((id) => tasks.some((task) => task.id === id))) {
+    return reorderSelected(tasks, selected, dir);
+  }
+
+  const groupIndex = projects.findIndex((project) =>
+    tasks.some((task) => task.projectId === project.id && selected.has(task.id))
+  );
+  if (groupIndex === -1) return reorderSelected(tasks, selected, dir);
+
+  const project = projects[groupIndex];
+  const groupIds = tasks
+    .filter((task) => task.projectId === project.id)
+    .map((task) => task.id);
+  const selectedIndexes = groupIds
+    .map((id, index) => (selected.has(id) ? index : -1))
+    .filter((index) => index !== -1);
+
+  if (selectedIndexes.length !== selected.size) return reorderSelected(tasks, selected, dir);
+
+  const first = selectedIndexes[0];
+  const last = selectedIndexes[selectedIndexes.length - 1];
+  const isContiguous = selectedIndexes.every((index, offset) => index === first + offset);
+  if (!isContiguous) return reorderSelected(tasks, selected, dir);
+
+  if (dir === "up") {
+    if (first > 0) {
+      const desired = moveSelectedItems(groupIds.map((id) => ({ id })), selected, "up").map(
+        (item) => item.id
+      );
+      return replaceProjectRootOrder(tasks, project.id, desired);
+    }
+    const target = projects[groupIndex - 1];
+    if (target == null) return tasks;
+    return moveRootBlockToProject(tasks, groupIds.slice(first, last + 1), target.id, projects, "end");
+  }
+
+  if (last < groupIds.length - 1) {
+    const desired = moveSelectedItems(groupIds.map((id) => ({ id })), selected, "down").map(
+      (item) => item.id
+    );
+    return replaceProjectRootOrder(tasks, project.id, desired);
+  }
+  const target = projects[groupIndex + 1];
+  if (target == null) return tasks;
+  return moveRootBlockToProject(tasks, groupIds.slice(first, last + 1), target.id, projects, "start");
+}
+
+/** Apply the sibling bubble at every level, so selection reorders within each parent. */
+export function reorderSelected(
+  tasks: Task[],
+  selected: Set<TaskId>,
+  dir: "up" | "down"
+): Task[] {
+  const moved = moveSelectedItems(tasks, selected, dir);
+  return moved.map((t) => ({
+    ...t,
+    children: reorderSelected(t.children, selected, dir),
+  }));
 }
 
 // ─── Traversal utilities ────────────────────────────────────────────

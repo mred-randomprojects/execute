@@ -38,8 +38,8 @@ export function useKeyboard<D extends ContextState>(
       const combo = toCombo(e);
       const context = getActiveContext(dispatch);
 
-      // Let text fields keep native undo/redo while focused.
-      if (combo === "Meta+z" || combo === "Meta+Shift+z") {
+      // Let text fields keep native undo while focused.
+      if (combo === "Meta+z") {
         const tag = document.activeElement?.tagName;
         if (tag === "TEXTAREA" || tag === "INPUT") return;
       }

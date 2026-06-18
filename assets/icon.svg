@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <linearGradient id="body" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#272b35" />
+      <stop offset="1" stop-color="#0f1117" />
+    </linearGradient>
+    <radialGradient id="sheen" cx="0.5" cy="0.04" r="0.85">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.12" />
+      <stop offset="0.55" stop-color="#ffffff" stop-opacity="0" />
+    </radialGradient>
+    <linearGradient id="mark" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f7f3ec" />
+      <stop offset="1" stop-color="#dccfbc" />
+    </linearGradient>
+  </defs>
+
+  <!-- squircle body (macOS-sized: 824 within 1024, ~0.2237 corner radius) -->
+  <rect x="100" y="100" width="824" height="824" rx="185" ry="185" fill="url(#body)" />
+  <rect x="100" y="100" width="824" height="824" rx="185" ry="185" fill="url(#sheen)" />
+  <rect x="100.5" y="100.5" width="823" height="823" rx="184.5" ry="184.5"
+        fill="none" stroke="#000000" stroke-opacity="0.28" stroke-width="1" />
+
+  <!-- accent baseline (the "today" accent), grounding the mark -->
+  <rect x="404" y="712" width="216" height="24" rx="12" fill="#5b78c2" fill-opacity="0.9" />
+
+  <!-- checkmark -->
+  <path d="M330 516 L456 648 L712 372" fill="none" stroke="url(#mark)"
+        stroke-width="92" stroke-linecap="round" stroke-linejoin="round" />
+</svg>

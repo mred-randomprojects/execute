@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { Task } from "../types";
 import { countAll } from "../store/tasks";
 import { useEditor } from "../ui/editor";
+import { renderInline } from "../ui/markdown";
 
 const PRIORITY_DOT: Record<number, string> = {
   1: "bg-bad",
@@ -57,7 +58,11 @@ function RowInput({ task }: { task: Task }) {
       onChange={(e) => setValue(e.target.value)}
       onBlur={() => ed.commit(task.id, value)}
       onKeyDown={(e) => {
-        if (e.key === "Enter" && !e.shiftKey) {
+        if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+          e.preventDefault();
+          e.stopPropagation();
+          ed.toggleFromEdit(task.id, value);
+        } else if (e.key === "Enter") {
           e.preventDefault();
           e.stopPropagation();
           ed.commitAndNew(task.id, value);
@@ -69,6 +74,14 @@ function RowInput({ task }: { task: Task }) {
           e.preventDefault();
           e.stopPropagation();
           ed.outdentEditing(task.id, value);
+        } else if (e.key === "ArrowUp") {
+          e.preventDefault();
+          e.stopPropagation();
+          ed.editPrev(task.id, value);
+        } else if (e.key === "ArrowDown") {
+          e.preventDefault();
+          e.stopPropagation();
+          ed.editNext(task.id, value);
         } else if (e.key === "Escape") {
           e.preventDefault();
           e.stopPropagation();
@@ -87,10 +100,11 @@ function RowInput({ task }: { task: Task }) {
 
 export function TaskRow({ task, depth }: { task: Task; depth: number }) {
   const ed = useEditor();
-  const selected = ed.cursorId === task.id;
+  const isFocused = ed.cursorId === task.id;
+  const inSelection = ed.selectedIds.includes(task.id);
   const editing = ed.editingId === task.id;
   const isMoving = ed.movingId === task.id;
-  const isDropTarget = ed.mode === "move" && selected && !isMoving;
+  const isDropTarget = ed.mode === "move" && isFocused && !isMoving;
   const hasChildren = task.children.length > 0;
   const isCollapsed = ed.collapsed.has(task.id);
   const plannedToday = task.plannedFor === ed.today;
@@ -100,15 +114,15 @@ export function TaskRow({ task, depth }: { task: Task; depth: number }) {
     <>
       <div
         onClick={() => ed.select(task.id)}
-        onDoubleClick={() => ed.startEdit(task.id)}
+        onDoubleClick={() => ed.openDetail(task.id)}
         className={[
           "group relative flex items-center gap-2 rounded-sm py-[5px] pr-2 cursor-default select-none",
-          selected ? "bg-surface-2" : "hover:bg-surface-2/60",
+          inSelection ? "bg-surface-2" : "hover:bg-surface-2/60",
           isMoving ? "opacity-50" : "",
         ].join(" ")}
         style={{ paddingLeft: `${depth * 22 + 6}px` }}
       >
-        {selected && (
+        {isFocused && (
           <span className="absolute left-0 top-[6px] bottom-[6px] w-[2px] bg-accent" />
         )}
         {isDropTarget && (
@@ -159,14 +173,20 @@ export function TaskRow({ task, depth }: { task: Task; depth: number }) {
           <RowInput task={task} />
         ) : (
           <span
-            onClick={() => selected && ed.startEdit(task.id)}
+            onClick={() => isFocused && ed.startEdit(task.id)}
             className={[
               "flex-1 truncate text-[14px]",
               task.completed ? "text-ink-faint line-through" : "text-ink",
               task.text === "" ? "text-ink-faint" : "",
             ].join(" ")}
           >
-            {task.text === "" ? "Untitled" : task.text}
+            {task.text === "" ? "Untitled" : renderInline(task.text)}
+          </span>
+        )}
+
+        {!editing && task.notes.trim() !== "" && (
+          <span className="shrink-0 text-ink-faint" title="Has details" aria-hidden="true">
+            ¶
           </span>
         )}
 

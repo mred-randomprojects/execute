@@ -48,7 +48,11 @@ export function toCombo(e: KeyboardEvent): string {
   if (e.metaKey) parts.push("Meta");
   if (e.ctrlKey) parts.push("Ctrl");
   if (e.altKey) parts.push("Alt");
-  if (e.shiftKey) parts.push("Shift");
+  // Shift only matters for non-printable keys (Tab, Enter, Arrows…). For a
+  // printable single char the character itself already reflects shift
+  // (e.g. "?" from shift+/, "!" from shift+1), so adding "Shift+" would make
+  // the combo unmatchable against a "?" binding.
+  if (e.shiftKey && e.key.length > 1) parts.push("Shift");
   parts.push(e.key);
   return parts.join("+");
 }

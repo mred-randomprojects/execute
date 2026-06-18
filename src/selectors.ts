@@ -1,7 +1,8 @@
-import type { ISODate, Task, TaskId } from "./types";
+import type { ISODate, Project, Task, TaskId } from "./types";
+import { DEFAULT_PROJECT_ID } from "./types";
 import { isLeaf, leavesWhere } from "./store/tasks";
 
-export type ViewKind = "today" | "backlog" | "all";
+export type ViewKind = "today" | "backlog" | "all" | "trash";
 
 export type TaskPredicate = (t: Task) => boolean;
 
@@ -23,6 +24,8 @@ export function viewPredicate(view: ViewKind, today: ISODate): TaskPredicate {
       return (t) => t.plannedFor == null && !t.completed;
     case "all":
       return () => true;
+    case "trash":
+      return () => false; // Trash is rendered from state.trash, not the tree.
   }
 }
 
@@ -37,6 +40,30 @@ export function viewTasks(
 export interface Row {
   task: Task;
   depth: number;
+}
+
+export interface ProjectTaskGroup {
+  project: Project;
+  tasks: Task[];
+}
+
+export function groupTasksByProject(
+  tasks: Task[],
+  projects: Project[]
+): ProjectTaskGroup[] {
+  const byProject = new Map(projects.map((project) => [project.id, project]));
+  const buckets = new Map<Project["id"], Task[]>();
+
+  for (const task of tasks) {
+    const projectId = byProject.has(task.projectId) ? task.projectId : DEFAULT_PROJECT_ID;
+    buckets.set(projectId, [...(buckets.get(projectId) ?? []), task]);
+  }
+
+  return projects
+    .map((project) => ({ project, tasks: buckets.get(project.id) ?? [] }))
+    .filter(
+      (group) => group.tasks.length > 0 || group.project.id !== DEFAULT_PROJECT_ID
+    );
 }
 
 /** Flatten a (already filtered) tree into ordered rows, respecting collapse. */

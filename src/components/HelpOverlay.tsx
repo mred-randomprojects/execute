@@ -21,16 +21,17 @@ function buildSections(): Array<{ title: string; items: HelpItem[] }> {
   return order.map((title) => ({ title, items: bySection.get(title) ?? [] }));
 }
 
-// Capture keys are handled locally by the row input, so they're documented here.
+// Inline-edit keys are handled locally by the row input; documented here.
 const CAPTURE_SECTION = {
-  title: "Capture (while typing a task)",
+  title: "While editing a title",
   items: [
     { keys: "↵", description: "save + new task below" },
-    { keys: "tab", description: "indent into a subtask" },
-    { keys: "⇧ tab", description: "outdent" },
+    { keys: "↑ / ↓", description: "save + move to prev / next task" },
+    { keys: "tab / ⇧ tab", description: "indent / outdent" },
+    { keys: "⌘ ↵", description: "complete / uncomplete" },
     { keys: "esc", description: "save + stop editing" },
-    { keys: "⌫", description: "delete when empty" },
-    { keys: "[] / - / [x]", description: "checkbox & bullet shortcuts" },
+    { keys: "⌫", description: "delete (to trash) when empty" },
+    { keys: "`code` **bold** *italic*", description: "markdown renders in titles & notes" },
   ],
 };
 

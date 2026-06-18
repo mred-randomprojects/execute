@@ -19,8 +19,9 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "package": "vite build && electron-forge package",
-    "make": "vite build && electron-forge make"
+    "icons": "node scripts/generate-icons.mjs",
+    "package": "pnpm icons && vite build && electron-forge package",
+    "make": "pnpm icons && vite build && electron-forge make"
   },
   "dependencies": {
     "@fontsource/ibm-plex-mono": "^5.1.0",
@@ -46,6 +47,7 @@
     "electron": "^32.2.0",
     "jsdom": "^25.0.1",
     "postcss": "^8.4.49",
+    "sharp": "^0.33.5",
     "tailwindcss": "^3.4.15",
     "typescript": "~5.6.3",
     "vite": "^5.4.11",

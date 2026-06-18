@@ -1,10 +1,11 @@
 const NORMAL_HINTS: Array<[string, string]> = [
   ["j / k", "move"],
-  ["space", "done"],
-  ["o", "new"],
-  ["tab", "subtask"],
+  ["↵", "edit"],
+  ["→", "details"],
+  ["space / ⌘↵", "done"],
+  ["a / n", "new"],
   ["t", "plan"],
-  ["⌘k", "commands"],
+  ["⌘k", "more"],
   ["?", "help"],
 ];
 

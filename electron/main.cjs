@@ -96,6 +96,15 @@ if (!gotLock) {
   });
 
   app.whenReady().then(() => {
+    // In dev the app runs unpackaged, so set the dock icon manually (packaged
+    // builds get it from the .app bundle / Info.plist).
+    if (isDev && process.platform === "darwin" && app.dock != null) {
+      try {
+        app.dock.setIcon(path.join(__dirname, "..", "build", "icon.png"));
+      } catch {
+        /* non-fatal */
+      }
+    }
     registerIpc();
     createWindow();
     app.on("activate", () => {

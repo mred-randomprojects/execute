@@ -14,8 +14,10 @@ forward. The smallest version of a task is the one that gets done.
    `[x] done` just works.
 2. **Plan** — press `t` to commit a task to today. **Today** shows only what
    you've committed to.
-3. **Finish** — clear Today to reach **inbox zero**.
-4. **The Reckoning** — open the app on a new day with unfinished commitments and
+3. **Organize** — create colored project dividers and move tasks through them;
+   each task keeps its project when it later appears in Today or Backlog.
+4. **Finish** — clear Today to reach **inbox zero**.
+5. **The Reckoning** — open the app on a new day with unfinished commitments and
    a gate blocks Today until each leftover is resolved:
    - **`e` done** — it was actually finished
    - **`b` break down** — split it; the small step you'll finish today goes to Today
@@ -29,15 +31,29 @@ keymap). Highlights:
 
 | Key | Action |
 |-----|--------|
-| `j` / `k` · `↑` / `↓` | move cursor |
-| `↵` | edit task · `o` new task below |
-| `tab` / `⇧ tab` | indent / outdent (subtask) |
-| `space` | complete / uncomplete |
+| `j` / `k` · `↑` / `↓` | move cursor (`↑` at the top jumps to the capture bar; `↓` there drops into the list) |
+| `⇧ ↑` / `⇧ ↓` | extend multi-selection |
+| `⌘ ↑` / `⌘ ↓` | move task(s) up / down, including across project dividers |
+| `↵` | edit the **title inline** · `→` opens the details panel (**content**) |
+| while editing a title: `↑`/`↓` jump tasks, `↵` new, `tab`/`⇧tab` indent, `⌘↵` done, `esc` save |
+| in the panel: `←`/`esc` back to the list (title is read-only here) |
+| `space` or `⌘↵` | complete / uncomplete |
 | `t` | plan / unplan for today |
-| `m` then `↵`/`⌘↵` | move (reorder / re-parent) |
-| `⌘1` / `⌘2` / `⌘3` | Today / Backlog / All |
+| `a` / `n` / `o` | new task below |
+| `/` | add a task (capture bar) |
+| `m` then `↵`/`⌘↵` | move mode (re-parent) |
+| `⌫` | move to trash |
+| `1` / `2` / `3` / `4` | Today / Backlog / All / Trash |
 | `⌘k` | command palette · `⌘z` undo |
 | `?` | keyboard help |
+
+Task **titles** and **notes** render inline **markdown** (`` `code` ``, `**bold**`,
+`*italic*`, `~~strike~~`, `[links](url)`). The detail panel shows a read-only,
+rendered title and a created timestamp (in your local timezone).
+
+In **the Reckoning** and at completion you can attach an optional **reason**;
+these are recorded in an event log (and shown in a task's History panel) so the
+data can later be analysed.
 
 ## Develop
 

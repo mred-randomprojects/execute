@@ -15,12 +15,16 @@ import {
   outdentTask,
   leavesWhere,
   countPending,
+  reorderSelected,
+  reorderSelectedAcrossProjects,
 } from "./tasks";
-import type { Task, TaskId } from "../types";
+import type { Project, ProjectId, Task, TaskId } from "../types";
+import { DEFAULT_PROJECT_ID } from "../types";
 
 function task(id: string, children: Task[] = [], overrides: Partial<Task> = {}): Task {
   return {
     id: id as TaskId,
+    projectId: DEFAULT_PROJECT_ID,
     text: id,
     notes: "",
     completed: false,
@@ -36,6 +40,11 @@ function task(id: string, children: Task[] = [], overrides: Partial<Task> = {}):
 }
 
 const id = (s: string) => s as TaskId;
+const projectId = (s: string) => s as ProjectId;
+const projects: Project[] = [
+  { id: projectId("work"), name: "Work", color: "#2f4b8f", createdAt: 0 },
+  { id: projectId("home"), name: "Home", color: "#8c4b2f", createdAt: 0 },
+];
 
 /** Render a tree as nested ids, e.g. "a[b,c[d]]" — handy for asserting shape. */
 function shape(tasks: Task[]): string {
@@ -158,6 +167,67 @@ describe("outdentTask", () => {
     const tree = [task("a"), task("b")];
     const indented = indentTask(tree, id("b"));
     expect(shape(outdentTask(indented, id("b")))).toBe("a,b");
+  });
+});
+
+describe("reorderSelected", () => {
+  const sel = (...ids: string[]) => new Set(ids.map(id));
+  it("moves a single task up among siblings", () => {
+    const tree = [task("a"), task("b"), task("c")];
+    expect(shape(reorderSelected(tree, sel("c"), "up"))).toBe("a,c,b");
+  });
+  it("moves a contiguous block down together", () => {
+    const tree = [task("a"), task("b"), task("c"), task("d")];
+    expect(shape(reorderSelected(tree, sel("a", "b"), "down"))).toBe("c,a,b,d");
+  });
+  it("reorders within the correct parent only", () => {
+    const tree = [task("p", [task("x"), task("y")]), task("q")];
+    expect(shape(reorderSelected(tree, sel("y"), "up"))).toBe("p[y,x],q");
+  });
+  it("is a no-op at the boundary", () => {
+    const tree = [task("a"), task("b")];
+    expect(shape(reorderSelected(tree, sel("a"), "up"))).toBe("a,b");
+  });
+});
+
+describe("reorderSelectedAcrossProjects", () => {
+  const sel = (...ids: string[]) => new Set(ids.map(id));
+
+  it("reorders root tasks inside one project", () => {
+    const tree = [
+      task("a", [], { projectId: projectId("work") }),
+      task("b", [], { projectId: projectId("work") }),
+      task("c", [], { projectId: projectId("home") }),
+    ];
+    const next = reorderSelectedAcrossProjects(tree, sel("b"), "up", projects);
+    expect(next.map((t) => t.id)).toEqual(["b", "a", "c"]);
+    expect(next[0].projectId).toBe(projectId("work"));
+  });
+
+  it("moves a root task into the previous project at the divider boundary", () => {
+    const tree = [
+      task("a", [], { projectId: projectId("work") }),
+      task("b", [], { projectId: projectId("home") }),
+      task("c", [], { projectId: projectId("home") }),
+    ];
+    const next = reorderSelectedAcrossProjects(tree, sel("b"), "up", projects);
+    expect(next.map((t) => `${t.id}:${t.projectId}`)).toEqual([
+      "a:work",
+      "b:work",
+      "c:home",
+    ]);
+  });
+
+  it("moves a root task into the next project at the divider boundary", () => {
+    const tree = [
+      task("a", [], { projectId: projectId("work") }),
+      task("b", [], { projectId: projectId("home") }),
+    ];
+    const next = reorderSelectedAcrossProjects(tree, sel("a"), "down", projects);
+    expect(next.map((t) => `${t.id}:${t.projectId}`)).toEqual([
+      "a:home",
+      "b:home",
+    ]);
   });
 });
 

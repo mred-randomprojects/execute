@@ -12,6 +12,7 @@ export function Sidebar({
   view,
   todayRemaining,
   backlog,
+  trash,
   onSelect,
   onOpenHelp,
   onCycleTheme,
@@ -20,15 +21,17 @@ export function Sidebar({
   view: ViewKind;
   todayRemaining: number;
   backlog: number;
+  trash: number;
   onSelect: (v: ViewKind) => void;
   onOpenHelp: () => void;
   onCycleTheme: () => void;
   children?: ReactNode;
 }) {
   const items: NavDef[] = [
-    { key: "today", label: "Today", hint: "⌘1", badge: todayRemaining },
-    { key: "backlog", label: "Backlog", hint: "⌘2", badge: backlog },
-    { key: "all", label: "All", hint: "⌘3" },
+    { key: "today", label: "Today", hint: "1", badge: todayRemaining },
+    { key: "backlog", label: "Backlog", hint: "2", badge: backlog },
+    { key: "all", label: "All", hint: "3" },
+    { key: "trash", label: "Trash", hint: "4", badge: trash },
   ];
 
   return (

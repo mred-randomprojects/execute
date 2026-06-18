@@ -3,8 +3,9 @@ import { useEffect, useMemo, useRef, useState } from "react";
 export interface Command {
   id: string;
   label: string;
+  aliases?: string[];
   hint?: string;
-  run: () => void;
+  run: (query: string) => void;
 }
 
 export function CommandPalette({
@@ -25,7 +26,10 @@ export function CommandPalette({
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (q === "") return commands;
-    return commands.filter((c) => c.label.toLowerCase().includes(q));
+    return commands.filter((c) => {
+      if (c.label.toLowerCase().includes(q)) return true;
+      return c.aliases?.some((alias) => q.startsWith(alias.toLowerCase())) ?? false;
+    });
   }, [commands, query]);
 
   useEffect(() => {
@@ -35,8 +39,9 @@ export function CommandPalette({
   const run = (i: number) => {
     const c = filtered[i];
     if (c == null) return;
+    const rawQuery = query;
     onClose();
-    c.run();
+    c.run(rawQuery);
   };
 
   return (

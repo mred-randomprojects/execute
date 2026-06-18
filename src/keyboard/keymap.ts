@@ -1,51 +1,54 @@
 import type { KeyBinding } from "./types";
 
 // Declarative bindings. Each row maps a combo + context to an action id; the
-// App wires action ids → handlers. Rows with a `description` are surfaced in the
-// `?` help overlay automatically. Inline capture keys (Enter/Tab inside a row's
-// input) are handled locally by the input and documented in the help overlay's
-// static "Capture" section, so they're intentionally absent here.
+// App wires action ids → handlers. Rows with a `description` show up in the `?`
+// help overlay automatically. Inline capture keys (Enter/Tab/Up/Down inside a
+// row's input) are handled locally by the input and documented in the help
+// overlay's static "Editing" section.
 
 export const keymap: KeyBinding[] = [
   // ── global ────────────────────────────────────────────────────────
   { key: "Escape", action: "dismiss", context: "global", displayKey: "esc", description: "close / cancel", section: "General" },
   { key: "Meta+z", action: "undo", context: "global", displayKey: "⌘ z", description: "undo", section: "General" },
   { key: "?", action: "help.toggle", context: ["normal", "reckoning"], displayKey: "?", description: "keyboard help", section: "General" },
-  { key: "Meta+k", action: "palette.open", context: ["normal", "reckoning"], displayKey: "⌘ k", description: "command palette", section: "General" },
+  { key: "Meta+k", action: "palette.open", context: ["normal", "reckoning", "editing"], displayKey: "⌘ k", description: "command palette", section: "General" },
 
   // ── views ─────────────────────────────────────────────────────────
-  { key: "Meta+1", action: "view.today", context: "normal", displayKey: "⌘ 1", description: "go to Today", section: "Views" },
-  { key: "Meta+2", action: "view.backlog", context: "normal", displayKey: "⌘ 2", description: "go to Backlog", section: "Views" },
-  { key: "Meta+3", action: "view.all", context: "normal", displayKey: "⌘ 3", description: "go to All", section: "Views" },
+  { key: "1", action: "view.today", context: "normal", displayKey: "1", description: "go to Today", section: "Views" },
+  { key: "2", action: "view.backlog", context: "normal", displayKey: "2", description: "go to Backlog", section: "Views" },
+  { key: "3", action: "view.all", context: "normal", displayKey: "3", description: "go to All", section: "Views" },
+  { key: "4", action: "view.trash", context: "normal", displayKey: "4", description: "go to Trash", section: "Views" },
 
   // ── navigation (normal) ───────────────────────────────────────────
-  { key: "ArrowDown", action: "cursor.down", context: "normal", displayKey: "↓ / j", description: "move cursor down", section: "Navigation" },
+  { key: "ArrowDown", action: "cursor.down", context: "normal", displayKey: "↓ / j", description: "move down", section: "Navigation" },
   { key: "j", action: "cursor.down", context: "normal" },
-  { key: "ArrowUp", action: "cursor.up", context: "normal", displayKey: "↑ / k", description: "move cursor up", section: "Navigation" },
+  { key: "ArrowUp", action: "cursor.up", context: "normal", displayKey: "↑ / k", description: "move up", section: "Navigation" },
   { key: "k", action: "cursor.up", context: "normal" },
-  { key: "ArrowLeft", action: "nav.left", context: "normal", displayKey: "←", description: "collapse / jump to parent", section: "Navigation" },
-  { key: "h", action: "nav.left", context: "normal" },
-  { key: "ArrowRight", action: "nav.right", context: "normal", displayKey: "→", description: "expand children", section: "Navigation" },
-  { key: "l", action: "nav.right", context: "normal" },
+  { key: "Shift+ArrowDown", action: "select.down", context: "normal", displayKey: "⇧ ↓", description: "extend selection down", section: "Navigation" },
+  { key: "Shift+ArrowUp", action: "select.up", context: "normal", displayKey: "⇧ ↑", description: "extend selection up", section: "Navigation" },
+  { key: "ArrowRight", action: "panel.open", context: "normal", displayKey: "→ / l", description: "details panel (notes)", section: "Navigation" },
+  { key: "l", action: "panel.open", context: "normal" },
+  { key: "ArrowLeft", action: "panel.back", context: "normal", displayKey: "← / h", description: "close panel / collapse / parent", section: "Navigation" },
+  { key: "h", action: "panel.back", context: "normal" },
 
   // ── actions (normal) ──────────────────────────────────────────────
-  { key: "Enter", action: "edit.start", context: "normal", displayKey: "↵", description: "edit task", section: "Tasks" },
-  { key: "o", action: "task.new", context: "normal", displayKey: "o", description: "new task below", section: "Tasks" },
+  { key: "Enter", action: "edit.start", context: "normal", displayKey: "↵", description: "edit task title", section: "Tasks" },
+  { key: "a", action: "task.new", context: "normal", displayKey: "a / n / o", description: "new task below", section: "Tasks" },
+  { key: "n", action: "task.new", context: "normal" },
+  { key: "o", action: "task.new", context: "normal" },
+  { key: "/", action: "capture.focus", context: "normal" },
   { key: " ", action: "task.toggle", context: "normal", displayKey: "space", description: "complete / uncomplete", section: "Tasks" },
-  { key: "x", action: "task.toggle", context: "normal" },
+  { key: "Meta+Enter", action: "task.toggle", context: ["normal", "editing"], displayKey: "⌘ ↵", description: "complete / uncomplete", section: "Tasks" },
   { key: "t", action: "task.planToday", context: "normal", displayKey: "t", description: "plan / unplan for today", section: "Tasks" },
   { key: "Tab", action: "task.indent", context: "normal", displayKey: "tab", description: "indent (make subtask)", section: "Tasks" },
   { key: "Shift+Tab", action: "task.outdent", context: "normal", displayKey: "⇧ tab", description: "outdent", section: "Tasks" },
-  { key: "Backspace", action: "task.delete", context: "normal", displayKey: "⌫", description: "delete task", section: "Tasks" },
+  { key: "Meta+ArrowUp", action: "reorder.up", context: "normal", displayKey: "⌘ ↑", description: "move task up", section: "Tasks" },
+  { key: "Meta+ArrowDown", action: "reorder.down", context: "normal", displayKey: "⌘ ↓", description: "move task down", section: "Tasks" },
+  { key: "Alt+ArrowUp", action: "reorder.up", context: "normal" },
+  { key: "Alt+ArrowDown", action: "reorder.down", context: "normal" },
+  { key: "Backspace", action: "task.trash", context: "normal", displayKey: "⌫", description: "move to trash", section: "Tasks" },
   { key: "c", action: "task.collapse", context: "normal", displayKey: "c", description: "collapse / expand", section: "Tasks" },
-  { key: "m", action: "move.enter", context: "normal", displayKey: "m", description: "move mode (reorder)", section: "Tasks" },
-  { key: "/", action: "capture.focus", context: "normal", displayKey: "/", description: "focus the capture bar", section: "Tasks" },
-
-  // ── priority (normal) ─────────────────────────────────────────────
-  { key: "1", action: "priority.1", context: "normal", displayKey: "1", description: "priority: urgent", section: "Priority" },
-  { key: "2", action: "priority.2", context: "normal", displayKey: "2", description: "priority: high", section: "Priority" },
-  { key: "3", action: "priority.3", context: "normal", displayKey: "3", description: "priority: medium", section: "Priority" },
-  { key: "4", action: "priority.4", context: "normal", displayKey: "4", description: "priority: none", section: "Priority" },
+  { key: "m", action: "move.enter", context: "normal", displayKey: "m", description: "move mode (re-parent)", section: "Tasks" },
 
   // ── move mode ─────────────────────────────────────────────────────
   { key: "ArrowDown", action: "cursor.down", context: "move", displayKey: "↑ / ↓", description: "choose position", section: "Move mode" },

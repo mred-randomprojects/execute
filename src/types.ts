@@ -2,14 +2,25 @@
 
 /** Branded id so a TaskId can never be confused with a plain string. */
 export type TaskId = string & { readonly __brand: "TaskId" };
+export type ProjectId = string & { readonly __brand: "ProjectId" };
+export type ProjectRowId = string & { readonly __brand: "ProjectRowId" };
+export type OutlineId = TaskId | ProjectRowId;
 
 /** Local-calendar date, "YYYY-MM-DD". The unit the whole app reasons in. */
 export type ISODate = string;
 
 export type TaskPriority = 1 | 2 | 3 | 4;
 
+export interface Project {
+  id: ProjectId;
+  name: string;
+  color: string;
+  createdAt: number;
+}
+
 export interface Task {
   id: TaskId;
+  projectId: ProjectId;
   text: string;
   notes: string;
   completed: boolean;
@@ -29,10 +40,37 @@ export interface Task {
 
 export type ThemeName = "slate" | "ivory" | "carbon" | "bordeaux";
 
+/** A task removed from the tree, retained in the Trash so deletes are reversible. */
+export interface TrashedTask {
+  task: Task;
+  deletedAt: number;
+}
+
+/** Accountability events. Optional reasons can later be fed to an AI for analysis. */
+export type LogAction =
+  | "completed"
+  | "uncompleted"
+  | "postponed"
+  | "dropped"
+  | "brokeDown";
+
+export interface LogEntry {
+  id: string;
+  taskId: TaskId;
+  taskText: string;
+  action: LogAction;
+  reason: string | null;
+  at: number;
+  date: ISODate;
+}
+
 /** The single persisted document. */
 export interface AppState {
   schemaVersion: number;
+  projects: Project[];
   tasks: Task[];
+  trash: TrashedTask[];
+  log: LogEntry[];
   theme: ThemeName;
   /** Last calendar date the app was opened — drives rollover detection. */
   lastOpenedDate: ISODate | null;
@@ -40,12 +78,49 @@ export interface AppState {
   devDateOverride: ISODate | null;
 }
 
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
+export const DEFAULT_PROJECT_ID = "project-inbox" as ProjectId;
+export const PROJECT_ROW_PREFIX = "project:";
+
+export function projectRowId(projectId: ProjectId): ProjectRowId {
+  return `${PROJECT_ROW_PREFIX}${projectId}` as ProjectRowId;
+}
+
+export function isProjectRowId(id: OutlineId | string | null): id is ProjectRowId {
+  return typeof id === "string" && id.startsWith(PROJECT_ROW_PREFIX);
+}
+
+export function projectIdFromRowId(id: ProjectRowId): ProjectId {
+  return id.slice(PROJECT_ROW_PREFIX.length) as ProjectId;
+}
+
+export const PROJECT_COLORS = [
+  "#2f4b8f",
+  "#8c4b2f",
+  "#2f735f",
+  "#7c3f64",
+  "#7a651f",
+  "#4f5f9f",
+  "#6d5f86",
+  "#4e7135",
+] as const;
+
+export function defaultProject(): Project {
+  return {
+    id: DEFAULT_PROJECT_ID,
+    name: "Inbox",
+    color: PROJECT_COLORS[0],
+    createdAt: 0,
+  };
+}
 
 export function emptyState(): AppState {
   return {
     schemaVersion: SCHEMA_VERSION,
+    projects: [defaultProject()],
     tasks: [],
+    trash: [],
+    log: [],
     theme: "slate",
     lastOpenedDate: null,
     devDateOverride: null,
