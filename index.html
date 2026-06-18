@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en" data-theme="slate">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!--
+      Local-first desktop app: it only ever loads its own bundled assets (prod)
+      or the fixed-port Vite dev server (dev). 'unsafe-inline' on script is
+      required for Vite/React fast-refresh's inline preamble in dev; the
+      ws/http localhost entries are the dev HMR socket. Primary security posture
+      is Electron contextIsolation + sandbox + no remote content (see main.cjs).
+    -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self' ws://localhost:5173 http://localhost:5173"
+    />
+    <title>Execute</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

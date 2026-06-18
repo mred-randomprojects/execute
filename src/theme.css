@@ -1,0 +1,109 @@
+/*
+  Theme tokens. Palettes ported from brainer/prototype.html. Switch themes by
+  setting `data-theme` on <html>. :root defaults to Slate so the app is themed
+  before any JS runs.
+*/
+
+:root {
+  /* Typography + shape (shared across themes) */
+  --sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --serif: "Newsreader", Georgia, "Times New Roman", serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --r: 3px;
+  --r-sm: 2px;
+
+  /* THEME: SLATE (cool professional light) — default */
+  --bg: #f1f1ef;
+  --surface: #ffffff;
+  --surface-2: rgba(18, 20, 26, 0.035);
+  --surface-3: rgba(18, 20, 26, 0.07);
+  --ink: #14161c;
+  --ink-soft: #565a64;
+  --ink-faint: #989ba3;
+  --line: rgba(18, 20, 26, 0.12);
+  --line-strong: rgba(18, 20, 26, 0.26);
+  --accent: #2f4b8f;
+  --accent-soft: rgba(47, 75, 143, 0.09);
+  --btn-bg: #14161c;
+  --btn-fg: #ffffff;
+  --s-bad: #ad3329;
+  --s-bad-soft: rgba(173, 51, 41, 0.1);
+  --s-mid: #8a6512;
+  --s-mid-soft: rgba(138, 101, 18, 0.12);
+  --s-good: #2c7341;
+  --s-good-soft: rgba(44, 115, 65, 0.11);
+  --shadow: 0 1px 1px rgba(18, 20, 26, 0.04), 0 4px 14px rgba(18, 20, 26, 0.05);
+  --shadow-lg: 0 2px 4px rgba(18, 20, 26, 0.05), 0 18px 44px rgba(18, 20, 26, 0.09);
+}
+
+[data-theme="ivory"] {
+  --bg: #ece6db;
+  --surface: #faf7f1;
+  --surface-2: rgba(28, 24, 19, 0.04);
+  --surface-3: rgba(28, 24, 19, 0.085);
+  --ink: #1d1813;
+  --ink-soft: #645b4f;
+  --ink-faint: #a39a89;
+  --line: rgba(28, 24, 19, 0.14);
+  --line-strong: rgba(28, 24, 19, 0.3);
+  --accent: #6e3b2a;
+  --accent-soft: rgba(110, 59, 42, 0.1);
+  --btn-bg: #1d1813;
+  --btn-fg: #f8f3ea;
+  --s-bad: #a3372a;
+  --s-bad-soft: rgba(163, 55, 42, 0.11);
+  --s-mid: #856016;
+  --s-mid-soft: rgba(133, 96, 22, 0.13);
+  --s-good: #4a7338;
+  --s-good-soft: rgba(74, 115, 56, 0.12);
+  --shadow: 0 1px 1px rgba(40, 28, 15, 0.04), 0 4px 14px rgba(40, 28, 15, 0.06);
+  --shadow-lg: 0 2px 4px rgba(40, 28, 15, 0.06), 0 18px 44px rgba(40, 28, 15, 0.1);
+}
+
+[data-theme="carbon"] {
+  --bg: #0c0d10;
+  --surface: #15171c;
+  --surface-2: rgba(255, 255, 255, 0.035);
+  --surface-3: rgba(255, 255, 255, 0.08);
+  --ink: #e9eaee;
+  --ink-soft: #989ca6;
+  --ink-faint: #5f636d;
+  --line: rgba(255, 255, 255, 0.1);
+  --line-strong: rgba(255, 255, 255, 0.24);
+  --accent: #93a4ff;
+  --accent-soft: rgba(147, 164, 255, 0.13);
+  --btn-bg: #ededf0;
+  --btn-fg: #14161c;
+  --s-bad: #e2685c;
+  --s-bad-soft: rgba(226, 104, 92, 0.14);
+  --s-mid: #cf9f4c;
+  --s-mid-soft: rgba(207, 159, 76, 0.14);
+  --s-good: #5cbb7c;
+  --s-good-soft: rgba(92, 187, 124, 0.14);
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 18px 50px rgba(0, 0, 0, 0.55);
+}
+
+[data-theme="bordeaux"] {
+  --bg: #ece5dd;
+  --surface: #fbf7f2;
+  --surface-2: rgba(40, 20, 24, 0.04);
+  --surface-3: rgba(40, 20, 24, 0.085);
+  --ink: #201417;
+  --ink-soft: #6a5258;
+  --ink-faint: #a8939a;
+  --line: rgba(40, 20, 24, 0.14);
+  --line-strong: rgba(40, 20, 24, 0.3);
+  --accent: #7d2238;
+  --accent-soft: rgba(125, 34, 56, 0.1);
+  --btn-bg: #7d2238;
+  --btn-fg: #faf2ef;
+  --s-bad: #a3332a;
+  --s-bad-soft: rgba(163, 51, 42, 0.11);
+  --s-mid: #8a6417;
+  --s-mid-soft: rgba(138, 100, 23, 0.13);
+  --s-good: #3f7340;
+  --s-good-soft: rgba(63, 115, 64, 0.12);
+  --shadow: 0 1px 1px rgba(40, 20, 24, 0.04), 0 4px 14px rgba(40, 20, 24, 0.06);
+  --shadow-lg: 0 2px 4px rgba(40, 20, 24, 0.06), 0 18px 44px rgba(40, 20, 24, 0.1);
+}

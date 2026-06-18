@@ -1,0 +1,55 @@
+{
+  "name": "execute",
+  "productName": "Execute",
+  "version": "0.1.0",
+  "description": "Keyboard-first, inbox-zero todo app. Local-first desktop.",
+  "private": true,
+  "type": "module",
+  "main": "electron/main.cjs",
+  "author": {
+    "name": "Maxi Redigonda",
+    "email": "maxiredigonda@gmail.com"
+  },
+  "license": "MIT",
+  "scripts": {
+    "dev": "vite",
+    "start": "concurrently -k -n vite,electron -c blue,green \"vite\" \"wait-on tcp:127.0.0.1:5173 && ELECTRON_DEV=1 electron .\"",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "package": "vite build && electron-forge package",
+    "make": "vite build && electron-forge make"
+  },
+  "dependencies": {
+    "@fontsource/ibm-plex-mono": "^5.1.0",
+    "@fontsource/inter": "^5.1.0",
+    "@fontsource/newsreader": "^5.1.0",
+    "electron-squirrel-startup": "^1.0.1",
+    "nanoid": "^5.1.5",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@electron-forge/cli": "^7.6.0",
+    "@electron-forge/maker-dmg": "^7.6.0",
+    "@electron-forge/maker-zip": "^7.6.0",
+    "@testing-library/dom": "^10",
+    "@testing-library/react": "^16",
+    "@types/node": "^20.16.0",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.4",
+    "autoprefixer": "^10.4.20",
+    "concurrently": "^9.1.0",
+    "electron": "^32.2.0",
+    "jsdom": "^25.0.1",
+    "postcss": "^8.4.49",
+    "tailwindcss": "^3.4.15",
+    "typescript": "~5.6.3",
+    "vite": "^5.4.11",
+    "vitest": "^2.1.8",
+    "wait-on": "^8.0.1"
+  }
+}
