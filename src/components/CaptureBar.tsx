@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { RefObject } from "react";
+import { NO_SPELLCHECK } from "../ui/noSpellcheck";
 
 export function CaptureBar({
   inputRef,
@@ -18,6 +19,7 @@ export function CaptureBar({
     <div className="flex items-center gap-3 rounded border border-line bg-surface px-3 py-2 shadow-soft focus-within:border-line-strong">
       <span className="text-lg leading-none text-ink-faint">+</span>
       <input
+        {...NO_SPELLCHECK}
         ref={inputRef}
         value={value}
         onChange={(e) => setValue(e.target.value)}

@@ -11,6 +11,19 @@ export type ISODate = string;
 
 export type TaskPriority = 1 | 2 | 3 | 4;
 
+/**
+ * A soft, fuzzy sense of "when" — distinct from a concrete `plannedFor` date.
+ * Week/month horizons are anchored to a real period (`anchor` is a week key
+ * "YYYY-Www" or month key "YYYY-MM"); "someday" has no anchor. Horizons never
+ * feed the Reckoning — only concrete dates do.
+ */
+export type HorizonUnit = "week" | "month" | "someday";
+
+export interface Horizon {
+  unit: HorizonUnit;
+  anchor: string | null;
+}
+
 export interface Project {
   id: ProjectId;
   name: string;
@@ -29,11 +42,17 @@ export interface Task {
   createdAt: number;
   priority: TaskPriority;
   /**
-   * The day this task is committed to. `null` = unplanned (lives in the backlog).
+   * The day this task is committed to. `null` = no concrete date.
    * "Today" = an incomplete *leaf* whose plannedFor === today's date.
    * A task with incomplete children is a container, never itself "today".
+   * A concrete date is what the Reckoning gates on.
    */
   plannedFor: ISODate | null;
+  /**
+   * Fuzzy "when" bucket (this/next week, this/next month, someday). Mutually
+   * exclusive with `plannedFor` — at most one is set; both null = Inbox.
+   */
+  horizon: Horizon | null;
   labels: string[];
   estimatedMinutes: number | null;
 }
@@ -78,7 +97,7 @@ export interface AppState {
   devDateOverride: ISODate | null;
 }
 
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
 export const DEFAULT_PROJECT_ID = "project-inbox" as ProjectId;
 export const PROJECT_ROW_PREFIX = "project:";
 

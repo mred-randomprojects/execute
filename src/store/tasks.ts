@@ -19,6 +19,7 @@ export function makeTask(
     createdAt: Date.now(),
     priority: 4,
     plannedFor: null,
+    horizon: null,
     labels: [],
     estimatedMinutes: null,
   };

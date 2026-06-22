@@ -28,6 +28,7 @@ import {
   setCompleted,
   setCompletedMany,
   setDevDateOverride,
+  setHorizonMany,
   setNotes,
   setPlannedFor,
   setPlannedForMany,
@@ -42,16 +43,24 @@ import {
   useStore,
 } from "./store/store";
 import { findById, findParentId } from "./store/tasks";
-import { todayISO } from "./store/dates";
+import { monthKey, monthKeyOffset, todayISO, weekKey, weekKeyOffset } from "./store/dates";
 import { parseCapture } from "./store/capture";
 import {
   backlogCount,
+  filterTree,
   flattenRows,
+  groupTasksByBucket,
   groupTasksByProject,
   leftoverLeaves,
+  projectSummaries,
+  resolveZoom,
+  taskBucket,
   todayProgress,
   viewTasks,
+  VIEW_TITLES,
+  zoomParent,
   type ViewKind,
+  type ZoomTarget,
 } from "./selectors";
 import {
   emptySelection,
@@ -66,6 +75,7 @@ import type { AppMode, ContextState } from "./keyboard/types";
 import { EditorProvider, type Editor } from "./ui/editor";
 import { Sidebar } from "./components/Sidebar";
 import { OutlineView } from "./views/OutlineView";
+import { ProjectsView } from "./views/ProjectsView";
 import { ReckoningView } from "./views/ReckoningView";
 import { TrashView } from "./views/TrashView";
 import { DetailPanel, type DetailHandlers } from "./components/DetailPanel";
@@ -73,6 +83,8 @@ import { HelpOverlay } from "./components/HelpOverlay";
 import { DevControls } from "./components/DevControls";
 import { StatusBar } from "./components/StatusBar";
 import { CommandPalette, type Command } from "./components/CommandPalette";
+import { SchedulePicker, type ScheduleChoice } from "./components/SchedulePicker";
+import { ConfirmModal, type ConfirmRequest } from "./components/ConfirmModal";
 
 const THEMES: ThemeName[] = ["slate", "ivory", "carbon", "bordeaux"];
 
@@ -105,10 +117,16 @@ export function App() {
   const [editingId, setEditingId] = useState<TaskId | null>(null);
   const [editingProjectId, setEditingProjectId] = useState<ProjectId | null>(null);
   const [collapsed, setCollapsed] = useState<Set<TaskId>>(new Set());
+  const [collapsedProjects, setCollapsedProjects] = useState<Set<ProjectId>>(new Set());
+  const [zoom, setZoom] = useState<ZoomTarget | null>(null);
+  const [hideCompleted, setHideCompleted] = useState(false);
   const [mode, setMode] = useState<AppMode>("normal");
   const [movingId, setMovingId] = useState<TaskId | null>(null);
   const [showHelp, setShowHelp] = useState(false);
   const [showPalette, setShowPalette] = useState(false);
+  const [showSchedule, setShowSchedule] = useState(false);
+  const [confirm, setConfirm] = useState<ConfirmRequest | null>(null);
+  const [laterLayout, setLaterLayout] = useState<"date" | "project">("date");
   const [showPanel, setShowPanel] = useState(false);
   const [reckCursorId, setReckCursorId] = useState<TaskId | null>(null);
   const [breakingDownId, setBreakingDownId] = useState<TaskId | null>(null);
@@ -160,26 +178,78 @@ export function App() {
     () => viewTasks(state.tasks, view, today),
     [state.tasks, view, today]
   );
-  const projectGroups = useMemo(
-    () => groupTasksByProject(filtered, state.projects),
-    [filtered, state.projects]
+  // "Hide all completed" (toggle on `h`) prunes done tasks from the outline,
+  // keeping a completed parent only when it still has a visible (incomplete)
+  // descendant. Counts/progress read from state.tasks, so they stay accurate.
+  const visibleTasks = useMemo(
+    () => (hideCompleted ? filterTree(filtered, (t) => !t.completed) : filtered),
+    [filtered, hideCompleted]
   );
-  const outlineRows = useMemo<OutlineRow[]>(
-    () =>
-      projectGroups.flatMap((group) => [
-        {
-          kind: "project" as const,
-          id: projectRowId(group.project.id),
-          projectId: group.project.id,
-        },
-        ...flattenRows(group.tasks, collapsed).map((row) => ({
+  const projectGroups = useMemo(
+    () => groupTasksByProject(visibleTasks, state.projects),
+    [visibleTasks, state.projects]
+  );
+  // "Later" (the backlog view) can group by time horizon instead of by project.
+  const usingBuckets = view === "backlog" && laterLayout === "date";
+  const bucketGroups = useMemo(
+    () => (usingBuckets ? groupTasksByBucket(visibleTasks, state.tasks, today) : []),
+    [usingBuckets, visibleTasks, state.tasks, today]
+  );
+  // The Projects tab is a project index (list + edit details), not a task
+  // outline — tasks live in All. Counts come straight from the full tree.
+  const projectIndex = useMemo(
+    () => projectSummaries(state.tasks, state.projects, today),
+    [state.tasks, state.projects, today]
+  );
+  // Zoom (Workflowy-style hoist) overrides the project-grouped outline: when set,
+  // the view shows only the focused subtree, with breadcrumbs back out.
+  const zoomFocus = useMemo(() => {
+    if (zoom == null) return null;
+    const z = resolveZoom(state.tasks, state.projects, zoom, VIEW_TITLES[view]);
+    if (z == null || !hideCompleted) return z;
+    return { ...z, subtree: filterTree(z.subtree, (t) => !t.completed) };
+  }, [zoom, state.tasks, state.projects, view, hideCompleted]);
+  const outlineRows = useMemo<OutlineRow[]>(() => {
+    if (zoomFocus != null) {
+      return flattenRows(zoomFocus.subtree, collapsed).map((row) => ({
+        kind: "task" as const,
+        id: row.task.id,
+        taskId: row.task.id,
+      }));
+    }
+    if (view === "projects") {
+      // The index navigates over project rows only — no task rows.
+      return state.projects.map((project) => ({
+        kind: "project" as const,
+        id: projectRowId(project.id),
+        projectId: project.id,
+      }));
+    }
+    if (usingBuckets) {
+      // By-date "Later": bucket headers aren't focusable; navigate the tasks.
+      return bucketGroups.flatMap((group) =>
+        flattenRows(group.tasks, collapsed).map((row) => ({
           kind: "task" as const,
           id: row.task.id,
           taskId: row.task.id,
-        })),
-      ]),
-    [projectGroups, collapsed]
-  );
+        }))
+      );
+    }
+    return projectGroups.flatMap((group) => [
+      {
+        kind: "project" as const,
+        id: projectRowId(group.project.id),
+        projectId: group.project.id,
+      },
+      ...(collapsedProjects.has(group.project.id)
+        ? []
+        : flattenRows(group.tasks, collapsed).map((row) => ({
+            kind: "task" as const,
+            id: row.task.id,
+            taskId: row.task.id,
+          }))),
+    ]);
+  }, [zoomFocus, view, state.projects, projectGroups, usingBuckets, bucketGroups, collapsed, collapsedProjects]);
   const flatIds = useMemo(() => outlineRows.map((r) => r.id), [outlineRows]);
   const flatKey = flatIds.join(",");
 
@@ -218,6 +288,10 @@ export function App() {
       setEditingProjectId(null);
     }
   }, [editingProjectId, state.projects]);
+  // If the zoomed task/project is deleted out from under us, drop back to the view.
+  useEffect(() => {
+    if (zoom != null && zoomFocus == null) setZoom(null);
+  }, [zoom, zoomFocus]);
 
   const didInitialFocus = useRef(false);
   useEffect(() => {
@@ -252,6 +326,31 @@ export function App() {
       else next.add(id);
       return next;
     });
+
+  const setProjectCollapsed = (projectId: ProjectId, value: boolean) =>
+    setCollapsedProjects((prev) => {
+      if (prev.has(projectId) === value) return prev;
+      const next = new Set(prev);
+      if (value) next.add(projectId);
+      else next.delete(projectId);
+      return next;
+    });
+  const toggleProjectCollapsed = (projectId: ProjectId) =>
+    setProjectCollapsed(projectId, !collapsedProjects.has(projectId));
+
+  const zoomInto = (target: ZoomTarget) => {
+    setZoom(target);
+    setShowPanel(false);
+  };
+
+  // In the Projects index there's no task list, so a new project just gets
+  // created and dropped straight into rename mode.
+  const createProjectInIndex = () => {
+    const projectId = createProject("New project");
+    setFocus(projectRowId(projectId));
+    setEditingId(null);
+    setEditingProjectId(projectId);
+  };
 
   const exitMove = () => {
     setMode("normal");
@@ -290,6 +389,38 @@ export function App() {
         ? [focusedTaskId]
         : [];
 
+  // ── Scheduling (the `s` picker) ───────────────────────────────────
+  const applySchedule = (choice: ScheduleChoice) => {
+    const ids = actionTargets();
+    if (ids.length === 0) return;
+    if (typeof choice === "object") return setPlannedForMany(ids, choice.date);
+    switch (choice) {
+      case "today":
+        return setPlannedForMany(ids, today);
+      case "inbox":
+        return setHorizonMany(ids, null);
+      case "someday":
+        return setHorizonMany(ids, { unit: "someday", anchor: null });
+      case "thisWeek":
+        return setHorizonMany(ids, { unit: "week", anchor: weekKey(today) });
+      case "nextWeek":
+        return setHorizonMany(ids, { unit: "week", anchor: weekKeyOffset(today, 1) });
+      case "thisMonth":
+        return setHorizonMany(ids, { unit: "month", anchor: monthKey(today) });
+      case "nextMonth":
+        return setHorizonMany(ids, { unit: "month", anchor: monthKeyOffset(today, 1) });
+    }
+  };
+  // The picker's current-state dot: "today" / a horizon bucket / "inbox" (null = a specific date).
+  const scheduleTag =
+    focusedTask == null
+      ? null
+      : focusedTask.plannedFor === today
+        ? "today"
+        : focusedTask.plannedFor != null
+          ? null
+          : taskBucket(focusedTask, today);
+
   // ── Commands ──────────────────────────────────────────────────────
   const moveReckCursor = (dir: "up" | "down") => {
     const ids = leftovers.map((t) => t.id);
@@ -303,10 +434,12 @@ export function App() {
     cursorDown: () => {
       if (reckoningActive) return moveReckCursor("down");
       if (
+        view !== "projects" &&
         focusedProjectId != null &&
         focusedId != null &&
         flatIds.indexOf(focusedId) === flatIds.length - 1
       ) {
+        setProjectCollapsed(focusedProjectId, false);
         const newId = addTaskAtProjectStart(
           focusedProjectId,
           "",
@@ -332,9 +465,19 @@ export function App() {
     selectUp: () => setSelection((s) => moveSelection(s, flatIds, "up", true)),
     reorderUp: () => reorderAcrossProjects(actionTargets(), "up"),
     reorderDown: () => reorderAcrossProjects(actionTargets(), "down"),
-    // → expands a collapsed task first (outliner convention); only opens the
-    // details panel when there's nothing to expand.
+    // → expands a collapsed project/task first (outliner convention), then
+    // descends; only opens the details panel when there's nothing to expand.
     panelOpen: () => {
+      if (focusedProjectId != null) {
+        if (view === "projects") {
+          zoomInto({ kind: "project", id: focusedProjectId }); // → opens the project
+        } else if (collapsedProjects.has(focusedProjectId)) {
+          setProjectCollapsed(focusedProjectId, false);
+        } else {
+          setSelection((s) => moveSelection(s, flatIds, "down", false)); // descend
+        }
+        return;
+      }
       if (focusedTaskId != null) {
         const t = findById(filtered, focusedTaskId);
         if (t != null && t.children.length > 0 && collapsed.has(focusedTaskId)) {
@@ -344,10 +487,17 @@ export function App() {
       }
       openPanel();
     },
-    // ← closes the panel, else collapses an expanded task, else jumps to parent.
+    // ← closes the panel, else collapses an expanded project/task, else climbs
+    // to the parent task — or to the owning project header at the top level.
     panelBack: () => {
       if (showPanel) {
         setShowPanel(false);
+        return;
+      }
+      if (focusedProjectId != null) {
+        if (view !== "projects" && !collapsedProjects.has(focusedProjectId)) {
+          setProjectCollapsed(focusedProjectId, true);
+        }
         return;
       }
       if (focusedTaskId == null) return;
@@ -357,27 +507,35 @@ export function App() {
         return;
       }
       const parent = findParentId(filtered, focusedTaskId);
-      if (parent != null) setFocus(parent);
+      const zoomRootId = zoomFocus?.kind === "task" ? zoomFocus.rootId : null;
+      if (parent != null && parent !== zoomRootId) {
+        setFocus(parent);
+      } else if (parent == null && zoomFocus == null) {
+        const top = findById(state.tasks, focusedTaskId);
+        if (top != null) setFocus(projectRowId(top.projectId));
+      }
+      // else: at the top of the zoom — use Esc to back out.
     },
     editStart: () => {
       if (focusedId != null) startEditingOutlineId(focusedId);
     },
     taskNew: () => {
-      if (focusedProjectId != null) {
-        const newId = addTaskAtProjectStart(
-          focusedProjectId,
-          "",
-          defaultPlannedFor()
-        );
+      // The Projects index (not zoomed in) has no task list — "new" makes a project.
+      if (view === "projects" && zoom == null) return createProjectInIndex();
+      const beginEdit = (newId: TaskId) => {
         setFocus(newId);
         setEditingProjectId(null);
         setEditingId(newId);
-        return;
+      };
+      if (focusedTaskId != null) return beginEdit(addTaskAfter(focusedTaskId, "", defaultPlannedFor()));
+      if (focusedProjectId != null) {
+        setProjectCollapsed(focusedProjectId, false);
+        return beginEdit(addTaskAtProjectStart(focusedProjectId, "", defaultPlannedFor()));
       }
-      const newId = addTaskAfter(focusedTaskId, "", defaultPlannedFor());
-      setFocus(newId);
-      setEditingProjectId(null);
-      setEditingId(newId);
+      // Nothing focused but zoomed in: the new task belongs to the zoom root.
+      if (zoom?.kind === "task") return beginEdit(addChild(zoom.id, "", defaultPlannedFor()));
+      if (zoom?.kind === "project") return beginEdit(addTaskAtProjectStart(zoom.id, "", defaultPlannedFor()));
+      beginEdit(addTaskAfter(null, "", defaultPlannedFor()));
     },
     taskToggle: () => {
       const ids = actionTargets();
@@ -402,15 +560,40 @@ export function App() {
     taskTrash: () => {
       const ids = actionTargets();
       if (ids.length === 0) return;
-      const next = selectAfterRemoving(selection, flatIds, new Set(ids));
-      if (ids.length === 1) trashTask(ids[0]);
-      else trashMany(ids);
-      setSelection(next);
+      const doTrash = () => {
+        const next = selectAfterRemoving(selection, flatIds, new Set(ids));
+        if (ids.length === 1) trashTask(ids[0]);
+        else trashMany(ids);
+        setSelection(next);
+      };
+      // A leaf trashes instantly (reversible + undoable, keyboard-first). Deleting
+      // a task with subtasks takes a whole subtree, so confirm that first.
+      const hasSubtree = ids.some(
+        (id) => (findById(state.tasks, id)?.children.length ?? 0) > 0
+      );
+      if (!hasSubtree) return doTrash();
+      setConfirm({
+        title:
+          ids.length > 1
+            ? `Delete ${ids.length} tasks and their subtasks?`
+            : "Delete this task and its subtasks?",
+        body: "They move to Trash — restore them there, or undo with ⌘Z.",
+        confirmLabel: "Delete",
+        onConfirm: doTrash,
+      });
     },
     taskCollapse: () => {
+      if (focusedProjectId != null) {
+        if (view !== "projects") toggleProjectCollapsed(focusedProjectId);
+        return;
+      }
       if (focusedTaskId == null) return;
       const t = findById(filtered, focusedTaskId);
       if (t != null && t.children.length > 0) toggleCollapsedFor(focusedTaskId);
+    },
+    zoomIn: () => {
+      if (focusedProjectId != null) zoomInto({ kind: "project", id: focusedProjectId });
+      else if (focusedTaskId != null) zoomInto({ kind: "task", id: focusedTaskId });
     },
     moveEnter: () => {
       if (focusedTaskId != null) {
@@ -433,16 +616,36 @@ export function App() {
       exitMove();
     },
     captureFocus: () => captureRef.current?.focus(),
+    toggleHideCompleted: () => setHideCompleted((v) => !v),
     helpToggle: () => setShowHelp((v) => !v),
     paletteOpen: () => setShowPalette(true),
-    gotoView: (v: ViewKind) => () => setView(v),
+    scheduleOpen: () => {
+      if (actionTargets().length > 0) setShowSchedule(true);
+    },
+    // Toggle the Later view's grouping (by date / by project). No-op elsewhere,
+    // since the layout only exists in the Later (backlog) view.
+    toggleLaterLayout: () => {
+      if (view === "backlog") setLaterLayout((l) => (l === "date" ? "project" : "date"));
+    },
+    gotoView: (v: ViewKind) => () => {
+      setZoom(null); // picking a view leaves focus mode
+      setView(v);
+    },
     dismiss: () => {
-      if (showHelp) setShowHelp(false);
+      if (confirm != null) setConfirm(null);
+      else if (showHelp) setShowHelp(false);
       else if (showPalette) setShowPalette(false);
+      else if (showSchedule) setShowSchedule(false);
       else if (mode === "move") exitMove();
       else if (editingProjectId != null) setEditingProjectId(null);
       else if (editingId != null) setEditingId(null);
       else if (showPanel) setShowPanel(false);
+      else if (zoom != null) {
+        // Climb one level out of the zoom; land focus on the node we just left.
+        const prevRootId = zoomFocus?.rootId ?? null;
+        setZoom(zoomParent(state.tasks, zoom));
+        if (prevRootId != null) setFocus(prevRootId);
+      }
     },
     reckComplete: (id?: TaskId) => {
       const target = id ?? reckCursorId;
@@ -463,7 +666,14 @@ export function App() {
   };
 
   // ── Keyboard wiring ───────────────────────────────────────────────
-  const dispatchState: ContextState = { showHelp, showPalette, reckoningActive, mode };
+  const dispatchState: ContextState = {
+    showHelp,
+    showPalette,
+    showSchedule,
+    showConfirm: confirm != null,
+    reckoningActive,
+    mode,
+  };
   const actionMap: Record<string, () => void> = {
     "cursor.down": cmd.cursorDown,
     "cursor.up": cmd.cursorUp,
@@ -481,17 +691,22 @@ export function App() {
     "task.outdent": cmd.taskOutdent,
     "task.trash": cmd.taskTrash,
     "task.collapse": cmd.taskCollapse,
+    "zoom.in": cmd.zoomIn,
     "move.enter": cmd.moveEnter,
     "move.dropSibling": cmd.moveDropSibling,
     "move.dropChild": cmd.moveDropChild,
     "move.cancel": cmd.dismiss,
     "capture.focus": cmd.captureFocus,
+    "filter.hideCompleted": cmd.toggleHideCompleted,
     "undo": undo,
     "help.toggle": cmd.helpToggle,
     "palette.open": cmd.paletteOpen,
+    "schedule.open": cmd.scheduleOpen,
+    "later.toggleLayout": cmd.toggleLaterLayout,
     "view.today": cmd.gotoView("today"),
     "view.backlog": cmd.gotoView("backlog"),
     "view.all": cmd.gotoView("all"),
+    "view.projects": cmd.gotoView("projects"),
     "view.trash": cmd.gotoView("trash"),
     "dismiss": cmd.dismiss,
     "reck.complete": cmd.reckComplete,
@@ -502,9 +717,18 @@ export function App() {
   useKeyboard(keymap, actionMap, dispatchState);
 
   // ── Editor surface for rows ───────────────────────────────────────
+  // A brand-new task left untitled (empty text, no children) is abandoned the
+  // moment you move off it — discard it instead of leaving "Untitled" litter.
+  const isUntitledLeaf = (id: TaskId, raw: string): boolean => {
+    if (parseCapture(raw).text !== "") return false;
+    const t = findById(state.tasks, id);
+    return t != null && t.children.length === 0;
+  };
+
   const editor: Editor = {
     view,
     today,
+    bucketed: usingBuckets,
     cursorId: focusedTaskId,
     selectedIds: selectedTaskIds,
     editingId,
@@ -516,28 +740,13 @@ export function App() {
     togglePlan: planToggle,
     toggleCollapse: toggleCollapsedFor,
     openDetail: openDetailFor,
+    zoomInto: (id) => zoomInto({ kind: "task", id }),
     startEdit: (id) => {
       setFocus(id);
       setEditingProjectId(null);
       setEditingId(id);
     },
     commit: commitText,
-    commitAndNew: (id, raw) => {
-      const p = parseCapture(raw);
-      if (p.text === "") {
-        trashWithNeighbor(id);
-        setEditingProjectId(null);
-        setEditingId(null);
-        return;
-      }
-      setText(id, p.text);
-      if (p.completed) setCompleted(id, true);
-      const t = findById(state.tasks, id);
-      const newId = addTaskAfter(id, "", t?.plannedFor ?? null);
-      setFocus(newId);
-      setEditingProjectId(null);
-      setEditingId(newId);
-    },
     indentEditing: (id, raw) => {
       commitText(id, raw);
       indent(id);
@@ -547,9 +756,10 @@ export function App() {
       outdent(id);
     },
     editPrev: (id, raw) => {
-      commitText(id, raw);
       const i = flatIds.indexOf(id);
       const prev = flatIds[i - 1];
+      if (isUntitledLeaf(id, raw)) trashTask(id);
+      else commitText(id, raw);
       if (prev != null) {
         startEditingOutlineId(prev);
       } else {
@@ -559,11 +769,16 @@ export function App() {
       }
     },
     editNext: (id, raw) => {
-      commitText(id, raw);
       const i = flatIds.indexOf(id);
       const next = flatIds[i + 1];
+      const discarded = isUntitledLeaf(id, raw);
+      if (discarded) trashTask(id);
+      else commitText(id, raw);
       if (next != null) {
         startEditingOutlineId(next);
+      } else if (discarded) {
+        setEditingId(null);
+        setEditingProjectId(null);
       }
     },
     toggleFromEdit: (id, raw) => {
@@ -571,7 +786,8 @@ export function App() {
       toggleComplete(id);
     },
     exitEdit: (id, raw) => {
-      commitText(id, raw);
+      if (isUntitledLeaf(id, raw)) trashWithNeighbor(id);
+      else commitText(id, raw);
       setEditingProjectId(null);
       setEditingId(null);
     },
@@ -603,10 +819,29 @@ export function App() {
   const onCapture = (raw: string) => {
     const p = parseCapture(raw);
     if (p.text === "") return;
-    const projectId = currentProjectId ?? DEFAULT_PROJECT_ID;
-    const id = addTaskAfter(null, p.text, defaultPlannedFor(), projectId);
+    let id: TaskId;
+    if (zoom?.kind === "task") {
+      id = addChild(zoom.id, p.text, defaultPlannedFor());
+    } else if (zoom?.kind === "project") {
+      id = addTaskAtProjectStart(zoom.id, p.text, defaultPlannedFor());
+    } else {
+      const projectId = currentProjectId ?? DEFAULT_PROJECT_ID;
+      setProjectCollapsed(projectId, false); // keep the captured task visible
+      id = addTaskAfter(null, p.text, defaultPlannedFor(), projectId);
+    }
     if (p.completed) setCompleted(id, true);
     setFocus(id);
+  };
+
+  // Breadcrumb navigation: null exits zoom; a project row / task id re-roots.
+  const onCrumb = (id: OutlineId | null) => {
+    if (id == null) {
+      setZoom(null);
+    } else if (isProjectRowId(id)) {
+      zoomInto({ kind: "project", id: projectIdFromRowId(id) });
+    } else {
+      zoomInto({ kind: "task", id });
+    }
   };
 
   const projectNameFromCommand = (query: string): string => {
@@ -632,6 +867,13 @@ export function App() {
 
   const createProjectAndFirstTask = (name: string) => {
     const projectId = createProject(name.trim() || "New project");
+    // In the Projects index there's no task list — just name the project.
+    if (view === "projects") {
+      setFocus(projectRowId(projectId));
+      setEditingId(null);
+      setEditingProjectId(projectId);
+      return;
+    }
     const targetView = view === "trash" ? "backlog" : view;
     const plannedFor = targetView === "today" ? today : null;
     if (view === "trash") setView("backlog");
@@ -642,6 +884,7 @@ export function App() {
   };
 
   const addTaskToProject = (projectId: ProjectId, afterId: TaskId | null) => {
+    setProjectCollapsed(projectId, false); // never add into a collapsed (hidden) project
     const id =
       afterId == null
         ? addTaskAtProjectStart(projectId, "", defaultPlannedFor())
@@ -657,15 +900,23 @@ export function App() {
   };
 
   const commands: Command[] = [
-    { id: "today", label: "Go to Today", hint: "1", run: () => setView("today") },
-    { id: "backlog", label: "Go to Backlog", hint: "2", run: () => setView("backlog") },
-    { id: "all", label: "Go to All", hint: "3", run: () => setView("all") },
-    { id: "trash", label: "Go to Trash", hint: "4", run: () => setView("trash") },
+    { id: "today", label: "Go to Today", hint: "1", run: cmd.gotoView("today") },
+    { id: "backlog", label: "Go to Backlog", hint: "2", run: cmd.gotoView("backlog") },
+    { id: "all", label: "Go to All", hint: "3", run: cmd.gotoView("all") },
+    { id: "projects", label: "Go to Projects", hint: "4", run: cmd.gotoView("projects") },
+    { id: "trash", label: "Go to Trash", hint: "5", run: cmd.gotoView("trash") },
     { id: "new", label: "New task", hint: "o", run: cmd.taskNew },
     { id: "details", label: "Open details panel", hint: "→", run: openPanel },
     { id: "toggle", label: "Complete / uncomplete task", hint: "space", run: cmd.taskToggle },
     { id: "plan", label: "Plan / unplan for today", hint: "t", run: cmd.taskPlanToday },
     { id: "move", label: "Move task (re-parent)", hint: "m", run: cmd.moveEnter },
+    { id: "zoom", label: "Zoom in / focus", hint: "⌥↵", run: cmd.zoomIn },
+    {
+      id: "hide-completed",
+      label: hideCompleted ? "Show completed tasks" : "Hide all completed tasks",
+      hint: "h",
+      run: cmd.toggleHideCompleted,
+    },
     {
       id: "project-new",
       label: "New project",
@@ -721,13 +972,14 @@ export function App() {
   const panelOpen = showPanel && focusedTask != null && !reckoningActive && view !== "trash";
 
   return (
-    <div className="relative flex h-full overflow-hidden bg-bg text-ink">
+    <div className="relative flex h-full overflow-hidden bg-bg text-ink" spellCheck={false}>
       <div className="drag-region absolute inset-x-0 top-0 z-20 h-7" />
 
       <Sidebar
         view={view}
         todayRemaining={progress.remaining}
         backlog={backlog}
+        projectCount={state.projects.length}
         trash={state.trash.length}
         onSelect={setView}
         onOpenHelp={() => setShowHelp(true)}
@@ -764,8 +1016,38 @@ export function App() {
               <TrashView
                 trash={state.trash}
                 onRestore={restoreFromTrash}
-                onPurge={purgeFromTrash}
-                onEmpty={emptyTrash}
+                onPurge={(id) =>
+                  setConfirm({
+                    title: "Delete forever?",
+                    body: "This permanently removes the task from Trash — it can’t be undone.",
+                    confirmLabel: "Delete forever",
+                    onConfirm: () => purgeFromTrash(id),
+                  })
+                }
+                onEmpty={() =>
+                  setConfirm({
+                    title: "Empty the trash?",
+                    body: "Permanently removes every task in Trash. This can’t be undone.",
+                    confirmLabel: "Empty trash",
+                    onConfirm: emptyTrash,
+                  })
+                }
+              />
+            ) : view === "projects" && zoomFocus == null ? (
+              <ProjectsView
+                summaries={projectIndex}
+                focusedId={focusedId}
+                selectedIds={selection.selectedIds}
+                editingProjectId={editingProjectId}
+                onSelectRow={setFocus}
+                onOpenProject={(projectId) => zoomInto({ kind: "project", id: projectId })}
+                onAddProject={createProjectInIndex}
+                onCycleProjectColor={cycleProjectColor}
+                onStartRenameProject={(projectId) =>
+                  startEditingOutlineId(projectRowId(projectId))
+                }
+                onCommitProjectName={commitProjectName}
+                onExitProjectName={() => setEditingProjectId(null)}
               />
             ) : (
               <EditorProvider value={editor}>
@@ -773,6 +1055,13 @@ export function App() {
                   view={view}
                   today={today}
                   groups={projectGroups}
+                  zoom={zoomFocus}
+                  collapsedProjectIds={collapsedProjects}
+                  hideCompleted={hideCompleted}
+                  onToggleHideCompleted={cmd.toggleHideCompleted}
+                  buckets={bucketGroups}
+                  laterLayout={laterLayout}
+                  onToggleLaterLayout={cmd.toggleLaterLayout}
                   focusedId={focusedId}
                   selectedIds={selection.selectedIds}
                   editingProjectId={editingProjectId}
@@ -783,6 +1072,9 @@ export function App() {
                   onAddProject={() => createProjectAndFirstTask("New project")}
                   onAddToProject={addTaskToProject}
                   onSelectRow={setFocus}
+                  onCrumb={onCrumb}
+                  onToggleProjectCollapsed={toggleProjectCollapsed}
+                  onZoomProject={(projectId) => zoomInto({ kind: "project", id: projectId })}
                   onStartRenameProject={(projectId) =>
                     startEditingOutlineId(projectRowId(projectId))
                   }
@@ -810,6 +1102,28 @@ export function App() {
       {showHelp && <HelpOverlay onClose={() => setShowHelp(false)} />}
       {showPalette && (
         <CommandPalette commands={commands} onClose={() => setShowPalette(false)} />
+      )}
+      {showSchedule && actionTargets().length > 0 && (
+        <SchedulePicker
+          today={today}
+          count={actionTargets().length}
+          current={scheduleTag}
+          onPick={applySchedule}
+          onClose={() => setShowSchedule(false)}
+        />
+      )}
+      {confirm != null && (
+        <ConfirmModal
+          title={confirm.title}
+          body={confirm.body}
+          confirmLabel={confirm.confirmLabel}
+          onConfirm={() => {
+            const req = confirm;
+            setConfirm(null);
+            req.onConfirm();
+          }}
+          onCancel={() => setConfirm(null)}
+        />
       )}
     </div>
   );

@@ -68,12 +68,19 @@ describe("getActiveContext", () => {
   const base = {
     showHelp: false,
     showPalette: false,
+    showSchedule: false,
+    showConfirm: false,
     reckoningActive: false,
     mode: "normal" as const,
   };
 
   it("defaults to normal", () => {
     expect(getActiveContext(base)).toBe("normal");
+  });
+  it("confirm wins over everything", () => {
+    expect(
+      getActiveContext({ ...base, showConfirm: true, showHelp: true })
+    ).toBe("confirm");
   });
   it("help wins over everything", () => {
     expect(

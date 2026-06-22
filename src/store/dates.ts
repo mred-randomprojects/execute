@@ -72,3 +72,77 @@ export function relativeLabel(plannedFor: ISODate, today: ISODate): string {
   if (days < 0) return `${-days}d ago`;
   return `in ${days}d`;
 }
+
+// ─── ISO weeks & months (for fuzzy horizons) ────────────────────────
+// Keys are stable, comparable strings: weeks "YYYY-Www", months "YYYY-MM".
+
+/** ISO-8601 weekday, Mon=1 … Sun=7. */
+export function isoWeekday(iso: ISODate): number {
+  const day = parseISO(iso).getDay(); // Sun=0 … Sat=6
+  return day === 0 ? 7 : day;
+}
+
+/** ISO-8601 {weekYear, week} — week 1 is the week containing the year's first Thursday. */
+function isoWeekParts(iso: ISODate): { weekYear: number; week: number } {
+  const d = parseISO(iso);
+  // Shift to the Thursday of this week, then count weeks from Jan 4th's week.
+  const thursday = new Date(d);
+  thursday.setDate(d.getDate() - ((d.getDay() + 6) % 7) + 3);
+  const weekYear = thursday.getFullYear();
+  const firstThursday = new Date(weekYear, 0, 4);
+  firstThursday.setDate(firstThursday.getDate() - ((firstThursday.getDay() + 6) % 7) + 3);
+  const week =
+    1 + Math.round((thursday.getTime() - firstThursday.getTime()) / (7 * 86_400_000));
+  return { weekYear, week };
+}
+
+/** Stable, comparable ISO-week key, e.g. "2026-W25". */
+export function weekKey(iso: ISODate): string {
+  const { weekYear, week } = isoWeekParts(iso);
+  return `${weekYear}-W${String(week).padStart(2, "0")}`;
+}
+
+/** Month key, e.g. "2026-06". */
+export function monthKey(iso: ISODate): string {
+  return iso.slice(0, 7);
+}
+
+/** The week key `offset` weeks from `iso` (offset may be negative). */
+export function weekKeyOffset(iso: ISODate, offset: number): string {
+  return weekKey(addDays(iso, offset * 7));
+}
+
+/** The month key `offset` months from `iso`. */
+export function monthKeyOffset(iso: ISODate, offset: number): string {
+  const d = parseISO(iso);
+  const m = new Date(d.getFullYear(), d.getMonth() + offset, 1);
+  return `${m.getFullYear()}-${String(m.getMonth() + 1).padStart(2, "0")}`;
+}
+
+/** "Week 25" from a week key. */
+export function weekLabel(key: string): string {
+  const week = Number(key.slice(key.indexOf("W") + 1));
+  return `Week ${week}`;
+}
+
+/** "June 2026" from a month key. */
+export function monthLabel(key: string): string {
+  const [y, m] = key.split("-").map((n) => Number(n));
+  return `${MONTHS[(m ?? 1) - 1]} ${y}`;
+}
+
+/** Fraction (0–1) of the current ISO week that has elapsed (today counted half-done). */
+export function weekElapsed(today: ISODate): number {
+  return clamp01((isoWeekday(today) - 0.5) / 7);
+}
+
+/** Fraction (0–1) of the current calendar month that has elapsed. */
+export function monthElapsed(today: ISODate): number {
+  const d = parseISO(today);
+  const daysInMonth = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+  return clamp01((d.getDate() - 0.5) / daysInMonth);
+}
+
+function clamp01(n: number): number {
+  return Math.min(1, Math.max(0, n));
+}

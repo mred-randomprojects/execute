@@ -2,6 +2,7 @@ import { useSyncExternalStore } from "react";
 import { nanoid } from "nanoid";
 import type {
   AppState,
+  Horizon,
   ISODate,
   LogAction,
   LogEntry,
@@ -315,14 +316,14 @@ export function setCompleted(
   });
 }
 
-/** Unplan a task (back to backlog) and log it as a postponement. */
+/** Unplan a task (back to the Inbox) and log it as a postponement. */
 export function postponeToBacklog(id: TaskId, reason: string | null = null): void {
   update((s) => {
     const t = findById(s.tasks, id);
     if (t == null) return s;
     return {
       ...s,
-      tasks: mapById(s.tasks, id, (x) => ({ ...x, plannedFor: null })),
+      tasks: mapById(s.tasks, id, (x) => ({ ...x, plannedFor: null, horizon: null })),
       log: [makeLog(s, t, "postponed", reason), ...s.log],
     };
   });
@@ -423,7 +424,17 @@ export function setCompletedMany(ids: TaskId[], completed: boolean): void {
 export function setPlannedForMany(ids: TaskId[], date: ISODate | null): void {
   update((s) => {
     let tasks = s.tasks;
-    for (const id of ids) tasks = mapById(tasks, id, (x) => ({ ...x, plannedFor: date }));
+    // A concrete date and a fuzzy horizon are mutually exclusive.
+    for (const id of ids) tasks = mapById(tasks, id, (x) => ({ ...x, plannedFor: date, horizon: null }));
+    return { ...s, tasks };
+  });
+}
+
+/** Set a fuzzy horizon (this/next week·month, someday) — clears any concrete date. */
+export function setHorizonMany(ids: TaskId[], horizon: Horizon | null): void {
+  update((s) => {
+    let tasks = s.tasks;
+    for (const id of ids) tasks = mapById(tasks, id, (x) => ({ ...x, plannedFor: null, horizon }));
     return { ...s, tasks };
   });
 }
@@ -433,7 +444,7 @@ export function setPriority(id: TaskId, priority: TaskPriority): void {
 }
 
 export function setPlannedFor(id: TaskId, plannedFor: ISODate | null): void {
-  updateTasks((tasks) => mapById(tasks, id, (t) => ({ ...t, plannedFor })));
+  updateTasks((tasks) => mapById(tasks, id, (t) => ({ ...t, plannedFor, horizon: null })));
 }
 
 export function setProjectForMany(ids: TaskId[], projectId: ProjectId): void {

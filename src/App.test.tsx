@@ -71,6 +71,35 @@ describe("App integration", () => {
 
     await waitFor(() => expect(screen.queryByText("planned today")).toBeNull());
   });
+
+  it("disables browser spellcheck on editable fields", async () => {
+    render(<App />);
+    const capture = await screen.findByPlaceholderText("Add a task for today…");
+    expect(capture.getAttribute("spellcheck")).toBe("false");
+    expect(capture.getAttribute("autocorrect")).toBe("off");
+
+    fireEvent.change(capture, { target: { value: "mispelled wrd" } });
+    fireEvent.keyDown(capture, { key: "Enter" });
+    await screen.findByText("mispelled wrd");
+    blurActive();
+
+    fireEvent.keyDown(document.body, { key: "Enter" });
+    const titleInput = await screen.findByDisplayValue("mispelled wrd");
+    expect(titleInput.getAttribute("spellcheck")).toBe("false");
+    expect(titleInput.getAttribute("autocorrect")).toBe("off");
+    fireEvent.keyDown(titleInput, { key: "Escape" });
+
+    fireEvent.keyDown(document.body, { key: "ArrowRight" });
+    const notes = await screen.findByPlaceholderText(NOTES_PLACEHOLDER);
+    expect(notes.getAttribute("spellcheck")).toBe("false");
+    expect(notes.getAttribute("autocorrect")).toBe("off");
+    fireEvent.keyDown(notes, { key: "Escape" });
+
+    fireEvent.keyDown(document.body, { key: "k", metaKey: true });
+    const palette = await screen.findByPlaceholderText("Type a command…");
+    expect(palette.getAttribute("spellcheck")).toBe("false");
+    expect(palette.getAttribute("autocorrect")).toBe("off");
+  });
 });
 
 describe("The Reckoning (rollover ritual)", () => {
@@ -143,12 +172,51 @@ describe("Trash", () => {
     fireEvent.keyDown(document.body, { key: "Backspace" });
     await waitFor(() => expect(screen.queryByText("disposable")).toBeNull());
 
-    fireEvent.keyDown(document.body, { key: "4" }); // Trash view
+    fireEvent.keyDown(document.body, { key: "5" }); // Trash view
     expect(await screen.findByText("disposable")).toBeTruthy();
 
     fireEvent.click(screen.getByText("Restore"));
     fireEvent.keyDown(document.body, { key: "3" }); // All view
     expect(await screen.findByText("disposable")).toBeTruthy();
+  });
+
+  it("confirms before deleting a task that has subtasks", async () => {
+    render(<App />);
+    await addTask("parent");
+    await addTask("child");
+    blurActive();
+    fireEvent.keyDown(document.body, { key: "Tab" }); // child → subtask of parent
+    fireEvent.keyDown(document.body, { key: "ArrowUp" }); // focus parent
+
+    // Backspace on a task with subtasks asks first — nothing is gone yet.
+    fireEvent.keyDown(document.body, { key: "Backspace" });
+    expect(await screen.findByText("Delete this task and its subtasks?")).toBeTruthy();
+    expect(screen.getByText("parent")).toBeTruthy();
+
+    // Confirm with Enter → the whole subtree goes to Trash.
+    fireEvent.keyDown(screen.getByText("Delete"), { key: "Enter" });
+    await waitFor(() => {
+      expect(screen.queryByText("parent")).toBeNull();
+      expect(screen.queryByText("child")).toBeNull();
+    });
+  });
+
+  it("keeps the task when the delete confirmation is cancelled", async () => {
+    render(<App />);
+    await addTask("keep me");
+    await addTask("sub");
+    blurActive();
+    fireEvent.keyDown(document.body, { key: "Tab" }); // sub → subtask of keep me
+    fireEvent.keyDown(document.body, { key: "ArrowUp" }); // focus keep me
+
+    fireEvent.keyDown(document.body, { key: "Backspace" });
+    const dialog = await screen.findByText("Delete this task and its subtasks?");
+    fireEvent.keyDown(dialog, { key: "Escape" }); // cancel
+
+    await waitFor(() =>
+      expect(screen.queryByText("Delete this task and its subtasks?")).toBeNull()
+    );
+    expect(screen.getByText("keep me")).toBeTruthy();
   });
 });
 
@@ -167,6 +235,19 @@ describe("Trivial editing", () => {
     fireEvent.change(editingFirst, { target: { value: "first edited" } });
     fireEvent.keyDown(editingFirst, { key: "Escape" });
     expect(await screen.findByText("first edited")).toBeTruthy();
+  });
+
+  it("discards a new untitled task when you move off it (Escape)", async () => {
+    render(<App />);
+    await addTask("anchor");
+    blurActive();
+
+    fireEvent.keyDown(document.body, { key: "o" }); // new empty task below
+    const empty = await screen.findByPlaceholderText("Task…");
+    fireEvent.keyDown(empty, { key: "Escape" }); // leave it untitled
+
+    await waitFor(() => expect(screen.queryByText("Untitled")).toBeNull());
+    expect(screen.getByText("anchor")).toBeTruthy();
   });
 });
 
@@ -296,15 +377,18 @@ describe("Keyboard-only outline control", () => {
     expect(second.compareDocumentPosition(third) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
-  it("ArrowDown on an empty last project row creates its first task", async () => {
+  it("opens an empty project from the index and adds its first task", async () => {
     render(<App />);
     await screen.findByPlaceholderText("Add a task for today…");
-
-    act(() => createProject("Empty Project"));
-    expect(await screen.findByText("Empty Project")).toBeTruthy();
     blurActive();
+    act(() => createProject("Empty Project"));
+    fireEvent.keyDown(document.body, { key: "4" }); // Projects index
 
-    fireEvent.keyDown(document.body, { key: "ArrowDown" });
+    const label = await screen.findByText("Empty Project");
+    fireEvent.click(label); // focus the project row
+    fireEvent.keyDown(document.body, { key: "ArrowRight" }); // → opens (zooms into) it
+
+    fireEvent.keyDown(document.body, { key: "a" }); // add the first task
     const taskInput = await screen.findByPlaceholderText("Task…");
     fireEvent.change(taskInput, { target: { value: "first project task" } });
     fireEvent.keyDown(taskInput, { key: "Escape" });
@@ -425,32 +509,140 @@ describe("Command palette", () => {
     expect(await screen.findByText("Deep Work")).toBeTruthy();
   });
 
-  it("creates a project from the toolbar button and starts its first task", async () => {
+  it("creates a project from the index and drops into rename mode", async () => {
     render(<App />);
     await screen.findByPlaceholderText("Add a task for today…");
+    blurActive();
+    fireEvent.keyDown(document.body, { key: "4" }); // Projects index
 
-    fireEvent.click(screen.getByText("+ Project"));
+    fireEvent.click(await screen.findByText("+ Project"));
 
-    expect(await screen.findByText("New project")).toBeTruthy();
-    const rowInput = await screen.findByPlaceholderText("Task…");
-    fireEvent.change(rowInput, { target: { value: "button project task" } });
-    fireEvent.keyDown(rowInput, { key: "Escape" });
+    // New project is created and immediately editable (no first task is added).
+    const nameInput = await screen.findByDisplayValue("New project");
+    fireEvent.change(nameInput, { target: { value: "Side Quests" } });
+    fireEvent.keyDown(nameInput, { key: "Enter" });
 
-    expect(await screen.findByText("button project task")).toBeTruthy();
+    expect(await screen.findByText("Side Quests")).toBeTruthy();
   });
 
-  it("renames a project row with the mouse", async () => {
+  it("renames a project row with a double-click in the index", async () => {
     render(<App />);
     await screen.findByPlaceholderText("Add a task for today…");
+    blurActive();
+    act(() => createProject("Work"));
+    fireEvent.keyDown(document.body, { key: "4" }); // Projects index
 
-    fireEvent.click(screen.getByText("+ Project"));
-    expect(await screen.findByText("New project")).toBeTruthy();
-
-    fireEvent.doubleClick(screen.getByText("New project"));
-    const projectName = await screen.findByDisplayValue("New project");
+    fireEvent.doubleClick(await screen.findByText("Work"));
+    const projectName = await screen.findByDisplayValue("Work");
     fireEvent.change(projectName, { target: { value: "Mouse Project" } });
     fireEvent.keyDown(projectName, { key: "Enter" });
 
     expect(await screen.findByText("Mouse Project")).toBeTruthy();
+  });
+});
+
+describe("Project collapse", () => {
+  it("collapses a project with ← and expands it with →", async () => {
+    render(<App />);
+    await addTask("alpha");
+    blurActive();
+    fireEvent.keyDown(document.body, { key: "3" }); // All view (grouped by project)
+
+    fireEvent.keyDown(document.body, { key: "ArrowUp" }); // focus the project header row
+    fireEvent.keyDown(document.body, { key: "ArrowLeft" }); // collapse
+    await waitFor(() => expect(screen.queryByText("alpha")).toBeNull());
+
+    fireEvent.keyDown(document.body, { key: "ArrowRight" }); // expand
+    expect(await screen.findByText("alpha")).toBeTruthy();
+  });
+});
+
+describe("Hide completed", () => {
+  it("h hides completed tasks and toggles them back", async () => {
+    render(<App />);
+    await addTask("keep me");
+    await addTask("finish me"); // focus = finish me
+    blurActive();
+
+    fireEvent.keyDown(document.body, { key: " " }); // complete "finish me"
+    fireEvent.keyDown(document.body, { key: "h" }); // hide completed
+
+    await waitFor(() => expect(screen.queryByText("finish me")).toBeNull());
+    expect(screen.getByText("keep me")).toBeTruthy();
+    expect(screen.getByText(/completed hidden/)).toBeTruthy(); // indicator pill
+
+    fireEvent.keyDown(document.body, { key: "h" }); // show again
+    expect(await screen.findByText("finish me")).toBeTruthy();
+  });
+});
+
+describe("Zoom / focus (hoisting)", () => {
+  it("Alt+Enter hoists a task; siblings vanish; Esc climbs back out", async () => {
+    render(<App />);
+    await addTask("parent");
+    await addTask("child");
+    blurActive();
+    fireEvent.keyDown(document.body, { key: "Tab" }); // child becomes a subtask of parent
+
+    // A separate top-level sibling, captured from the bar.
+    const cap = screen.getByPlaceholderText("Add a task for today…");
+    fireEvent.change(cap, { target: { value: "sibling" } });
+    fireEvent.keyDown(cap, { key: "Enter" });
+    await screen.findByText("sibling");
+    blurActive();
+
+    // Focus "parent" (flat order: parent, child, sibling) and zoom in.
+    fireEvent.keyDown(document.body, { key: "ArrowUp" }); // child
+    fireEvent.keyDown(document.body, { key: "ArrowUp" }); // parent
+    fireEvent.keyDown(document.body, { key: "Enter", altKey: true });
+
+    // Hoisted onto "parent": its child shows, the sibling is out of view.
+    expect(await screen.findByText(/Focused on this task/)).toBeTruthy();
+    expect(screen.getByText("child")).toBeTruthy();
+    expect(screen.queryByText("sibling")).toBeNull();
+
+    // Esc climbs: parent (top-level) → its project → back to the normal view.
+    fireEvent.keyDown(document.body, { key: "Escape" });
+    expect(await screen.findByText(/Focused on this project/)).toBeTruthy();
+    expect(screen.getByText("sibling")).toBeTruthy(); // sibling back in the project view
+
+    fireEvent.keyDown(document.body, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByText(/Focused on this/)).toBeNull());
+    expect(await screen.findByPlaceholderText("Add a task for today…")).toBeTruthy();
+  });
+});
+
+describe("Scheduling (the s picker)", () => {
+  it("schedules 'this week' and the task lands in the by-date Later bucket", async () => {
+    render(<App />);
+    await addTask("write spec"); // planned today by default
+    blurActive();
+
+    fireEvent.keyDown(document.body, { key: "s" }); // open the scheduler
+    fireEvent.click(await screen.findByText("This week")); // pick the bucket
+
+    // It leaves Today (now a fuzzy horizon, not a concrete date).
+    await waitFor(() => expect(screen.queryByText("write spec")).toBeNull());
+
+    blurActive();
+    fireEvent.keyDown(document.body, { key: "2" }); // Later view (by-date default)
+    expect(await screen.findByText("write spec")).toBeTruthy();
+    expect(screen.getByText("This week")).toBeTruthy(); // the bucket header
+  });
+
+  it("toggles the Later view between by-date and by-project", async () => {
+    render(<App />);
+    await addTask("later thing");
+    blurActive();
+    fireEvent.keyDown(document.body, { key: "s" });
+    fireEvent.click(await screen.findByText("Someday"));
+
+    blurActive();
+    fireEvent.keyDown(document.body, { key: "2" }); // Later view
+    expect(await screen.findByText("Someday")).toBeTruthy(); // by-date bucket
+
+    fireEvent.click(screen.getByText("By project"));
+    await waitFor(() => expect(screen.queryByText("Someday")).toBeNull()); // bucket gone
+    expect(screen.getByText("later thing")).toBeTruthy(); // still listed, now by project
   });
 });

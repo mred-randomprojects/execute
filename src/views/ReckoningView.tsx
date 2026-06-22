@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { ISODate, Task, TaskId } from "../types";
 import { relativeLabel } from "../store/dates";
+import { NO_SPELLCHECK } from "../ui/noSpellcheck";
 
 function ActionChip({
   label,
@@ -88,6 +89,7 @@ function BreakdownPanel({
       <div className="mt-4 flex items-center gap-3 rounded border border-line bg-surface px-3 py-2 shadow-soft focus-within:border-line-strong">
         <span className="text-lg leading-none text-ink-faint">+</span>
         <input
+          {...NO_SPELLCHECK}
           ref={ref}
           value={value}
           onChange={(e) => setValue(e.target.value)}
@@ -215,6 +217,7 @@ export function ReckoningView({
                   </div>
                   {selected && (
                     <input
+                      {...NO_SPELLCHECK}
                       value={reason}
                       onChange={(e) => onReasonChange(e.target.value)}
                       onKeyDown={(e) => {

@@ -12,6 +12,7 @@ export function Sidebar({
   view,
   todayRemaining,
   backlog,
+  projectCount,
   trash,
   onSelect,
   onOpenHelp,
@@ -21,6 +22,7 @@ export function Sidebar({
   view: ViewKind;
   todayRemaining: number;
   backlog: number;
+  projectCount: number;
   trash: number;
   onSelect: (v: ViewKind) => void;
   onOpenHelp: () => void;
@@ -31,7 +33,8 @@ export function Sidebar({
     { key: "today", label: "Today", hint: "1", badge: todayRemaining },
     { key: "backlog", label: "Backlog", hint: "2", badge: backlog },
     { key: "all", label: "All", hint: "3" },
-    { key: "trash", label: "Trash", hint: "4", badge: trash },
+    { key: "projects", label: "Projects", hint: "4", badge: projectCount },
+    { key: "trash", label: "Trash", hint: "5", badge: trash },
   ];
 
   return (

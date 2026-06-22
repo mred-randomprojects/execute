@@ -12,6 +12,8 @@ import type { ViewKind } from "../selectors";
 export interface Editor {
   view: ViewKind;
   today: ISODate;
+  /** True in the by-date "Later" layout, where the bucket header already says the horizon. */
+  bucketed: boolean;
   cursorId: TaskId | null;
   selectedIds: TaskId[];
   editingId: TaskId | null;
@@ -25,10 +27,10 @@ export interface Editor {
   toggleCollapse: (id: TaskId) => void;
   startEdit: (id: TaskId) => void;
   openDetail: (id: TaskId) => void;
+  zoomInto: (id: TaskId) => void;
 
   // Inline-edit input callbacks (raw = current input value, parsed on commit).
   commit: (id: TaskId, raw: string) => void;
-  commitAndNew: (id: TaskId, raw: string) => void;
   indentEditing: (id: TaskId, raw: string) => void;
   outdentEditing: (id: TaskId, raw: string) => void;
   editPrev: (id: TaskId, raw: string) => void;

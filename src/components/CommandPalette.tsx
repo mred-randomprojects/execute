@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { NO_SPELLCHECK } from "../ui/noSpellcheck";
 
 export interface Command {
   id: string;
@@ -54,6 +55,7 @@ export function CommandPalette({
         onClick={(e) => e.stopPropagation()}
       >
         <input
+          {...NO_SPELLCHECK}
           ref={ref}
           value={query}
           onChange={(e) => setQuery(e.target.value)}

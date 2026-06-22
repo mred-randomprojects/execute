@@ -1,8 +1,20 @@
 import { useEffect, useRef, useState } from "react";
 import type { Task } from "../types";
 import { countAll } from "../store/tasks";
+import { relativeLabel } from "../store/dates";
+import { horizonLabel } from "../selectors";
 import { useEditor } from "../ui/editor";
 import { renderInline } from "../ui/markdown";
+import { NO_SPELLCHECK } from "../ui/noSpellcheck";
+
+function FocusIcon() {
+  return (
+    <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
+      <circle cx="8" cy="8" r="5.4" fill="none" stroke="currentColor" strokeWidth="1.4" />
+      <circle cx="8" cy="8" r="1.7" fill="currentColor" />
+    </svg>
+  );
+}
 
 const PRIORITY_DOT: Record<number, string> = {
   1: "bg-bad",
@@ -53,6 +65,7 @@ function RowInput({ task }: { task: Task }) {
 
   return (
     <input
+      {...NO_SPELLCHECK}
       ref={ref}
       value={value}
       onChange={(e) => setValue(e.target.value)}
@@ -65,7 +78,7 @@ function RowInput({ task }: { task: Task }) {
         } else if (e.key === "Enter") {
           e.preventDefault();
           e.stopPropagation();
-          ed.commitAndNew(task.id, value);
+          ed.exitEdit(task.id, value); // Enter just commits + leaves edit mode
         } else if (e.key === "Tab" && !e.shiftKey) {
           e.preventDefault();
           e.stopPropagation();
@@ -109,10 +122,19 @@ export function TaskRow({ task, depth }: { task: Task; depth: number }) {
   const isCollapsed = ed.collapsed.has(task.id);
   const plannedToday = task.plannedFor === ed.today;
   const progress = hasChildren ? countAll(task) : null;
+  // In Today, a task that isn't itself planned for today only shows because a
+  // descendant is — dim it so the "for today" items stand out.
+  const dimNotToday = ed.view === "today" && !plannedToday && !task.completed;
+
+  const rowRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (isFocused) rowRef.current?.scrollIntoView?.({ block: "nearest" });
+  }, [isFocused]);
 
   return (
     <>
       <div
+        ref={rowRef}
         onClick={() => ed.select(task.id)}
         onDoubleClick={() => ed.openDetail(task.id)}
         className={[
@@ -176,7 +198,11 @@ export function TaskRow({ task, depth }: { task: Task; depth: number }) {
             onClick={() => isFocused && ed.startEdit(task.id)}
             className={[
               "flex-1 truncate text-[14px]",
-              task.completed ? "text-ink-faint line-through" : "text-ink",
+              task.completed
+                ? "text-ink-faint line-through"
+                : dimNotToday
+                  ? "text-ink-soft"
+                  : "text-ink",
               task.text === "" ? "text-ink-faint" : "",
             ].join(" ")}
           >
@@ -196,9 +222,38 @@ export function TaskRow({ task, depth }: { task: Task; depth: number }) {
           </span>
         )}
 
-        {plannedToday && ed.view !== "today" && (
-          <span className="shrink-0 rounded-sm bg-accent-soft px-1.5 py-[1px] text-[10px] font-medium text-accent">
-            today
+        <button
+          tabIndex={-1}
+          onClick={(e) => {
+            e.stopPropagation();
+            e.currentTarget.blur();
+            ed.zoomInto(task.id);
+          }}
+          className="grid h-5 w-5 shrink-0 place-items-center rounded-sm text-ink-faint opacity-0 transition hover:text-ink group-hover:opacity-100"
+          aria-label="Zoom into task"
+          title="Zoom in (⌥↵)"
+        >
+          <FocusIcon />
+        </button>
+
+        {task.plannedFor != null && !task.completed && ed.view !== "today" && (
+          <span
+            className={[
+              "mono shrink-0 rounded-sm px-1.5 py-[1px] text-[10px] font-medium",
+              task.plannedFor < ed.today
+                ? "bg-bad-soft text-bad"
+                : plannedToday
+                  ? "bg-accent-soft text-accent"
+                  : "bg-surface-2 text-ink-faint",
+            ].join(" ")}
+          >
+            {relativeLabel(task.plannedFor, ed.today)}
+          </span>
+        )}
+
+        {task.horizon != null && !ed.bucketed && !task.completed && ed.view !== "today" && (
+          <span className="mono shrink-0 rounded-sm bg-surface-2 px-1.5 py-[1px] text-[10px] font-medium text-ink-soft">
+            {horizonLabel(task, ed.today)}
           </span>
         )}
       </div>

@@ -18,8 +18,13 @@ function isInteractiveElementFocused(): boolean {
 }
 
 export function getActiveContext(state: ContextState): KeyContext {
+  // A confirmation dialog is modal: it owns the keyboard above everything else.
+  if (state.showConfirm) return "confirm";
   if (state.showHelp) return "help";
   if (state.showPalette) return "palette";
+  // The schedule picker owns the keyboard while open (it has no app bindings),
+  // so normal/editing shortcuts stay dormant beneath it.
+  if (state.showSchedule) return "schedule";
   if (isInteractiveElementFocused()) return "editing";
   if (state.reckoningActive) return "reckoning";
   if (state.mode === "move") return "move";

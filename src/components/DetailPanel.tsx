@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import type { ISODate, LogEntry, Project, ProjectId, Task, TaskPriority } from "../types";
 import { renderBlock, renderInline } from "../ui/markdown";
+import { NO_SPELLCHECK } from "../ui/noSpellcheck";
 
 const PRIORITIES: Array<{ value: TaskPriority; label: string }> = [
   { value: 1, label: "Urgent" },
@@ -109,6 +110,7 @@ export function DetailPanel({
       <div className="eyebrow mb-1.5">Content</div>
       {editing || notes.trim() === "" ? (
         <textarea
+          {...NO_SPELLCHECK}
           ref={notesRef}
           value={notes}
           onChange={(e) => setNotes(e.target.value)}

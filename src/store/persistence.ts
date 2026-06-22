@@ -1,6 +1,8 @@
 import { nanoid } from "nanoid";
 import type {
   AppState,
+  Horizon,
+  HorizonUnit,
   LogAction,
   LogEntry,
   Project,
@@ -115,12 +117,26 @@ function coerceProjects(raw: unknown): Project[] {
   return projects;
 }
 
+const HORIZON_UNITS: ReadonlySet<string> = new Set(["week", "month", "someday"]);
+
+function coerceHorizon(raw: unknown): Horizon | null {
+  if (!isObject(raw)) return null;
+  if (typeof raw.unit !== "string" || !HORIZON_UNITS.has(raw.unit)) return null;
+  const unit = raw.unit as HorizonUnit;
+  // "someday" has no anchor; week/month carry a period key.
+  return { unit, anchor: unit === "someday" ? null : strOrNull(raw.anchor) };
+}
+
 function coerceTask(raw: unknown): Task {
   const o = isObject(raw) ? raw : {};
   const children = Array.isArray(o.children) ? o.children.map(coerceTask) : [];
   const labels = Array.isArray(o.labels)
     ? o.labels.filter((l): l is string => typeof l === "string")
     : [];
+  const plannedFor = strOrNull(o.plannedFor);
+  // Invariant: a concrete date and a fuzzy horizon are mutually exclusive; a
+  // date always wins. (Legacy v2 data has no horizon → null, a clean migration.)
+  const horizon = plannedFor != null ? null : coerceHorizon(o.horizon);
   return {
     id: (str(o.id) || nanoid()) as TaskId,
     projectId: (str(o.projectId) || DEFAULT_PROJECT_ID) as ProjectId,
@@ -131,7 +147,8 @@ function coerceTask(raw: unknown): Task {
     children,
     createdAt: num(o.createdAt, Date.now()),
     priority: coercePriority(o.priority),
-    plannedFor: strOrNull(o.plannedFor),
+    plannedFor,
+    horizon,
     labels,
     estimatedMinutes: numOrNull(o.estimatedMinutes),
   };
