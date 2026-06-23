@@ -29,6 +29,7 @@ function ProjectRow({
   onStartRename,
   onCommitName,
   onExitRename,
+  onArrowName,
 }: {
   summary: ProjectSummary;
   focused: boolean;
@@ -40,6 +41,7 @@ function ProjectRow({
   onStartRename: (projectId: ProjectId) => void;
   onCommitName: (projectId: ProjectId, name: string) => void;
   onExitRename: () => void;
+  onArrowName: (projectId: ProjectId, name: string, dir: "up" | "down") => void;
 }) {
   const { project, open, today, done } = summary;
   const rowId = projectRowId(project.id);
@@ -71,7 +73,12 @@ function ProjectRow({
 
       {editing ? (
         <div className="min-w-0 flex-1">
-          <ProjectNameInput project={project} onCommit={onCommitName} onExit={onExitRename} />
+          <ProjectNameInput
+            project={project}
+            onCommit={onCommitName}
+            onExit={onExitRename}
+            onArrow={onArrowName}
+          />
         </div>
       ) : (
         <button
@@ -125,6 +132,7 @@ export function ProjectsView({
   onStartRenameProject,
   onCommitProjectName,
   onExitProjectName,
+  onArrowProjectName,
 }: {
   summaries: ProjectSummary[];
   focusedId: OutlineId | null;
@@ -137,6 +145,7 @@ export function ProjectsView({
   onStartRenameProject: (projectId: ProjectId) => void;
   onCommitProjectName: (projectId: ProjectId, name: string) => void;
   onExitProjectName: () => void;
+  onArrowProjectName: (projectId: ProjectId, name: string, dir: "up" | "down") => void;
 }) {
   return (
     <div className="mx-auto flex h-full w-full max-w-3xl flex-col px-10 py-8">
@@ -172,6 +181,7 @@ export function ProjectsView({
             onStartRename={onStartRenameProject}
             onCommitName={onCommitProjectName}
             onExitRename={onExitProjectName}
+            onArrowName={onArrowProjectName}
           />
         ))}
       </div>

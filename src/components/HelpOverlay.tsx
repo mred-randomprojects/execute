@@ -26,7 +26,7 @@ const CAPTURE_SECTION = {
   title: "While editing a title",
   items: [
     { keys: "↵", description: "save + new task below" },
-    { keys: "↑ / ↓", description: "save + move to prev / next task" },
+    { keys: "↑ / ↓", description: "save, stop editing + move up / down" },
     { keys: "tab / ⇧ tab", description: "indent / outdent" },
     { keys: "⌘ ↵", description: "complete / uncomplete" },
     { keys: "esc", description: "save + stop editing" },

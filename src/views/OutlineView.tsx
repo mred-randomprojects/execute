@@ -114,6 +114,7 @@ function ProjectDivider({
   onStartRename,
   onCommitName,
   onExitRename,
+  onArrowName,
   onCycleColor,
 }: {
   group: ProjectTaskGroup;
@@ -128,6 +129,7 @@ function ProjectDivider({
   onStartRename: (projectId: ProjectId) => void;
   onCommitName: (projectId: ProjectId, name: string) => void;
   onExitRename: () => void;
+  onArrowName: (projectId: ProjectId, name: string, dir: "up" | "down") => void;
   onCycleColor: (projectId: ProjectId) => void;
 }) {
   const lastTask = group.tasks[group.tasks.length - 1] ?? null;
@@ -174,6 +176,7 @@ function ProjectDivider({
           project={group.project}
           onCommit={onCommitName}
           onExit={onExitRename}
+          onArrow={onArrowName}
         />
       ) : (
         <button
@@ -231,10 +234,12 @@ export function ProjectNameInput({
   project,
   onCommit,
   onExit,
+  onArrow,
 }: {
   project: Project;
   onCommit: (projectId: ProjectId, name: string) => void;
   onExit: () => void;
+  onArrow: (projectId: ProjectId, name: string, dir: "up" | "down") => void;
 }) {
   const [value, setValue] = useState(project.name);
   const ref = useRef<HTMLInputElement>(null);
@@ -266,6 +271,14 @@ export function ProjectNameInput({
           e.stopPropagation();
           commit();
           onExit();
+        } else if (e.key === "ArrowUp") {
+          e.preventDefault();
+          e.stopPropagation();
+          onArrow(project.id, value, "up");
+        } else if (e.key === "ArrowDown") {
+          e.preventDefault();
+          e.stopPropagation();
+          onArrow(project.id, value, "down");
         }
       }}
       className="mono min-w-0 max-w-[55%] flex-1 bg-transparent text-[12px] font-medium tracking-wide text-ink outline-none"
@@ -396,6 +409,7 @@ export function OutlineView({
   onStartRenameProject,
   onCommitProjectName,
   onExitProjectName,
+  onArrowProjectName,
   onCycleProjectColor,
 }: {
   view: ViewKind;
@@ -424,6 +438,7 @@ export function OutlineView({
   onStartRenameProject: (projectId: ProjectId) => void;
   onCommitProjectName: (projectId: ProjectId, name: string) => void;
   onExitProjectName: () => void;
+  onArrowProjectName: (projectId: ProjectId, name: string, dir: "up" | "down") => void;
   onCycleProjectColor: (projectId: ProjectId) => void;
 }) {
   const usingBuckets = zoom == null && view === "backlog" && laterLayout === "date";
@@ -540,6 +555,7 @@ export function OutlineView({
                   onStartRename={onStartRenameProject}
                   onCommitName={onCommitProjectName}
                   onExitRename={onExitProjectName}
+                  onArrowName={onArrowProjectName}
                   onCycleColor={onCycleProjectColor}
                 />
                 {collapsed ? null : group.tasks.length === 0 ? (

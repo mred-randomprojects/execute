@@ -117,6 +117,29 @@ export function flattenRows(
   return rows;
 }
 
+type PrevSibling = { found: true; prevId: TaskId | null } | { found: false };
+
+function locatePrevSibling(forest: Task[], id: TaskId): PrevSibling {
+  const idx = forest.findIndex((t) => t.id === id);
+  if (idx >= 0) return { found: true, prevId: idx > 0 ? forest[idx - 1].id : null };
+  for (const t of forest) {
+    const res = locatePrevSibling(t.children, id);
+    if (res.found) return res;
+  }
+  return { found: false };
+}
+
+/**
+ * The task immediately before `id` among its siblings in an *already-filtered*
+ * forest (one project group's tasks, a zoom subtree, etc.), or null if `id` is
+ * first among its visible siblings or absent. Indent uses this so Tab nests
+ * under the row visually above — never under a sibling the view is hiding.
+ */
+export function prevVisibleSiblingId(forest: Task[], id: TaskId): TaskId | null {
+  const res = locatePrevSibling(forest, id);
+  return res.found ? res.prevId : null;
+}
+
 // ─── Counts for the sidebar / progress ──────────────────────────────
 
 export function todayLeaves(tasks: Task[], today: ISODate): Task[] {

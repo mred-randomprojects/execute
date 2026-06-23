@@ -90,11 +90,11 @@ function RowInput({ task }: { task: Task }) {
         } else if (e.key === "ArrowUp") {
           e.preventDefault();
           e.stopPropagation();
-          ed.editPrev(task.id, value);
+          ed.exitUp(task.id, value);
         } else if (e.key === "ArrowDown") {
           e.preventDefault();
           e.stopPropagation();
-          ed.editNext(task.id, value);
+          ed.exitDown(task.id, value);
         } else if (e.key === "Escape") {
           e.preventDefault();
           e.stopPropagation();

@@ -18,6 +18,7 @@ import {
   findParentId,
   getAncestorPath,
   indentTask,
+  indentUnder,
   makeTask,
   mapById,
   moveSibling,
@@ -456,8 +457,15 @@ export function setProjectForMany(ids: TaskId[], projectId: ProjectId): void {
 
 // ─── Outline structure ──────────────────────────────────────────────
 
-export function indent(id: TaskId): void {
-  updateTasks((tasks) => normalizeChildProjects(indentTask(tasks, id)));
+// `underId` is the previous *visible* sibling chosen by the view (so Tab nests
+// under the row above, not under a filtered-out sibling). When omitted, falls
+// back to the raw previous sibling.
+export function indent(id: TaskId, underId?: TaskId | null): void {
+  updateTasks((tasks) =>
+    normalizeChildProjects(
+      underId == null ? indentTask(tasks, id) : indentUnder(tasks, id, underId)
+    )
+  );
 }
 
 export function outdent(id: TaskId): void {

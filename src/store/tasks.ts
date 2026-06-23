@@ -256,6 +256,42 @@ export function indentTask(tasks: Task[], id: TaskId): Task[] {
 }
 
 /**
+ * Indent `id` to become the last child of `underId`. Unlike {@link indentTask},
+ * the caller names the new parent, so the outline can nest under the previous
+ * *visible* sibling and ignore rows the current view filters out (e.g. tasks not
+ * planned for today). No-op unless `underId` is an earlier sibling of `id`.
+ */
+export function indentUnder(tasks: Task[], id: TaskId, underId: TaskId): Task[] {
+  function recur(list: Task[]): LevelResult {
+    const idx = list.findIndex((t) => t.id === id);
+    if (idx !== -1) {
+      const underIdx = list.findIndex((t) => t.id === underId);
+      // underId must be a sibling that sits before id; otherwise leave as-is.
+      if (underIdx === -1 || underIdx >= idx) return { list, done: true };
+      const target = list[idx];
+      const under = list[underIdx];
+      const newUnder: Task = { ...under, children: [...under.children, target] };
+      const newList = list.filter((t) => t.id !== id);
+      newList[newList.findIndex((t) => t.id === underId)] = newUnder;
+      return { list: newList, done: true };
+    }
+
+    let changed = false;
+    const newList = list.map((t) => {
+      if (changed) return t;
+      const res = recur(t.children);
+      if (res.done) {
+        changed = true;
+        return { ...t, children: res.list };
+      }
+      return t;
+    });
+    return { list: newList, done: changed };
+  }
+  return recur(tasks).list;
+}
+
+/**
  * Outdent: lift `id` out of its parent to become the parent's next sibling.
  * No-op if `id` is already top-level or isn't found.
  */

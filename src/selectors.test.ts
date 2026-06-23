@@ -4,6 +4,7 @@ import {
   groupTasksByBucket,
   groupTasksByProject,
   horizonLabel,
+  prevVisibleSiblingId,
   projectSummaries,
   resolveZoom,
   taskBucket,
@@ -90,6 +91,38 @@ describe("viewPredicate", () => {
     const tasks = [task("planned", "work", today), task("someday", "life", null)];
     expect(viewTasks(tasks, "projects", today)).toHaveLength(2);
     expect(viewTasks(tasks, "all", today)).toHaveLength(2);
+  });
+});
+
+describe("prevVisibleSiblingId", () => {
+  const today = "2026-06-18";
+
+  it("follows the view, skipping siblings it filters out", () => {
+    const first = task("first", "work", today);
+    const hidden = task("hidden", "work", null); // not planned → absent in Today
+    const second = task("second", "work", today);
+    const visible = viewTasks([first, hidden, second], "today", today);
+    // Raw previous sibling of `second` is `hidden`; the visible one is `first`.
+    expect(prevVisibleSiblingId(visible, second.id)).toBe(first.id);
+  });
+
+  it("returns null when first among the visible siblings", () => {
+    const hidden = task("hidden", "work", null);
+    const target = task("target", "work", today);
+    const visible = viewTasks([hidden, target], "today", today);
+    expect(prevVisibleSiblingId(visible, target.id)).toBeNull();
+  });
+
+  it("finds the previous sibling among children", () => {
+    const a = task("a", "work");
+    const b = task("b", "work");
+    const parent = withChildren(task("p", "work"), [a, b]);
+    expect(prevVisibleSiblingId([parent], b.id)).toBe(a.id);
+    expect(prevVisibleSiblingId([parent], a.id)).toBeNull();
+  });
+
+  it("returns null for an id that isn't present", () => {
+    expect(prevVisibleSiblingId([task("a", "work")], "nope" as TaskId)).toBeNull();
   });
 });
 

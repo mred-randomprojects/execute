@@ -12,6 +12,7 @@ import {
   relocateTask,
   relocateAsChild,
   indentTask,
+  indentUnder,
   outdentTask,
   leavesWhere,
   countPending,
@@ -152,6 +153,27 @@ describe("indentTask", () => {
   it("indents nested items and keeps their children", () => {
     const tree = [task("p", [task("a"), task("b", [task("c")])])];
     expect(shape(indentTask(tree, id("b")))).toBe("p[a[b[c]]]");
+  });
+});
+
+describe("indentUnder", () => {
+  it("nests under a chosen earlier sibling, skipping the one in between", () => {
+    // The middle sibling is what the view is hiding; indent must reach past it.
+    const tree = [task("a"), task("hidden"), task("c")];
+    expect(shape(indentUnder(tree, id("c"), id("a")))).toBe("a[c],hidden");
+  });
+  it("appends as the last child, preserving the parent's children", () => {
+    const tree = [task("a", [task("x")]), task("b")];
+    expect(shape(indentUnder(tree, id("b"), id("a")))).toBe("a[x,b]");
+  });
+  it("no-op when the target isn't an earlier sibling", () => {
+    const tree = [task("a"), task("b")];
+    expect(shape(indentUnder(tree, id("a"), id("b")))).toBe("a,b"); // b is after a
+    expect(shape(indentUnder(tree, id("b"), id("missing")))).toBe("a,b");
+  });
+  it("works on nested siblings", () => {
+    const tree = [task("p", [task("a"), task("mid"), task("c")])];
+    expect(shape(indentUnder(tree, id("c"), id("a")))).toBe("p[a[c],mid]");
   });
 });
 

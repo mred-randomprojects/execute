@@ -33,8 +33,10 @@ export interface Editor {
   commit: (id: TaskId, raw: string) => void;
   indentEditing: (id: TaskId, raw: string) => void;
   outdentEditing: (id: TaskId, raw: string) => void;
-  editPrev: (id: TaskId, raw: string) => void;
-  editNext: (id: TaskId, raw: string) => void;
+  // ↑/↓ in an input: save, leave edit mode, and move focus one row in normal
+  // mode (so panel/collapse keys work immediately on the landing row).
+  exitUp: (id: TaskId, raw: string) => void;
+  exitDown: (id: TaskId, raw: string) => void;
   toggleFromEdit: (id: TaskId, raw: string) => void;
   exitEdit: (id: TaskId, raw: string) => void;
   removeAndExit: (id: TaskId) => void;

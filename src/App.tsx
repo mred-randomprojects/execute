@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { OutlineId, ProjectId, TaskId, TaskPriority, ThemeName } from "./types";
+import type { OutlineId, ProjectId, Task, TaskId, TaskPriority, ThemeName } from "./types";
 import {
   DEFAULT_PROJECT_ID,
   isProjectRowId,
@@ -52,6 +52,7 @@ import {
   groupTasksByBucket,
   groupTasksByProject,
   leftoverLeaves,
+  prevVisibleSiblingId,
   projectSummaries,
   resolveZoom,
   taskBucket,
@@ -319,6 +320,28 @@ export function App() {
     setEditingId(id);
   };
 
+  // ↑/↓ out of an inline edit: drop to normal mode and move focus one row, so
+  // the rich navigation keys (panel, collapse, descend) work on the landing
+  // row. The caller has already saved/discarded the row being left; `removed`
+  // says whether that row is gone (so we don't try to land on it).
+  const exitEditTo = (currentId: OutlineId, dir: "up" | "down", removed: boolean) => {
+    const i = flatIds.indexOf(currentId);
+    const prev = i > 0 ? flatIds[i - 1] : null;
+    const next = i >= 0 && i + 1 < flatIds.length ? flatIds[i + 1] : null;
+    setEditingProjectId(null);
+    setEditingId(null);
+    if (dir === "up") {
+      if (prev != null) setFocus(prev);
+      else captureRef.current?.focus(); // top of list → up into the capture bar
+    } else if (next != null) {
+      setFocus(next);
+    } else if (removed) {
+      if (prev != null) setFocus(prev); // last row discarded → fall back upward
+    } else {
+      setFocus(currentId); // last row → stay put, now in normal mode
+    }
+  };
+
   const toggleCollapsedFor = (id: TaskId) =>
     setCollapsed((prev) => {
       const next = new Set(prev);
@@ -360,6 +383,19 @@ export function App() {
   const planToggle = (id: TaskId) => {
     const t = findById(state.tasks, id);
     setPlannedFor(id, t?.plannedFor === today ? null : today);
+  };
+
+  // Tab nests a task under the row visually above it — its previous *visible*
+  // sibling in the current (filtered) view — never under a sibling the view is
+  // hiding. So we resolve the parent from the displayed forest, not the raw tree.
+  const indentInView = (id: TaskId) => {
+    const groups: { tasks: Task[] }[] = usingBuckets ? bucketGroups : projectGroups;
+    const forest =
+      zoomFocus != null
+        ? zoomFocus.subtree
+        : groups.find((g) => findById(g.tasks, id) != null)?.tasks ?? [];
+    const underId = prevVisibleSiblingId(forest, id);
+    if (underId != null) indent(id, underId);
   };
 
   const commitText = (id: TaskId, raw: string) => {
@@ -552,7 +588,7 @@ export function App() {
       setPlannedForMany(ids, allPlanned ? null : today);
     },
     taskIndent: () => {
-      if (focusedTaskId != null) indent(focusedTaskId);
+      if (focusedTaskId != null) indentInView(focusedTaskId);
     },
     taskOutdent: () => {
       if (focusedTaskId != null) outdent(focusedTaskId);
@@ -749,37 +785,23 @@ export function App() {
     commit: commitText,
     indentEditing: (id, raw) => {
       commitText(id, raw);
-      indent(id);
+      indentInView(id);
     },
     outdentEditing: (id, raw) => {
       commitText(id, raw);
       outdent(id);
     },
-    editPrev: (id, raw) => {
-      const i = flatIds.indexOf(id);
-      const prev = flatIds[i - 1];
-      if (isUntitledLeaf(id, raw)) trashTask(id);
+    exitUp: (id, raw) => {
+      const removed = isUntitledLeaf(id, raw);
+      if (removed) trashTask(id);
       else commitText(id, raw);
-      if (prev != null) {
-        startEditingOutlineId(prev);
-      } else {
-        setEditingId(null);
-        setEditingProjectId(null);
-        captureRef.current?.focus(); // top of list → up into the capture bar
-      }
+      exitEditTo(id, "up", removed);
     },
-    editNext: (id, raw) => {
-      const i = flatIds.indexOf(id);
-      const next = flatIds[i + 1];
-      const discarded = isUntitledLeaf(id, raw);
-      if (discarded) trashTask(id);
+    exitDown: (id, raw) => {
+      const removed = isUntitledLeaf(id, raw);
+      if (removed) trashTask(id);
       else commitText(id, raw);
-      if (next != null) {
-        startEditingOutlineId(next);
-      } else if (discarded) {
-        setEditingId(null);
-        setEditingProjectId(null);
-      }
+      exitEditTo(id, "down", removed);
     },
     toggleFromEdit: (id, raw) => {
       commitText(id, raw);
@@ -814,6 +836,18 @@ export function App() {
   const commitProjectName = (projectId: ProjectId, name: string) => {
     renameProject(projectId, name);
     setEditingProjectId(null);
+  };
+
+  // ↑/↓ while renaming a project header: save the name, then leave edit mode and
+  // move focus one row — same exit behavior as task rows, so headers no longer
+  // trap the cursor.
+  const exitProjectRename = (
+    projectId: ProjectId,
+    name: string,
+    dir: "up" | "down"
+  ) => {
+    renameProject(projectId, name);
+    exitEditTo(projectRowId(projectId), dir, false);
   };
 
   const onCapture = (raw: string) => {
@@ -1048,6 +1082,7 @@ export function App() {
                 }
                 onCommitProjectName={commitProjectName}
                 onExitProjectName={() => setEditingProjectId(null)}
+                onArrowProjectName={exitProjectRename}
               />
             ) : (
               <EditorProvider value={editor}>
@@ -1080,6 +1115,7 @@ export function App() {
                   }
                   onCommitProjectName={commitProjectName}
                   onExitProjectName={() => setEditingProjectId(null)}
+                  onArrowProjectName={exitProjectRename}
                   onCycleProjectColor={cycleProjectColor}
                 />
               </EditorProvider>

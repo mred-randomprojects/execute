@@ -221,7 +221,7 @@ describe("Trash", () => {
 });
 
 describe("Trivial editing", () => {
-  it("ArrowUp while editing moves editing to the previous task", async () => {
+  it("ArrowUp while editing saves, leaves edit mode, and focuses the previous task", async () => {
     render(<App />);
     await addTask("first");
     await addTask("second");
@@ -229,12 +229,19 @@ describe("Trivial editing", () => {
 
     fireEvent.keyDown(document.body, { key: "Enter" }); // edit focused (second)
     const editingSecond = await screen.findByDisplayValue("second");
+    fireEvent.change(editingSecond, { target: { value: "second edited" } });
     fireEvent.keyDown(editingSecond, { key: "ArrowUp" });
 
-    const editingFirst = await screen.findByDisplayValue("first");
-    fireEvent.change(editingFirst, { target: { value: "first edited" } });
-    fireEvent.keyDown(editingFirst, { key: "Escape" });
-    expect(await screen.findByText("first edited")).toBeTruthy();
+    // The edit is saved and we drop out of edit mode (no inline input left).
+    expect(await screen.findByText("second edited")).toBeTruthy();
+    await waitFor(() =>
+      expect(screen.queryByDisplayValue("second edited")).toBeNull()
+    );
+    expect(screen.queryByPlaceholderText("Task…")).toBeNull();
+
+    // Focus landed on "first" in normal mode — Enter now edits it.
+    fireEvent.keyDown(document.body, { key: "Enter" });
+    expect(await screen.findByDisplayValue("first")).toBeTruthy();
   });
 
   it("discards a new untitled task when you move off it (Escape)", async () => {
@@ -248,6 +255,35 @@ describe("Trivial editing", () => {
 
     await waitFor(() => expect(screen.queryByText("Untitled")).toBeNull());
     expect(screen.getByText("anchor")).toBeTruthy();
+  });
+});
+
+describe("Indent respects the filtered view", () => {
+  it("Tab nests under the previous *visible* task, not one the view is hiding", async () => {
+    render(<App />);
+    // Today view: three sibling tasks, all planned for today.
+    await addTask("first");
+    await addTask("mid");
+    await addTask("second");
+    blurActive();
+
+    // Unplan the middle one so it drops out of Today — now hidden *between* the
+    // two visible tasks. This is the trap: "second"'s raw previous sibling is
+    // the hidden "mid".
+    fireEvent.keyDown(document.body, { key: "ArrowUp" }); // second → mid
+    fireEvent.keyDown(document.body, { key: "t" }); // unplan mid
+    await waitFor(() => expect(screen.queryByText("mid")).toBeNull());
+
+    // Focus reconciles to the project header; descend to "second" and indent.
+    fireEvent.keyDown(document.body, { key: "ArrowDown" }); // header → first
+    fireEvent.keyDown(document.body, { key: "ArrowDown" }); // first → second
+    fireEvent.keyDown(document.body, { key: "Tab" });
+
+    // It nested under the visible "first" (which now shows a 0/1 child count),
+    // and the hidden "mid" never resurfaces as a surprise parent.
+    expect(await screen.findByText("0/1")).toBeTruthy();
+    expect(screen.queryByText("mid")).toBeNull();
+    expect(screen.getByText("second")).toBeTruthy();
   });
 });
 
