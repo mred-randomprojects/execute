@@ -55,6 +55,12 @@ export interface Task {
   horizon: Horizon | null;
   labels: string[];
   estimatedMinutes: number | null;
+  /**
+   * How many times this task has been deliberately *kept for today* out of the
+   * Reckoning (re-committed unchanged rather than finished, deferred, or dropped).
+   * Drives the "carried N×" badge so chronic dodging stays visible. Never reset.
+   */
+  carriedCount: number;
 }
 
 export type ThemeName = "slate" | "ivory" | "carbon" | "bordeaux";
@@ -71,7 +77,8 @@ export type LogAction =
   | "uncompleted"
   | "postponed"
   | "dropped"
-  | "brokeDown";
+  | "brokeDown"
+  | "kept";
 
 export interface LogEntry {
   id: string;
@@ -97,7 +104,7 @@ export interface AppState {
   devDateOverride: ISODate | null;
 }
 
-export const SCHEMA_VERSION = 3;
+export const SCHEMA_VERSION = 4;
 export const DEFAULT_PROJECT_ID = "project-inbox" as ProjectId;
 export const PROJECT_ROW_PREFIX = "project:";
 

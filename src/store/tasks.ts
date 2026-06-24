@@ -22,6 +22,7 @@ export function makeTask(
     horizon: null,
     labels: [],
     estimatedMinutes: null,
+    carriedCount: 0,
   };
 }
 

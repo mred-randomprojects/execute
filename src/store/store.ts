@@ -330,6 +330,28 @@ export function postponeToBacklog(id: TaskId, reason: string | null = null): voi
   });
 }
 
+/**
+ * Re-commit a leftover to today, unchanged — the Reckoning's "Keep for today".
+ * Bumps `carriedCount` (the deliberate-dodge counter behind the "carried N×"
+ * badge) and logs it. Setting `plannedFor = today` lifts it out of the gate.
+ */
+export function keepForToday(id: TaskId, reason: string | null = null): void {
+  update((s) => {
+    const t = findById(s.tasks, id);
+    if (t == null) return s;
+    return {
+      ...s,
+      tasks: mapById(s.tasks, id, (x) => ({
+        ...x,
+        plannedFor: todayISO(s.devDateOverride),
+        horizon: null,
+        carriedCount: x.carriedCount + 1,
+      })),
+      log: [makeLog(s, t, "kept", reason), ...s.log],
+    };
+  });
+}
+
 export function logBreakdown(id: TaskId): void {
   update((s) => {
     const t = findById(s.tasks, id);
@@ -407,6 +429,38 @@ export function trashMany(ids: TaskId[]): void {
       trashed.push({ task: t, deletedAt: Date.now() });
     }
     return { ...s, tasks, trash: [...trashed, ...s.trash] };
+  });
+}
+
+/** Reckoning "Backlog all": unplan a batch of leftovers, each logged as postponed. */
+export function postponeManyToBacklog(ids: TaskId[], reason: string | null = null): void {
+  update((s) => {
+    let tasks = s.tasks;
+    const logs: LogEntry[] = [];
+    for (const id of ids) {
+      const t = findById(tasks, id);
+      if (t == null) continue;
+      tasks = mapById(tasks, id, (x) => ({ ...x, plannedFor: null, horizon: null }));
+      logs.push(makeLog(s, t, "postponed", reason));
+    }
+    return { ...s, tasks, log: [...logs, ...s.log] };
+  });
+}
+
+/** Reckoning "Drop all": trash a batch of leftovers, each logged as dropped. */
+export function dropManyWithLog(ids: TaskId[], reason: string | null = null): void {
+  update((s) => {
+    let tasks = s.tasks;
+    const trashed: AppState["trash"] = [];
+    const logs: LogEntry[] = [];
+    for (const id of ids) {
+      const t = findById(tasks, id);
+      if (t == null) continue;
+      tasks = removeById(tasks, id);
+      trashed.push({ task: t, deletedAt: Date.now() });
+      logs.push(makeLog(s, t, "dropped", reason));
+    }
+    return { ...s, tasks, trash: [...trashed, ...s.trash], log: [...logs, ...s.log] };
   });
 }
 

@@ -151,6 +151,8 @@ function coerceTask(raw: unknown): Task {
     horizon,
     labels,
     estimatedMinutes: numOrNull(o.estimatedMinutes),
+    // v4: pre-v4 tasks have no carry history → 0. Clamp to a non-negative int.
+    carriedCount: Math.max(0, Math.trunc(num(o.carriedCount, 0))),
   };
 }
 
@@ -165,6 +167,7 @@ const LOG_ACTIONS: ReadonlySet<string> = new Set([
   "postponed",
   "dropped",
   "brokeDown",
+  "kept",
 ]);
 
 function coerceLogAction(x: unknown): LogAction {

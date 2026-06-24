@@ -38,6 +38,7 @@ function task(id: string, children: Task[] = [], overrides: Partial<Task> = {}):
     horizon: null,
     labels: [],
     estimatedMinutes: null,
+    carriedCount: 0,
     ...overrides,
   };
 }
