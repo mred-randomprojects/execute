@@ -215,6 +215,31 @@ describe("The Reckoning (rollover ritual)", () => {
       expect(screen.queryByText("Unfinished from before today")).toBeNull()
     );
   });
+
+  it("backlogs a whole over-committed group in one move", async () => {
+    render(<App />);
+    await addTask("trip");
+    await addTask("book flights");
+    blurActive();
+    fireEvent.keyDown(document.body, { key: "Tab" }); // book flights → under trip
+    fireEvent.keyDown(document.body, { key: "o" }); // new sibling under trip
+    const sub = await screen.findByPlaceholderText("Task…");
+    fireEvent.change(sub, { target: { value: "reserve hotel" } });
+    fireEvent.keyDown(sub, { key: "Escape" });
+    await screen.findByText("reserve hotel");
+
+    act(() => setDevDateOverride(addDays(todayISO(null), 1)));
+    expect(await screen.findByText("Unfinished from before today")).toBeTruthy();
+
+    // Both stranded subtasks show, with a one-shot group action.
+    expect(screen.getByText("book flights")).toBeTruthy();
+    expect(screen.getByText("reserve hotel")).toBeTruthy();
+
+    fireEvent.click(screen.getByLabelText("Backlog all"));
+    await waitFor(() =>
+      expect(screen.queryByText("Unfinished from before today")).toBeNull()
+    );
+  });
 });
 
 async function addTask(text: string) {
