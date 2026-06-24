@@ -381,10 +381,16 @@ export function reorder(selectedIds: TaskId[], dir: "up" | "down"): void {
   updateTasks((tasks) => reorderSelected(tasks, new Set(selectedIds), dir));
 }
 
-export function reorderAcrossProjects(selectedIds: TaskId[], dir: "up" | "down"): void {
+// `visible` is the set of task ids the current view actually shows, so a reorder
+// hops over filtered-out siblings instead of silently swapping past them.
+export function reorderAcrossProjects(
+  selectedIds: TaskId[],
+  dir: "up" | "down",
+  visible?: Set<TaskId>
+): void {
   update((s) => ({
     ...s,
-    tasks: reorderSelectedAcrossProjects(s.tasks, new Set(selectedIds), dir, s.projects),
+    tasks: reorderSelectedAcrossProjects(s.tasks, new Set(selectedIds), dir, s.projects, visible),
   }));
 }
 

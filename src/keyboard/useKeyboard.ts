@@ -8,13 +8,24 @@ import { toCombo, findBinding } from "./types";
 // reckoning shortcuts; `palette` beats `editing` so the palette's own input
 // still responds to arrows/enter.
 
+// True when focus sits somewhere that should own the keyboard, so the global
+// outline shortcuts stay dormant and native behavior is preserved. Two cases:
+//   1. A text-entry element (input / textarea / select / contenteditable).
+//   2. Anything inside a region that opts in via `data-keyzone` — e.g. the
+//      detail panel. That lets a cluster of plain <button>s keep native
+//      Tab / Shift+Tab focus traversal instead of having Tab swallowed by
+//      `task.indent` (and Backspace by `task.trash`, etc.).
+// Scoping by region rather than element type matters: sidebar buttons keep
+// focus after a click and must stay in "normal" context so the mouse→keyboard
+// handoff still works.
 function isInteractiveElementFocused(): boolean {
   if (typeof document === "undefined") return false;
   const el = document.activeElement;
-  if (el == null) return false;
+  if (!(el instanceof HTMLElement)) return false;
   const tag = el.tagName;
   if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return true;
-  return el instanceof HTMLElement && el.isContentEditable;
+  if (el.isContentEditable) return true;
+  return el.closest("[data-keyzone]") != null;
 }
 
 export function getActiveContext(state: ContextState): KeyContext {

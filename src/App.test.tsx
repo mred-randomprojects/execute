@@ -301,6 +301,34 @@ describe("Reorder", () => {
     // After moving b up, b precedes a in the document.
     expect(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy();
   });
+
+  it("⌘↓ hops over a task the view is hiding instead of an invisible no-op", async () => {
+    render(<App />);
+    await addTask("first");
+    await addTask("mid");
+    await addTask("second");
+    blurActive();
+
+    // Hide "mid" between the two visible tasks (raw order: first, mid, second).
+    fireEvent.keyDown(document.body, { key: "ArrowUp" }); // second → mid
+    fireEvent.keyDown(document.body, { key: "t" }); // unplan mid
+    await waitFor(() => expect(screen.queryByText("mid")).toBeNull());
+
+    // Focus "first" and move it down. The raw next sibling is the hidden "mid";
+    // view-aware reorder must move it past the visible "second" instead.
+    fireEvent.keyDown(document.body, { key: "ArrowDown" }); // header → first
+    fireEvent.keyDown(document.body, { key: "ArrowDown", metaKey: true }); // reorder down
+
+    await waitFor(() => {
+      const first = screen.getByText("first");
+      const second = screen.getByText("second");
+      // "first" now follows "second" in the document.
+      expect(
+        second.compareDocumentPosition(first) & Node.DOCUMENT_POSITION_FOLLOWING
+      ).toBeTruthy();
+    });
+    expect(screen.queryByText("mid")).toBeNull();
+  });
 });
 
 describe("Multi-select", () => {

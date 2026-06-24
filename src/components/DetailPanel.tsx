@@ -11,6 +11,11 @@ const PRIORITIES: Array<{ value: TaskPriority; label: string }> = [
   { value: 4, label: "None" },
 ];
 
+// Panel controls are reached by native Tab (the keyboard engine goes dormant
+// inside the panel's data-keyzone), so they need a clear, on-brand focus ring.
+const FOCUS_RING =
+  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent";
+
 const ACTION_LABEL: Record<string, string> = {
   completed: "Completed",
   uncompleted: "Reopened",
@@ -90,7 +95,10 @@ export function DetailPanel({
   };
 
   return (
-    <aside className="flex w-[360px] shrink-0 flex-col overflow-auto border-l border-line bg-surface px-5 pb-5 pt-8">
+    <aside
+      data-keyzone="panel"
+      className="flex w-[360px] shrink-0 flex-col overflow-auto border-l border-line bg-surface px-5 pb-5 pt-8"
+    >
       <div className="mb-3 flex items-center justify-between">
         <span className="eyebrow">Details</span>
         <button onClick={handlers.onBack} className="kbd" aria-label="Close panel">
@@ -146,6 +154,7 @@ export function DetailPanel({
               onClick={() => handlers.onPriority(task.id, p.value)}
               className={[
                 "flex-1 rounded-sm border px-2 py-1.5 text-[12px] transition-colors",
+                FOCUS_RING,
                 task.priority === p.value
                   ? "border-accent bg-accent-soft text-accent"
                   : "border-line text-ink-soft hover:bg-surface-2",
@@ -168,6 +177,7 @@ export function DetailPanel({
                 onClick={() => handlers.onProject(task.id, project.id)}
                 className={[
                   "flex min-w-0 items-center gap-1.5 rounded-sm border px-2 py-1.5 text-[12px] transition-colors",
+                  FOCUS_RING,
                   active
                     ? "border-accent bg-accent-soft text-accent"
                     : "border-line text-ink-soft hover:bg-surface-2",
@@ -189,6 +199,7 @@ export function DetailPanel({
           onClick={() => handlers.onTogglePlan(task.id)}
           className={[
             "w-full rounded-sm border px-3 py-2 text-[13px] transition-colors",
+            FOCUS_RING,
             plannedToday
               ? "border-accent bg-accent-soft text-accent"
               : "border-line text-ink-soft hover:bg-surface-2",

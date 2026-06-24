@@ -16,6 +16,7 @@ import {
   outdentTask,
   leavesWhere,
   countPending,
+  moveSelectedItems,
   reorderSelected,
   reorderSelectedAcrossProjects,
 } from "./tasks";
@@ -250,6 +251,50 @@ describe("reorderSelectedAcrossProjects", () => {
     expect(next.map((t) => `${t.id}:${t.projectId}`)).toEqual([
       "a:home",
       "b:home",
+    ]);
+  });
+});
+
+describe("reorder skips filtered-out siblings (view-aware)", () => {
+  const sel = (...ids: string[]) => new Set(ids.map(id));
+  const vis = (...ids: string[]) => new Set(ids.map(id));
+
+  it("moveSelectedItems bubbles among visible items, pinning hidden ones", () => {
+    const items = [{ id: id("a") }, { id: id("hidden") }, { id: id("c") }];
+    // "a" moves down past the visible "c"; "hidden" keeps its slot.
+    const next = moveSelectedItems(items, sel("a"), "down", vis("a", "c"));
+    expect(next.map((i) => i.id)).toEqual(["c", "hidden", "a"]);
+  });
+
+  it("reorderSelected hops over a hidden sibling instead of swapping into it", () => {
+    const tree = [task("a"), task("hidden"), task("c")];
+    // Raw behavior would swap a↔hidden (an invisible no-op); view-aware skips it.
+    expect(shape(reorderSelected(tree, sel("a"), "down", vis("a", "c")))).toBe("c,hidden,a");
+  });
+
+  it("reorderSelectedAcrossProjects reorders within the visible siblings", () => {
+    const tree = [
+      task("a", [], { projectId: projectId("work") }),
+      task("hidden", [], { projectId: projectId("work") }),
+      task("c", [], { projectId: projectId("work") }),
+    ];
+    const next = reorderSelectedAcrossProjects(tree, sel("a"), "down", projects, vis("a", "c"));
+    expect(next.map((t) => t.id)).toEqual(["c", "hidden", "a"]);
+  });
+
+  it("crosses into the next project when last among visible, ignoring hidden trailers", () => {
+    // "a" is the only visible task in work ("b" is hidden after it); moving down
+    // should jump to home rather than swap with the hidden "b".
+    const tree = [
+      task("a", [], { projectId: projectId("work") }),
+      task("b", [], { projectId: projectId("work") }),
+      task("c", [], { projectId: projectId("home") }),
+    ];
+    const next = reorderSelectedAcrossProjects(tree, sel("a"), "down", projects, vis("a", "c"));
+    expect(next.map((t) => `${t.id}:${t.projectId}`)).toEqual([
+      "b:work",
+      "a:home",
+      "c:home",
     ]);
   });
 });

@@ -253,6 +253,15 @@ export function App() {
   }, [zoomFocus, view, state.projects, projectGroups, usingBuckets, bucketGroups, collapsed, collapsedProjects]);
   const flatIds = useMemo(() => outlineRows.map((r) => r.id), [outlineRows]);
   const flatKey = flatIds.join(",");
+  // The task ids the view actually renders — so structural edits (reorder) act on
+  // visible siblings and skip filtered-out ones.
+  const visibleTaskIds = useMemo(
+    () =>
+      new Set(
+        outlineRows.flatMap((r) => (r.kind === "task" ? [r.taskId] : []))
+      ),
+    [outlineRows]
+  );
 
   const progress = useMemo(() => todayProgress(state.tasks, today), [state.tasks, today]);
   const backlog = useMemo(() => backlogCount(state.tasks), [state.tasks]);
@@ -499,8 +508,8 @@ export function App() {
     },
     selectDown: () => setSelection((s) => moveSelection(s, flatIds, "down", true)),
     selectUp: () => setSelection((s) => moveSelection(s, flatIds, "up", true)),
-    reorderUp: () => reorderAcrossProjects(actionTargets(), "up"),
-    reorderDown: () => reorderAcrossProjects(actionTargets(), "down"),
+    reorderUp: () => reorderAcrossProjects(actionTargets(), "up", visibleTaskIds),
+    reorderDown: () => reorderAcrossProjects(actionTargets(), "down", visibleTaskIds),
     // → expands a collapsed project/task first (outliner convention), then
     // descends; only opens the details panel when there's nothing to expand.
     panelOpen: () => {

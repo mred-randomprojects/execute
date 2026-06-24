@@ -335,13 +335,37 @@ export function outdentTask(tasks: Task[], id: TaskId): Task[] {
 /**
  * Bubble selected items one slot up/down within a single array, skipping over
  * other selected items so a contiguous block moves together.
+ *
+ * With `visible`, the bubble happens only among the *visible* items while hidden
+ * ones stay pinned to their slots — so a reorder in a filtered view never
+ * silently swaps a task past a sibling the view is hiding (which looks like a
+ * no-op). Omit `visible` to reorder the raw list.
  */
 export function moveSelectedItems<T extends { id: TaskId }>(
   items: T[],
   selected: Set<TaskId>,
-  dir: "up" | "down"
+  dir: "up" | "down",
+  visible?: Set<TaskId>
 ): T[] {
   if (selected.size === 0) return items;
+
+  if (visible != null) {
+    const slots: number[] = [];
+    const visibleItems: T[] = [];
+    items.forEach((item, i) => {
+      if (visible.has(item.id)) {
+        slots.push(i);
+        visibleItems.push(item);
+      }
+    });
+    const moved = moveSelectedItems(visibleItems, selected, dir); // raw bubble of the visible subsequence
+    const next = [...items];
+    slots.forEach((slot, k) => {
+      next[slot] = moved[k];
+    });
+    return next;
+  }
+
   const next = [...items];
   if (dir === "up") {
     for (let i = 1; i < next.length; i++) {
@@ -420,66 +444,74 @@ export function reorderSelectedAcrossProjects(
   tasks: Task[],
   selected: Set<TaskId>,
   dir: "up" | "down",
-  projects: Project[]
+  projects: Project[],
+  visible?: Set<TaskId>
 ): Task[] {
   if (selected.size === 0) return tasks;
   if (![...selected].every((id) => tasks.some((task) => task.id === id))) {
-    return reorderSelected(tasks, selected, dir);
+    return reorderSelected(tasks, selected, dir, visible);
   }
 
   const groupIndex = projects.findIndex((project) =>
     tasks.some((task) => task.projectId === project.id && selected.has(task.id))
   );
-  if (groupIndex === -1) return reorderSelected(tasks, selected, dir);
+  if (groupIndex === -1) return reorderSelected(tasks, selected, dir, visible);
 
   const project = projects[groupIndex];
   const groupIds = tasks
     .filter((task) => task.projectId === project.id)
     .map((task) => task.id);
-  const selectedIndexes = groupIds
+  // Position/boundary decisions run over the *visible* siblings: moving "down"
+  // past the last visible task should cross into the next project even if hidden
+  // tasks trail behind it in the raw order.
+  const groupVisibleIds = groupIds.filter((id) => visible == null || visible.has(id));
+  const selectedIndexes = groupVisibleIds
     .map((id, index) => (selected.has(id) ? index : -1))
     .filter((index) => index !== -1);
 
-  if (selectedIndexes.length !== selected.size) return reorderSelected(tasks, selected, dir);
+  if (selectedIndexes.length !== selected.size) return reorderSelected(tasks, selected, dir, visible);
 
   const first = selectedIndexes[0];
   const last = selectedIndexes[selectedIndexes.length - 1];
   const isContiguous = selectedIndexes.every((index, offset) => index === first + offset);
-  if (!isContiguous) return reorderSelected(tasks, selected, dir);
+  if (!isContiguous) return reorderSelected(tasks, selected, dir, visible);
+
+  const block = groupVisibleIds.slice(first, last + 1);
 
   if (dir === "up") {
     if (first > 0) {
-      const desired = moveSelectedItems(groupIds.map((id) => ({ id })), selected, "up").map(
+      const desired = moveSelectedItems(groupIds.map((id) => ({ id })), selected, "up", visible).map(
         (item) => item.id
       );
       return replaceProjectRootOrder(tasks, project.id, desired);
     }
     const target = projects[groupIndex - 1];
     if (target == null) return tasks;
-    return moveRootBlockToProject(tasks, groupIds.slice(first, last + 1), target.id, projects, "end");
+    return moveRootBlockToProject(tasks, block, target.id, projects, "end");
   }
 
-  if (last < groupIds.length - 1) {
-    const desired = moveSelectedItems(groupIds.map((id) => ({ id })), selected, "down").map(
+  if (last < groupVisibleIds.length - 1) {
+    const desired = moveSelectedItems(groupIds.map((id) => ({ id })), selected, "down", visible).map(
       (item) => item.id
     );
     return replaceProjectRootOrder(tasks, project.id, desired);
   }
   const target = projects[groupIndex + 1];
   if (target == null) return tasks;
-  return moveRootBlockToProject(tasks, groupIds.slice(first, last + 1), target.id, projects, "start");
+  return moveRootBlockToProject(tasks, block, target.id, projects, "start");
 }
 
 /** Apply the sibling bubble at every level, so selection reorders within each parent. */
 export function reorderSelected(
   tasks: Task[],
   selected: Set<TaskId>,
-  dir: "up" | "down"
+  dir: "up" | "down",
+  visible?: Set<TaskId>
 ): Task[] {
-  const moved = moveSelectedItems(tasks, selected, dir);
+  const moved = moveSelectedItems(tasks, selected, dir, visible);
   return moved.map((t) => ({
     ...t,
-    children: reorderSelected(t.children, selected, dir),
+    children: reorderSelected(t.children, selected, dir, visible),
   }));
 }
 

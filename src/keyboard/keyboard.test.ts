@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, afterEach } from "vitest";
 import { toCombo, findBinding } from "./types";
 import type { KeyBinding } from "./types";
 import { getActiveContext } from "./useKeyboard";
@@ -99,5 +99,40 @@ describe("getActiveContext", () => {
   });
   it("move when reordering", () => {
     expect(getActiveContext({ ...base, mode: "move" })).toBe("move");
+  });
+});
+
+describe("getActiveContext — focus zones", () => {
+  const base = {
+    showHelp: false,
+    showPalette: false,
+    showSchedule: false,
+    showConfirm: false,
+    reckoningActive: false,
+    mode: "normal" as const,
+  };
+
+  afterEach(() => {
+    document.body.innerHTML = "";
+  });
+
+  function focus(html: string): void {
+    document.body.innerHTML = html;
+    (document.body.querySelector("[data-test]") as HTMLElement).focus();
+  }
+
+  it("a focused text input owns the keyboard (editing)", () => {
+    focus(`<input data-test />`);
+    expect(getActiveContext(base)).toBe("editing");
+  });
+
+  it("a button inside a data-keyzone region owns the keyboard, so Tab stays native", () => {
+    focus(`<aside data-keyzone="panel"><button data-test>Urgent</button></aside>`);
+    expect(getActiveContext(base)).toBe("editing");
+  });
+
+  it("a plain button outside any keyzone stays normal (mouse→keyboard handoff)", () => {
+    focus(`<button data-test>Backlog</button>`);
+    expect(getActiveContext(base)).toBe("normal");
   });
 });
