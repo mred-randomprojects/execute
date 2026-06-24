@@ -64,12 +64,17 @@ export const keymap: KeyBinding[] = [
   { key: "Escape", action: "move.cancel", context: "move", displayKey: "esc", description: "cancel move", section: "Move mode" },
 
   // ── reckoning gate ────────────────────────────────────────────────
-  { key: "ArrowDown", action: "cursor.down", context: "reckoning", displayKey: "↑ / ↓", description: "next / previous leftover", section: "The Reckoning" },
+  { key: "ArrowDown", action: "cursor.down", context: "reckoning", displayKey: "↑ / ↓", description: "next / previous task", section: "The Reckoning" },
   { key: "j", action: "cursor.down", context: "reckoning" },
   { key: "ArrowUp", action: "cursor.up", context: "reckoning" },
   { key: "k", action: "cursor.up", context: "reckoning" },
+  { key: "ArrowRight", action: "reck.nextCard", context: "reckoning", displayKey: "← / →", description: "previous / next group", section: "The Reckoning" },
+  { key: "ArrowLeft", action: "reck.prevCard", context: "reckoning" },
   { key: "e", action: "reck.complete", context: "reckoning", displayKey: "e", description: "mark it done", section: "The Reckoning" },
+  { key: "t", action: "reck.keep", context: "reckoning", displayKey: "t", description: "keep it for today", section: "The Reckoning" },
   { key: "b", action: "reck.breakdown", context: "reckoning", displayKey: "b", description: "break it down", section: "The Reckoning" },
   { key: "s", action: "reck.backlog", context: "reckoning", displayKey: "s", description: "send to backlog", section: "The Reckoning" },
   { key: "d", action: "reck.drop", context: "reckoning", displayKey: "d", description: "drop it", section: "The Reckoning" },
+  { key: "S", action: "reck.backlogAll", context: "reckoning", displayKey: "⇧ s", description: "backlog the whole group", section: "The Reckoning" },
+  { key: "D", action: "reck.dropAll", context: "reckoning", displayKey: "⇧ d", description: "drop the whole group", section: "The Reckoning" },
 ];

@@ -150,6 +150,47 @@ describe("The Reckoning (rollover ritual)", () => {
       expect(screen.queryByText("Unfinished from before today")).toBeNull()
     );
   });
+
+  it("keeps a leftover for today, clearing the gate and re-listing it in Today", async () => {
+    await seedTodayTaskThenRollOver("revise the draft");
+    fireEvent.click(screen.getByLabelText("Keep for today"));
+    await waitFor(() =>
+      expect(screen.queryByText("Unfinished from before today")).toBeNull()
+    );
+    expect(await screen.findByText("revise the draft")).toBeTruthy();
+  });
+
+  it("a kept leftover returns tagged 'carried' if still unfinished the next day", async () => {
+    await seedTodayTaskThenRollOver("revise the draft");
+    fireEvent.click(screen.getByLabelText("Keep for today"));
+    await waitFor(() =>
+      expect(screen.queryByText("Unfinished from before today")).toBeNull()
+    );
+    // Advance another day without finishing → it reckons again, now carried once.
+    act(() => setDevDateOverride(addDays(todayISO(null), 2)));
+    expect(await screen.findByText("Unfinished from before today")).toBeTruthy();
+    expect(screen.getByText(/carried 1×/)).toBeTruthy();
+  });
+
+  it("shows a stranded subtask under its top-level parent in the card", async () => {
+    render(<App />);
+    await addTask("kitchen reno");
+    await addTask("order tiles");
+    blurActive();
+    fireEvent.keyDown(document.body, { key: "Tab" }); // nest "order tiles" under "kitchen reno"
+    act(() => setDevDateOverride(addDays(todayISO(null), 1)));
+    expect(await screen.findByText("Unfinished from before today")).toBeTruthy();
+
+    // The card surfaces both the parent (context) and the stranded child.
+    expect(screen.getByText("kitchen reno")).toBeTruthy();
+    expect(screen.getByText("order tiles")).toBeTruthy();
+
+    // Resolving the only leftover leaf clears the whole card.
+    fireEvent.click(screen.getByLabelText("Done"));
+    await waitFor(() =>
+      expect(screen.queryByText("Unfinished from before today")).toBeNull()
+    );
+  });
 });
 
 async function addTask(text: string) {

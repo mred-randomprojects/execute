@@ -14,12 +14,15 @@ import {
   cycleProjectColor,
   emptyTrash,
   indent,
+  dropManyWithLog,
   initStore,
+  keepForToday,
   logBreakdown,
   markOpened,
   moveAsChild,
   moveBefore,
   outdent,
+  postponeManyToBacklog,
   postponeToBacklog,
   purgeFromTrash,
   renameProject,
@@ -54,12 +57,14 @@ import {
   leftoverLeaves,
   prevVisibleSiblingId,
   projectSummaries,
+  reckoningCards,
   resolveZoom,
   taskBucket,
   todayProgress,
   viewTasks,
   VIEW_TITLES,
   zoomParent,
+  type ReckoningCard,
   type ViewKind,
   type ZoomTarget,
 } from "./selectors";
@@ -151,6 +156,11 @@ export function App() {
   // ── Reckoning (the hard gate) ─────────────────────────────────────
   const leftovers = useMemo(
     () => leftoverLeaves(state.tasks, today),
+    [state.tasks, today]
+  );
+  // Same leftovers, grouped by top-level ancestor for the card-by-card review.
+  const reckCards = useMemo(
+    () => reckoningCards(state.tasks, today),
     [state.tasks, today]
   );
   const reckoningActive = ready && leftovers.length > 0;
@@ -475,6 +485,33 @@ export function App() {
     setReckCursorId(ids[next]);
   };
 
+  // Resolving a leftover removes it; land the cursor on the next remaining one
+  // (or the previous, if it was last) so the review flows forward on its own.
+  const advanceReckCursorPast = (resolvedId: TaskId) => {
+    const ids = leftovers.map((t) => t.id);
+    const i = ids.indexOf(resolvedId);
+    if (i === -1) return;
+    setReckCursorId(ids[i + 1] ?? ids[i - 1] ?? null);
+  };
+  const advanceReckCursorPastCard = (card: ReckoningCard) => {
+    const idx = reckCards.findIndex((c) => c.root.id === card.root.id);
+    const nextCard = reckCards[idx + 1] ?? reckCards[idx - 1] ?? null;
+    setReckCursorId(nextCard?.leaves[0]?.task.id ?? null);
+  };
+  const currentReckCard = (): ReckoningCard | null =>
+    reckCards.find((c) => c.leaves.some((l) => l.task.id === reckCursorId)) ??
+    reckCards[0] ??
+    null;
+  const moveReckCard = (dir: "prev" | "next") => {
+    if (reckCards.length === 0) return;
+    const idx = Math.max(
+      0,
+      reckCards.findIndex((c) => c.leaves.some((l) => l.task.id === reckCursorId))
+    );
+    const target = dir === "next" ? reckCards[idx + 1] : reckCards[idx - 1];
+    if (target != null) setReckCursorId(target.leaves[0]?.task.id ?? null);
+  };
+
   const cmd = {
     cursorDown: () => {
       if (reckoningActive) return moveReckCursor("down");
@@ -694,19 +731,39 @@ export function App() {
     },
     reckComplete: (id?: TaskId) => {
       const target = id ?? reckCursorId;
-      if (target != null) setCompleted(target, true, reckReason || null);
+      if (target == null) return;
+      advanceReckCursorPast(target);
+      setCompleted(target, true, reckReason || null);
+    },
+    reckKeep: (id?: TaskId) => {
+      const target = id ?? reckCursorId;
+      if (target == null) return;
+      advanceReckCursorPast(target);
+      keepForToday(target, reckReason || null);
     },
     reckBacklog: (id?: TaskId) => {
       const target = id ?? reckCursorId;
-      if (target != null) postponeToBacklog(target, reckReason || null);
+      if (target == null) return;
+      advanceReckCursorPast(target);
+      postponeToBacklog(target, reckReason || null);
     },
     reckDrop: (id?: TaskId) => {
       const target = id ?? reckCursorId;
-      if (target != null) trashTask(target, { reason: reckReason || null, log: true });
+      if (target == null) return;
+      advanceReckCursorPast(target);
+      trashTask(target, { reason: reckReason || null, log: true });
     },
     reckBreakdown: (id?: TaskId) => {
       const target = id ?? reckCursorId;
       if (target != null) setBreakingDownId(target);
+    },
+    reckBacklogAll: (card: ReckoningCard) => {
+      advanceReckCursorPastCard(card);
+      postponeManyToBacklog(card.leaves.map((l) => l.task.id), reckReason || null);
+    },
+    reckDropAll: (card: ReckoningCard) => {
+      advanceReckCursorPastCard(card);
+      dropManyWithLog(card.leaves.map((l) => l.task.id), reckReason || null);
     },
   };
 
@@ -754,10 +811,23 @@ export function App() {
     "view.projects": cmd.gotoView("projects"),
     "view.trash": cmd.gotoView("trash"),
     "dismiss": cmd.dismiss,
-    "reck.complete": cmd.reckComplete,
-    "reck.breakdown": cmd.reckBreakdown,
-    "reck.backlog": cmd.reckBacklog,
-    "reck.drop": cmd.reckDrop,
+    // Arg-less wrappers: the keyboard engine calls handlers with the dispatch
+    // state, so these must ignore it and act on the cursor (not a stray object).
+    "reck.complete": () => cmd.reckComplete(),
+    "reck.keep": () => cmd.reckKeep(),
+    "reck.breakdown": () => cmd.reckBreakdown(),
+    "reck.backlog": () => cmd.reckBacklog(),
+    "reck.drop": () => cmd.reckDrop(),
+    "reck.nextCard": () => moveReckCard("next"),
+    "reck.prevCard": () => moveReckCard("prev"),
+    "reck.backlogAll": () => {
+      const c = currentReckCard();
+      if (c != null) cmd.reckBacklogAll(c);
+    },
+    "reck.dropAll": () => {
+      const c = currentReckCard();
+      if (c != null) cmd.reckDropAll(c);
+    },
   };
   useKeyboard(keymap, actionMap, dispatchState);
 
@@ -1038,17 +1108,23 @@ export function App() {
           <div className="flex-1 overflow-hidden">
             {reckoningActive ? (
               <ReckoningView
-                leftovers={leftovers}
+                cards={reckCards}
                 cursorId={reckCursorId}
                 today={today}
+                projects={state.projects}
                 breakdownTask={breakdownTask}
                 reason={reckReason}
                 onReasonChange={setReckReason}
                 onSelect={setReckCursorId}
                 onComplete={cmd.reckComplete}
+                onKeep={cmd.reckKeep}
                 onBacklog={cmd.reckBacklog}
                 onDrop={cmd.reckDrop}
-                onStartBreakdown={(id) => setBreakingDownId(id)}
+                onStartBreakdown={cmd.reckBreakdown}
+                onBacklogAll={cmd.reckBacklogAll}
+                onDropAll={cmd.reckDropAll}
+                onPrevCard={() => moveReckCard("prev")}
+                onNextCard={() => moveReckCard("next")}
                 onAddStep={(parentId, text) => addChild(parentId, parseCapture(text).text, today)}
                 onFinishBreakdown={() => {
                   if (breakingDownId != null) logBreakdown(breakingDownId);
