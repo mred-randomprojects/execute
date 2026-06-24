@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from "react";
+import type { RefObject } from "react";
 import type { ISODate, Project, Task, TaskId } from "../types";
 import type { ReckoningCard, ReckoningLeaf } from "../selectors";
 import { countAll } from "../store/tasks";
 import { relativeLabel } from "../store/dates";
+import { CaptureBar } from "../components/CaptureBar";
 import { NO_SPELLCHECK } from "../ui/noSpellcheck";
 
 function ActionChip({
@@ -214,6 +216,9 @@ export function ReckoningView({
   onNextCard,
   onAddStep,
   onFinishBreakdown,
+  captureRef,
+  onCapture,
+  onCaptureArrowDown,
 }: {
   cards: ReckoningCard[];
   cursorId: TaskId | null;
@@ -234,6 +239,9 @@ export function ReckoningView({
   onNextCard: () => void;
   onAddStep: (parentId: TaskId, text: string) => void;
   onFinishBreakdown: () => void;
+  captureRef: RefObject<HTMLInputElement>;
+  onCapture: (raw: string) => void;
+  onCaptureArrowDown: () => void;
 }) {
   if (breakdownTask != null) {
     return (
@@ -322,6 +330,18 @@ export function ReckoningView({
 
   return (
     <div className="mx-auto flex h-full w-full max-w-3xl flex-col px-10 py-10">
+      {/* The front door never closes: capture stays available even mid-gate, so a
+          stray thought lands in the system (planned for today) without resolving
+          a single leftover or making the pile any longer. */}
+      <div className="mb-6">
+        <CaptureBar
+          inputRef={captureRef}
+          placeholder="Add a task for today…"
+          onAdd={onCapture}
+          onArrowDown={onCaptureArrowDown}
+        />
+      </div>
+
       <header className="mb-6 border-b border-line pb-5">
         <div className="eyebrow mb-1.5 text-bad">The Reckoning</div>
         <h1 className="font-serif text-[32px] font-medium leading-none tracking-tight text-ink">

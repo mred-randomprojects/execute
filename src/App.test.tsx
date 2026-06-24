@@ -172,6 +172,30 @@ describe("The Reckoning (rollover ritual)", () => {
     expect(screen.getByText(/carried 1×/)).toBeTruthy();
   });
 
+  it("keeps the capture front door open during the gate (new task → today)", async () => {
+    await seedTodayTaskThenRollOver("ship the thing");
+    blurActive();
+
+    // '/' focuses the always-present capture bar, even mid-Reckoning.
+    fireEvent.keyDown(document.body, { key: "/" });
+    const capture = screen.getByPlaceholderText("Add a task for today…");
+    expect(document.activeElement).toBe(capture);
+
+    fireEvent.change(capture, { target: { value: "remembered errand" } });
+    fireEvent.keyDown(capture, { key: "Enter" });
+
+    // Capturing neither cleared nor lengthened the gate.
+    expect(screen.getByText("Unfinished from before today")).toBeTruthy();
+    expect(screen.getByText("ship the thing")).toBeTruthy();
+
+    // Clear the gate → the dump is waiting in Today.
+    fireEvent.click(screen.getByLabelText("Done"));
+    await waitFor(() =>
+      expect(screen.queryByText("Unfinished from before today")).toBeNull()
+    );
+    expect(await screen.findByText("remembered errand")).toBeTruthy();
+  });
+
   it("shows a stranded subtask under its top-level parent in the card", async () => {
     render(<App />);
     await addTask("kitchen reno");

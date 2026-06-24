@@ -38,7 +38,7 @@ export const keymap: KeyBinding[] = [
   { key: "a", action: "task.new", context: "normal", displayKey: "a / n / o", description: "new task below", section: "Tasks" },
   { key: "n", action: "task.new", context: "normal" },
   { key: "o", action: "task.new", context: "normal" },
-  { key: "/", action: "capture.focus", context: "normal" },
+  { key: "/", action: "capture.focus", context: ["normal", "reckoning"] },
   { key: " ", action: "task.toggle", context: "normal", displayKey: "space", description: "complete / uncomplete", section: "Tasks" },
   { key: "Meta+Enter", action: "task.toggle", context: ["normal", "editing"], displayKey: "⌘ ↵", description: "complete / uncomplete", section: "Tasks" },
   { key: "t", action: "task.planToday", context: "normal", displayKey: "t", description: "plan / unplan for today", section: "Tasks" },

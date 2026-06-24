@@ -946,6 +946,17 @@ export function App() {
     setFocus(id);
   };
 
+  // Capture during the Reckoning: the gate must never block the front door. A
+  // dump lands in the Inbox project planned for today (the user's choice — new
+  // tasks are for today), and since it's not planned *before* today it never
+  // joins the leftovers, so the pile to clear can't grow. Cursor stays put.
+  const onReckCapture = (raw: string) => {
+    const p = parseCapture(raw);
+    if (p.text === "") return;
+    const id = addTaskAtProjectStart(DEFAULT_PROJECT_ID, p.text, today);
+    if (p.completed) setCompleted(id, true);
+  };
+
   // Breadcrumb navigation: null exits zoom; a project row / task id re-roots.
   const onCrumb = (id: OutlineId | null) => {
     if (id == null) {
@@ -1129,6 +1140,13 @@ export function App() {
                 onFinishBreakdown={() => {
                   if (breakingDownId != null) logBreakdown(breakingDownId);
                   setBreakingDownId(null);
+                }}
+                captureRef={captureRef}
+                onCapture={onReckCapture}
+                onCaptureArrowDown={() => {
+                  if (reckCursorId == null && leftovers[0] != null) {
+                    setReckCursorId(leftovers[0].id);
+                  }
                 }}
               />
             ) : view === "trash" ? (
