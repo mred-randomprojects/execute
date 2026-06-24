@@ -6,6 +6,7 @@ import {
   horizonLabel,
   prevVisibleSiblingId,
   projectSummaries,
+  reckoningCards,
   resolveZoom,
   taskBucket,
   viewPredicate,
@@ -255,5 +256,58 @@ describe("zoom (Workflowy-style hoist)", () => {
       id: "work",
     });
     expect(zoomParent(tasks, { kind: "project", id: "work" as ProjectId })).toBeNull();
+  });
+});
+
+describe("reckoningCards", () => {
+  const today = "2026-06-24";
+  const yest = "2026-06-23";
+
+  it("makes a single-leaf card for a top-level leftover (no parents)", () => {
+    const leaf = task("solo", "work", yest);
+    const cards = reckoningCards([leaf], today);
+    expect(cards).toHaveLength(1);
+    expect(cards[0].root.id).toBe(leaf.id);
+    expect(cards[0].leaves).toHaveLength(1);
+    expect(cards[0].leaves[0].task.id).toBe(leaf.id);
+    expect(cards[0].leaves[0].parents).toEqual([]);
+  });
+
+  it("groups a parent's stranded subtasks under the top-level root", () => {
+    const done = { ...task("email", "work", yest), completed: true };
+    const left = task("order tiles", "work", yest);
+    const parent = withChildren(task("kitchen", "work", yest), [done, left]);
+    const cards = reckoningCards([parent], today);
+    expect(cards).toHaveLength(1);
+    expect(cards[0].root.id).toBe(parent.id); // the container, not a leftover itself
+    expect(cards[0].leaves.map((l) => l.task.text)).toEqual(["order tiles"]);
+    expect(cards[0].leaves[0].parents).toEqual([]); // immediate parent IS the root
+  });
+
+  it("exposes intermediate ancestors for deeply nested leftovers", () => {
+    const leaf = task("deep step", "work", yest);
+    const mid = withChildren(task("mid", "work"), [leaf]);
+    const root = withChildren(task("root", "work"), [mid]);
+    const cards = reckoningCards([root], today);
+    expect(cards[0].root.id).toBe(root.id);
+    expect(cards[0].leaves[0].parents.map((p) => p.text)).toEqual(["mid"]);
+  });
+
+  it("keeps cards in tree order and multiple leaves within a card", () => {
+    const a1 = task("a1", "work", yest);
+    const a2 = task("a2", "work", yest);
+    const rootA = withChildren(task("A", "work"), [a1, a2]);
+    const b = task("B", "work", yest);
+    const cards = reckoningCards([rootA, b], today);
+    expect(cards.map((c) => c.root.text)).toEqual(["A", "B"]);
+    expect(cards[0].leaves.map((l) => l.task.text)).toEqual(["a1", "a2"]);
+    expect(cards[1].leaves.map((l) => l.task.text)).toEqual(["B"]);
+  });
+
+  it("ignores completed, undated, and future-dated tasks", () => {
+    const future = task("future", "work", "2026-06-30");
+    const done = { ...task("done", "work", yest), completed: true };
+    const noDate = task("nodate", "work", null);
+    expect(reckoningCards([future, done, noDate], today)).toEqual([]);
   });
 });

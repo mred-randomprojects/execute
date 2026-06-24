@@ -170,6 +170,44 @@ export function leftoverLeaves(tasks: Task[], today: ISODate): Task[] {
   );
 }
 
+/** A leftover leaf together with the ancestor chain that gives it context. */
+export interface ReckoningLeaf {
+  task: Task;
+  /** Tasks between the card root and this leaf, exclusive of both (nearest-last). */
+  parents: Task[];
+}
+
+/**
+ * One Reckoning "card": a top-level ancestor and the unfinished leftover leaves
+ * beneath it. Restores the hierarchy the flat list threw away — you review a
+ * whole top-level commitment and its stranded subtasks together.
+ *
+ * `root` is the top-level ancestor; for a leftover that is itself top-level,
+ * `root` is that task and its single leaf has no `parents`. Cards (and the
+ * leaves within them) preserve tree order.
+ */
+export interface ReckoningCard {
+  root: Task;
+  leaves: ReckoningLeaf[];
+}
+
+export function reckoningCards(tasks: Task[], today: ISODate): ReckoningCard[] {
+  const cards: ReckoningCard[] = [];
+  const indexByRoot = new Map<TaskId, number>();
+  for (const leaf of leftoverLeaves(tasks, today)) {
+    const path = getAncestorPath(tasks, leaf.id);
+    const root = path[0] ?? leaf;
+    let idx = indexByRoot.get(root.id);
+    if (idx == null) {
+      idx = cards.length;
+      indexByRoot.set(root.id, idx);
+      cards.push({ root, leaves: [] });
+    }
+    cards[idx].leaves.push({ task: leaf, parents: path.slice(1, -1) });
+  }
+  return cards;
+}
+
 export function isActionableLeaf(t: Task): boolean {
   return isLeaf(t) && !t.completed;
 }
