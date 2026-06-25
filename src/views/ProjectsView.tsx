@@ -60,7 +60,7 @@ function ProjectRow({
       onDoubleClick={() => onStartRename(project.id)}
       className={[
         "group relative flex cursor-default select-none items-center gap-3 rounded-sm px-2.5 py-2.5",
-        active ? "bg-surface-2" : "hover:bg-surface-2/60",
+        active && !editing ? "bg-surface-2" : "hover:bg-surface-2/60",
       ].join(" ")}
     >
       {focused && (

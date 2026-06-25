@@ -7,11 +7,14 @@ export function CaptureBar({
   placeholder,
   onAdd,
   onArrowDown,
+  onFocus,
 }: {
   inputRef: RefObject<HTMLInputElement>;
   placeholder: string;
   onAdd: (raw: string) => void;
   onArrowDown: () => void;
+  /** Fired when the input gains focus (keyboard jump, click, or "+"). */
+  onFocus?: () => void;
 }) {
   const [value, setValue] = useState("");
 
@@ -22,6 +25,7 @@ export function CaptureBar({
         {...NO_SPELLCHECK}
         ref={inputRef}
         value={value}
+        onFocus={onFocus}
         onChange={(e) => setValue(e.target.value)}
         onKeyDown={(e) => {
           if (e.key === "Enter") {

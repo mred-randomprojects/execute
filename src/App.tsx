@@ -1207,6 +1207,7 @@ export function App() {
                   captureRef={captureRef}
                   onAdd={onCapture}
                   onCaptureArrowDown={() => flatIds[0] != null && setFocus(flatIds[0])}
+                  onCaptureFocus={() => setSelection(emptySelection)}
                   onAddProject={() => createProjectAndFirstTask("New project")}
                   onAddToProject={addTaskToProject}
                   onSelectRow={setFocus}

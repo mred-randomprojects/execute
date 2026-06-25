@@ -406,6 +406,7 @@ export function OutlineView({
   captureRef,
   onAdd,
   onCaptureArrowDown,
+  onCaptureFocus,
   onAddProject,
   onAddToProject,
   onSelectRow,
@@ -435,6 +436,7 @@ export function OutlineView({
   captureRef: RefObject<HTMLInputElement>;
   onAdd: (raw: string) => void;
   onCaptureArrowDown: () => void;
+  onCaptureFocus: () => void;
   onAddProject: () => void;
   onAddToProject: (projectId: ProjectId, afterId: TaskId | null) => void;
   onSelectRow: (id: OutlineId) => void;
@@ -499,6 +501,7 @@ export function OutlineView({
           placeholder={zoom != null ? `Add to ${zoom.title}…` : PLACEHOLDERS[view]}
           onAdd={onAdd}
           onArrowDown={onCaptureArrowDown}
+          onFocus={onCaptureFocus}
         />
       </div>
 

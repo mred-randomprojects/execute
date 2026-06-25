@@ -139,7 +139,7 @@ export function TaskRow({ task, depth }: { task: Task; depth: number }) {
         onDoubleClick={() => ed.openDetail(task.id)}
         className={[
           "group relative flex items-center gap-2 rounded-sm py-[5px] pr-2 cursor-default select-none",
-          inSelection ? "bg-surface-2" : "hover:bg-surface-2/60",
+          inSelection && !editing ? "bg-surface-2" : "hover:bg-surface-2/60",
           isMoving ? "opacity-50" : "",
         ].join(" ")}
         style={{ paddingLeft: `${depth * 22 + 6}px` }}
