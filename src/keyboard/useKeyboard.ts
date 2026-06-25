@@ -63,6 +63,14 @@ export function useKeyboard<D extends ContextState>(
       const binding = findBinding(keymap, combo, context);
       if (binding == null) return;
 
+      // Swallow auto-repeat for one-shot bindings (e.g. trash): holding the key
+      // would otherwise re-fire the action on each repeat. preventDefault too, so
+      // the held key can't trigger any native behavior on the repeats.
+      if (e.repeat && binding.noRepeat) {
+        e.preventDefault();
+        return;
+      }
+
       const handler = actionMap[binding.action];
       if (handler == null) return;
 

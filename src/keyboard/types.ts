@@ -43,6 +43,13 @@ export interface KeyBinding {
   displayKey?: string;
   /** Section grouping in the help overlay. */
   section?: string;
+  /**
+   * Ignore key auto-repeat (holding the key down). Off by default so held keys
+   * still stream — that's what walks the cursor to the bottom of the list on a
+   * held ArrowDown. Set on one-shot/destructive actions like trash, where a held
+   * key would otherwise cascade through the whole list.
+   */
+  noRepeat?: boolean;
 }
 
 // ─── Normalizer ──────────────────────────────────────────────────────
