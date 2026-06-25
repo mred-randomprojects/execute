@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react";
 import type { OutlineId, ProjectId } from "../types";
 import { projectRowId } from "../types";
 import type { ProjectSummary } from "../selectors";
@@ -47,8 +48,14 @@ function ProjectRow({
   const rowId = projectRowId(project.id);
   const active = focused || selected;
 
+  const rowRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (focused) rowRef.current?.scrollIntoView?.({ block: "nearest" });
+  }, [focused]);
+
   return (
     <div
+      ref={rowRef}
       onClick={() => onSelect(rowId)}
       onDoubleClick={() => onStartRename(project.id)}
       className={[

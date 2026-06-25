@@ -137,8 +137,14 @@ function ProjectDivider({
   const active = focused || selected;
   const hasTasks = group.tasks.length > 0;
 
+  const rowRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (focused) rowRef.current?.scrollIntoView?.({ block: "nearest" });
+  }, [focused]);
+
   return (
     <div
+      ref={rowRef}
       onClick={() => onSelect(rowId)}
       onDoubleClick={() => onStartRename(group.project.id)}
       className="group relative mb-1.5 mt-7 flex cursor-default select-none items-center gap-2 px-1 first:mt-1"
