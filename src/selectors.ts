@@ -9,14 +9,18 @@ import {
   walk,
 } from "./store/tasks";
 import {
+  addDays,
   monthElapsed,
+  monthEnd,
   monthKey,
   monthKeyOffset,
   monthLabel,
+  monthStart,
   weekElapsed,
   weekKey,
   weekKeyOffset,
   weekLabel,
+  weekStart,
 } from "./store/dates";
 
 export type ViewKind = "today" | "backlog" | "all" | "projects" | "trash";
@@ -245,6 +249,60 @@ export function taskBucket(task: Task, today: ISODate): LaterBucket {
     return (h.anchor ?? "") >= weekKeyOffset(today, 1) ? "nextWeek" : "thisWeek";
   }
   return (h.anchor ?? "") >= monthKeyOffset(today, 1) ? "nextMonth" : "thisMonth";
+}
+
+// ─── Soft horizons → a suggested concrete day (the AI-swappable heuristic) ──
+//
+// Horizons stay the source of truth and never reckon. This only *projects* a
+// concrete day so a fuzzy task can surface in Today as a suggestion the user can
+// accept (→ a real dated commitment) or dismiss. A later, smarter pass (load
+// balancing, then an AI) can replace `pickSuggested` without touching callers.
+
+/** All days from `start` to `end`, inclusive. */
+function daysInclusive(start: ISODate, end: ISODate): ISODate[] {
+  const days: ISODate[] = [];
+  for (let d = start; d <= end; d = addDays(d, 1)) days.push(d);
+  return days;
+}
+
+/**
+ * Pick a day within a horizon's window: aim for the middle (Wed of a week,
+ * mid-month), but once that's past, aim for the middle of what's left; if the
+ * whole window is behind us, surface today so the stale horizon gets re-triaged.
+ */
+function pickSuggested(window: ISODate[], today: ISODate): ISODate {
+  const remaining = window.filter((d) => d >= today);
+  if (remaining.length === 0) return today;
+  const natural = window[Math.floor(window.length / 2)];
+  if (natural >= today) return natural;
+  return remaining[Math.floor(remaining.length / 2)];
+}
+
+/**
+ * The concrete day a soft-horizon task is *suggested* for, or null when there's
+ * nothing to suggest: completed, already dated (`plannedFor`), Inbox (`horizon`
+ * null), or Someday (no clock). Never mutates — purely derived from the horizon.
+ */
+export function suggestedDayFor(task: Task, today: ISODate): ISODate | null {
+  if (task.completed || task.plannedFor != null) return null;
+  const h = task.horizon;
+  if (h == null || h.unit === "someday" || h.anchor == null) return null;
+  const anchor = h.anchor; // narrowed to string by the guard above
+
+  const window =
+    h.unit === "week"
+      ? [0, 1, 2, 3, 4].map((i) => addDays(weekStart(anchor), i)) // Mon–Fri
+      : daysInclusive(monthStart(anchor), monthEnd(anchor));
+  return pickSuggested(window, today);
+}
+
+/** Incomplete horizon tasks whose suggested day is today — the "Suggested for today" surface. */
+export function suggestedForToday(tasks: Task[], today: ISODate): Task[] {
+  const out: Task[] = [];
+  walk(tasks, (t) => {
+    if (suggestedDayFor(t, today) === today) out.push(t);
+  });
+  return out;
 }
 
 /** Short chip label for a task's horizon (for the by-project layout). `null` for Inbox/dated. */

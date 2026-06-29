@@ -119,6 +119,30 @@ export function monthKeyOffset(iso: ISODate, offset: number): string {
   return `${m.getFullYear()}-${String(m.getMonth() + 1).padStart(2, "0")}`;
 }
 
+/** Monday (ISO week start) of a week key like "2026-W26". */
+export function weekStart(key: string): ISODate {
+  const [yStr, wStr] = key.split("-W");
+  const weekYear = Number(yStr);
+  const week = Number(wStr);
+  // ISO week 1 is the week (Mon–Sun) containing Jan 4; find that Monday, step weeks.
+  const jan4 = new Date(weekYear, 0, 4);
+  const daysSinceMonday = (jan4.getDay() + 6) % 7;
+  const week1Monday = new Date(weekYear, 0, 4 - daysSinceMonday);
+  week1Monday.setDate(week1Monday.getDate() + (week - 1) * 7);
+  return toISO(week1Monday);
+}
+
+/** First day of a month key like "2026-06". */
+export function monthStart(key: string): ISODate {
+  return `${key}-01`;
+}
+
+/** Last day of a month key like "2026-06". */
+export function monthEnd(key: string): ISODate {
+  const [y, m] = key.split("-").map((n) => Number(n));
+  return toISO(new Date(y, m, 0)); // day 0 of the next month = last day of this one
+}
+
 /** "Week 25" from a week key. */
 export function weekLabel(key: string): string {
   const week = Number(key.slice(key.indexOf("W") + 1));

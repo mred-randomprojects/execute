@@ -8,6 +8,8 @@ import {
   projectSummaries,
   reckoningCards,
   resolveZoom,
+  suggestedDayFor,
+  suggestedForToday,
   taskBucket,
   viewPredicate,
   viewTasks,
@@ -15,6 +17,7 @@ import {
 } from "./selectors";
 import type { Horizon } from "./types";
 import { makeTask } from "./store/tasks";
+import { addDays } from "./store/dates";
 import {
   defaultProject,
   projectRowId,
@@ -206,6 +209,50 @@ describe("Later buckets (fuzzy horizons)", () => {
     const groups = groupTasksByBucket([open], [open, closed], today); // view hides the completed one
     expect(groups[0]).toMatchObject({ done: 1, total: 2 });
     expect(groups[0].tasks).toHaveLength(1); // but only the open one is listed
+  });
+});
+
+describe("suggestedDayFor (soft horizon → suggested day)", () => {
+  const horizon = (h: Horizon): Task => ({ ...task("x", "work"), horizon: h });
+  const monday = "2026-06-15"; // Monday of ISO week 25
+  const thisWeek: Horizon = { unit: "week", anchor: "2026-W25" };
+
+  it("aims for mid-week (Wednesday) when set early in the week", () => {
+    expect(suggestedDayFor(horizon(thisWeek), monday)).toBe("2026-06-17"); // Wed
+  });
+
+  it("pushes into what's left once the midpoint passed: Thursday → Friday", () => {
+    expect(suggestedDayFor(horizon(thisWeek), "2026-06-18")).toBe("2026-06-19"); // Fri
+  });
+
+  it("aims for mid-month for a month horizon", () => {
+    const midJune = suggestedDayFor(horizon({ unit: "month", anchor: "2026-06" }), "2026-06-01");
+    expect(midJune).toBe("2026-06-16"); // floor(30/2) = index 15 → the 16th
+  });
+
+  it("a next-week horizon stays in the future, not today", () => {
+    const s = suggestedDayFor(horizon({ unit: "week", anchor: "2026-W26" }), monday);
+    expect(s).toBe("2026-06-24"); // next Wednesday
+    expect(s != null && s > monday).toBe(true);
+  });
+
+  it("surfaces today to re-triage a horizon whose window already passed", () => {
+    expect(suggestedDayFor(horizon({ unit: "week", anchor: "2026-W20" }), monday)).toBe(monday);
+  });
+
+  it("returns null for someday, inbox, dated, and completed", () => {
+    const base = task("x", "work");
+    expect(suggestedDayFor({ ...base, horizon: { unit: "someday", anchor: null } }, monday)).toBeNull();
+    expect(suggestedDayFor({ ...base, horizon: null }, monday)).toBeNull(); // inbox
+    expect(suggestedDayFor({ ...base, plannedFor: monday }, monday)).toBeNull(); // already dated
+    expect(suggestedDayFor({ ...horizon(thisWeek), completed: true }, monday)).toBeNull();
+  });
+
+  it("suggestedForToday gathers only the tasks whose suggested day is today", () => {
+    const wednesday = addDays(monday, 2);
+    const due = horizon(thisWeek); // → Wednesday
+    const later = horizon({ unit: "week", anchor: "2026-W26" }); // → next week
+    expect(suggestedForToday([due, later], wednesday).map((t) => t.id)).toEqual([due.id]);
   });
 });
 
