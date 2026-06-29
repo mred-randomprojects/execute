@@ -443,17 +443,60 @@ describe("Multi-select", () => {
 });
 
 describe("Detail panel", () => {
-  it("opens with the right arrow and edits notes", async () => {
+  it("opens in preview, then Tab dives into the notes editor", async () => {
     render(<App />);
     await addTask("with notes");
     blurActive();
 
-    fireEvent.keyDown(document.body, { key: "ArrowRight" });
+    fireEvent.keyDown(document.body, { key: "ArrowRight" }); // open (preview)
+    fireEvent.keyDown(document.body, { key: "Tab" }); // dive into notes
     const notes = await screen.findByPlaceholderText(
       "Add details, links, context… (markdown supported)"
     );
+    expect(document.activeElement).toBe(notes); // focus moved into the panel
     fireEvent.change(notes, { target: { value: "some detail" } });
     expect((notes as HTMLTextAreaElement).value).toBe("some detail");
+  });
+
+  it("previews while navigating: the panel follows ↑/↓ with focus on the list", async () => {
+    render(<App />);
+    await addTask("alpha");
+    await addTask("beta"); // order: alpha, beta; focus = beta
+    blurActive();
+
+    const panel = () =>
+      document.querySelector('[data-keyzone="panel"]') as HTMLElement | null;
+
+    fireEvent.keyDown(document.body, { key: "ArrowRight" }); // preview beta
+    await waitFor(() => expect(panel()?.textContent).toContain("beta"));
+
+    // Focus is still on the list, so ↑ moves the selection and the panel follows —
+    // no need to close/reopen between tasks.
+    fireEvent.keyDown(document.body, { key: "ArrowUp" });
+    await waitFor(() => expect(panel()?.textContent).toContain("alpha"));
+    expect(panel()).not.toBeNull(); // still open
+  });
+
+  it("esc from the notes returns to preview; a second esc closes the panel", async () => {
+    render(<App />);
+    await addTask("solo");
+    blurActive();
+
+    fireEvent.keyDown(document.body, { key: "ArrowRight" }); // preview
+    fireEvent.keyDown(document.body, { key: "Tab" }); // into notes
+    const notes = await screen.findByPlaceholderText(NOTES_PLACEHOLDER);
+    expect(document.activeElement).toBe(notes);
+
+    // First esc (in the notes) hands focus back to the list but keeps the panel.
+    fireEvent.keyDown(notes, { key: "Escape" });
+    await waitFor(() => expect(document.activeElement).not.toBe(notes));
+    expect(screen.queryByPlaceholderText(NOTES_PLACEHOLDER)).not.toBeNull();
+
+    // Second esc (on the list) closes the panel.
+    fireEvent.keyDown(document.body, { key: "Escape" });
+    await waitFor(() =>
+      expect(screen.queryByPlaceholderText(NOTES_PLACEHOLDER)).toBeNull()
+    );
   });
 
   it("shows a created timestamp", async () => {
@@ -591,8 +634,9 @@ describe("Keyboard-only outline control", () => {
     blurActive();
 
     fireEvent.keyDown(document.body, { key: "ArrowRight" });
-    const notes = await screen.findByPlaceholderText(NOTES_PLACEHOLDER);
-    fireEvent.keyDown(notes, { key: "Escape" });
+    await screen.findByPlaceholderText(NOTES_PLACEHOLDER); // open (preview)
+    // Focus stays on the list in preview, so esc on the list closes the panel.
+    fireEvent.keyDown(document.body, { key: "Escape" });
     await waitFor(() =>
       expect(screen.queryByPlaceholderText(NOTES_PLACEHOLDER)).toBeNull()
     );
@@ -608,8 +652,8 @@ describe("Keyboard-only outline control", () => {
 
     // → on an expanded parent opens the panel…
     fireEvent.keyDown(document.body, { key: "ArrowRight" });
-    const notes = await screen.findByPlaceholderText(NOTES_PLACEHOLDER);
-    fireEvent.keyDown(notes, { key: "Escape" }); // …esc returns to the list
+    await screen.findByPlaceholderText(NOTES_PLACEHOLDER);
+    fireEvent.keyDown(document.body, { key: "Escape" }); // …esc on the list closes it
     await waitFor(() =>
       expect(screen.queryByPlaceholderText(NOTES_PLACEHOLDER)).toBeNull()
     );

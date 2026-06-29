@@ -48,21 +48,36 @@ export function DetailPanel({
   log,
   projects,
   handlers,
+  editSignal,
 }: {
   task: Task;
   today: ISODate;
   log: LogEntry[];
   projects: Project[];
   handlers: DetailHandlers;
+  /** Bumped by the parent (Tab from the list) to dive into the notes editor. */
+  editSignal: number;
 }) {
   const [notes, setNotes] = useState(task.notes);
-  const [editing, setEditing] = useState(true); // open ready to type
+  // Open in preview: focus stays on the list so ↑/↓ keep navigating and the
+  // panel follows. Editing the notes is an explicit step (Tab → editSignal).
+  const [editing, setEditing] = useState(false);
   const notesRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     setNotes(task.notes);
-    setEditing(true);
+    setEditing(false);
   }, [task.id, task.notes]);
+
+  // React only to *changes* in editSignal, not to its value on mount — otherwise
+  // reopening the panel after a previous Tab would steal focus into the notes.
+  const lastEditSignal = useRef(editSignal);
+  useEffect(() => {
+    if (editSignal !== lastEditSignal.current) {
+      lastEditSignal.current = editSignal;
+      setEditing(true);
+    }
+  }, [editSignal]);
 
   useEffect(() => {
     if (editing) notesRef.current?.focus();
@@ -70,6 +85,14 @@ export function DetailPanel({
 
   const commitNotes = () => handlers.onCommitNotes(task.id, notes);
   const plannedToday = task.plannedFor === today;
+
+  // Leave the notes editor but keep the panel open: blur returns the keyboard to
+  // the list (context → normal), so previewing resumes from the same task.
+  const exitToPreview = () => {
+    commitNotes();
+    setEditing(false);
+    notesRef.current?.blur();
+  };
 
   const onNotesKeyDown = (e: ReactKeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
@@ -80,8 +103,7 @@ export function DetailPanel({
     } else if (e.key === "Escape") {
       e.preventDefault();
       e.stopPropagation();
-      commitNotes();
-      handlers.onBack();
+      exitToPreview();
     } else if (
       e.key === "ArrowLeft" &&
       e.currentTarget.selectionStart === 0 &&
@@ -89,8 +111,7 @@ export function DetailPanel({
     ) {
       e.preventDefault();
       e.stopPropagation();
-      commitNotes();
-      handlers.onBack();
+      exitToPreview();
     }
   };
 
@@ -115,13 +136,23 @@ export function DetailPanel({
         )}
       </div>
 
-      <div className="eyebrow mb-1.5">Content</div>
+      <div className="mb-1.5 flex items-center justify-between">
+        <span className="eyebrow">Content</span>
+        {!editing && (
+          <span className="text-[11px] text-ink-faint">
+            <span className="kbd">tab</span> to edit
+          </span>
+        )}
+      </div>
       {editing || notes.trim() === "" ? (
         <textarea
           {...NO_SPELLCHECK}
           ref={notesRef}
           value={notes}
           onChange={(e) => setNotes(e.target.value)}
+          // Empty notes render the textarea in preview too; focusing it (click or
+          // the Tab dive) is what actually enters edit mode, so it stays mounted.
+          onFocus={() => setEditing(true)}
           onBlur={() => {
             commitNotes();
             setEditing(false);

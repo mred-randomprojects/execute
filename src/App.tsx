@@ -134,6 +134,9 @@ export function App() {
   const [confirm, setConfirm] = useState<ConfirmRequest | null>(null);
   const [laterLayout, setLaterLayout] = useState<"date" | "project">("date");
   const [showPanel, setShowPanel] = useState(false);
+  // Bumped to ask an open detail panel to dive from preview into its notes editor
+  // (Tab from the list). The panel reacts to changes only, so the value is opaque.
+  const [editNotesSignal, setEditNotesSignal] = useState(0);
   const [reckCursorId, setReckCursorId] = useState<TaskId | null>(null);
   const [breakingDownId, setBreakingDownId] = useState<TaskId | null>(null);
   const [reckReason, setReckReason] = useState("");
@@ -634,6 +637,12 @@ export function App() {
       setPlannedForMany(ids, allPlanned ? null : today);
     },
     taskIndent: () => {
+      // With the detail panel open (preview), Tab dives into the notes editor
+      // instead of indenting — focus leaves the list and lands in the panel.
+      if (showPanel && focusedTaskId != null && !reckoningActive && view !== "trash") {
+        setEditNotesSignal((n) => n + 1);
+        return;
+      }
       if (focusedTaskId != null) indentInView(focusedTaskId);
     },
     taskOutdent: () => {
@@ -1233,6 +1242,7 @@ export function App() {
               log={panelTaskLog}
               projects={state.projects}
               handlers={detailHandlers}
+              editSignal={editNotesSignal}
             />
           )}
         </div>

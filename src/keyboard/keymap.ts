@@ -43,7 +43,7 @@ export const keymap: KeyBinding[] = [
   { key: "Meta+Enter", action: "task.toggle", context: ["normal", "editing"], displayKey: "⌘ ↵", description: "complete / uncomplete", section: "Tasks" },
   { key: "t", action: "task.planToday", context: "normal", displayKey: "t", description: "plan / unplan for today", section: "Tasks" },
   { key: "s", action: "schedule.open", context: "normal", displayKey: "s", description: "schedule (this week, someday, a date…)", section: "Tasks" },
-  { key: "Tab", action: "task.indent", context: "normal", displayKey: "tab", description: "indent (make subtask)", section: "Tasks" },
+  { key: "Tab", action: "task.indent", context: "normal", displayKey: "tab", description: "indent (make subtask) · edit notes when the panel is open", section: "Tasks" },
   { key: "Shift+Tab", action: "task.outdent", context: "normal", displayKey: "⇧ tab", description: "outdent", section: "Tasks" },
   { key: "Meta+ArrowUp", action: "reorder.up", context: "normal", displayKey: "⌘ ↑", description: "move task up", section: "Tasks" },
   { key: "Meta+ArrowDown", action: "reorder.down", context: "normal", displayKey: "⌘ ↓", description: "move task down", section: "Tasks" },
