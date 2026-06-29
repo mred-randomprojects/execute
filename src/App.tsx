@@ -59,6 +59,7 @@ import {
   projectSummaries,
   reckoningCards,
   resolveZoom,
+  suggestedForToday,
   taskBucket,
   todayProgress,
   viewTasks,
@@ -224,6 +225,13 @@ export function App() {
     if (z == null || !hideCompleted) return z;
     return { ...z, subtree: filterTree(z.subtree, (t) => !t.completed) };
   }, [zoom, state.tasks, state.projects, view, hideCompleted]);
+  // Soft-horizon tasks the engine projects onto today — shown as a passive,
+  // non-reckoning "Suggested for today" group at the foot of Today. They join the
+  // outline flow so ↑/↓ reach them and `t` (accept) / `s` (reschedule) just work.
+  const suggestedTasks = useMemo(
+    () => (view === "today" && zoom == null ? suggestedForToday(state.tasks, today) : []),
+    [view, zoom, state.tasks, today]
+  );
   const outlineRows = useMemo<OutlineRow[]>(() => {
     if (zoomFocus != null) {
       return flattenRows(zoomFocus.subtree, collapsed).map((row) => ({
@@ -250,7 +258,7 @@ export function App() {
         }))
       );
     }
-    return projectGroups.flatMap((group) => [
+    const rows = projectGroups.flatMap((group) => [
       {
         kind: "project" as const,
         id: projectRowId(group.project.id),
@@ -264,7 +272,12 @@ export function App() {
             taskId: row.task.id,
           }))),
     ]);
-  }, [zoomFocus, view, state.projects, projectGroups, usingBuckets, bucketGroups, collapsed, collapsedProjects]);
+    // Suggested-for-today rows trail the project groups, matching their render order.
+    for (const t of suggestedTasks) {
+      rows.push({ kind: "task" as const, id: t.id, taskId: t.id });
+    }
+    return rows;
+  }, [zoomFocus, view, state.projects, projectGroups, usingBuckets, bucketGroups, collapsed, collapsedProjects, suggestedTasks]);
   const flatIds = useMemo(() => outlineRows.map((r) => r.id), [outlineRows]);
   const flatKey = flatIds.join(",");
   // The task ids the view actually renders — so structural edits (reorder) act on
@@ -1220,6 +1233,7 @@ export function App() {
                   view={view}
                   today={today}
                   groups={projectGroups}
+                  suggested={suggestedTasks}
                   zoom={zoomFocus}
                   collapsedProjectIds={collapsedProjects}
                   hideCompleted={hideCompleted}

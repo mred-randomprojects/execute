@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { RefObject } from "react";
-import type { ISODate, OutlineId, Project, ProjectId, TaskId } from "../types";
+import type { ISODate, OutlineId, Project, ProjectId, Task, TaskId } from "../types";
 import { projectRowId } from "../types";
 import type {
   Crumb,
@@ -392,6 +392,7 @@ export function OutlineView({
   view,
   today,
   groups,
+  suggested,
   buckets,
   laterLayout,
   onToggleLaterLayout,
@@ -422,6 +423,7 @@ export function OutlineView({
   view: ViewKind;
   today: ISODate;
   groups: ProjectTaskGroup[];
+  suggested: Task[];
   buckets: LaterGroup[];
   laterLayout: "date" | "project";
   onToggleLaterLayout: () => void;
@@ -581,6 +583,24 @@ export function OutlineView({
               </section>
             );
           })
+        )}
+
+        {zoom == null && view === "today" && suggested.length > 0 && (
+          <section className="mt-6 px-2">
+            <div className="mb-1 flex items-center justify-between border-t border-line pt-3">
+              <span className="eyebrow">Suggested for today</span>
+              <span className="text-[11px] text-ink-faint">
+                <span className="kbd">t</span> plan today ·{" "}
+                <span className="kbd">s</span> reschedule
+              </span>
+            </div>
+            <p className="mb-1.5 text-[12px] text-ink-faint">
+              Soft picks from your week/month horizons — not commitments until you accept.
+            </p>
+            {suggested.map((t) => (
+              <TaskRow key={t.id} task={t} depth={0} />
+            ))}
+          </section>
         )}
       </div>
     </div>

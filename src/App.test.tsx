@@ -530,6 +530,35 @@ describe("Detail panel", () => {
   });
 });
 
+describe("Suggested for today", () => {
+  it("surfaces a this-week task as a suggestion and `t` accepts it into Today", async () => {
+    render(<App />);
+    // Set the date only once init has settled (App's load effect would reset it).
+    await screen.findByPlaceholderText("Add a task for today…");
+    act(() => setDevDateOverride("2026-06-17")); // Wednesday of ISO week 25
+    await addTask("water plants");
+    blurActive();
+
+    // Schedule "this week": it leaves Today (soft horizon) but its suggested day
+    // is Wednesday === today, so it reappears under "Suggested for today".
+    fireEvent.keyDown(document.body, { key: "k", metaKey: true });
+    const palette = await screen.findByPlaceholderText("Type a command…");
+    fireEvent.change(palette, { target: { value: "this week" } });
+    fireEvent.keyDown(palette, { key: "Enter" });
+
+    expect(await screen.findByText("Suggested for today")).toBeTruthy();
+    expect(screen.getByText("water plants")).toBeTruthy();
+
+    // The task kept focus (still in the outline flow), so `t` accepts it: it
+    // becomes a real Today commitment and the suggestion group disappears.
+    fireEvent.keyDown(document.body, { key: "t" });
+    await waitFor(() =>
+      expect(screen.queryByText("Suggested for today")).toBeNull()
+    );
+    expect(screen.getByText("water plants")).toBeTruthy();
+  });
+});
+
 describe("Markdown", () => {
   it("renders inline code in a task title", async () => {
     render(<App />);
