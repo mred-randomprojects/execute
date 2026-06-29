@@ -71,6 +71,7 @@ import {
 import {
   emptySelection,
   moveSelection,
+  nearestSurvivor,
   selectAfterRemoving,
   selectOne,
   type Selection,
@@ -289,13 +290,20 @@ export function App() {
     (id): id is TaskId => !isProjectRowId(id)
   );
 
+  // When the visible set changes, keep the cursor sensible. If the focused row
+  // left the view (planned away with `t`, rescheduled, completed+hidden…), land
+  // on the nearest surviving neighbor — preferring the row above — instead of
+  // snapping to the top. `prevFlatIdsRef` holds the order before this change.
+  const prevFlatIdsRef = useRef<OutlineId[]>(flatIds);
   useEffect(() => {
+    const prev = prevFlatIdsRef.current;
+    prevFlatIdsRef.current = flatIds;
     setSelection((s) =>
       flatIds.length === 0
         ? emptySelection
         : s.focusedId != null && flatIds.includes(s.focusedId)
           ? s
-          : selectOne(s.focusedId, flatIds)
+          : selectOne(nearestSurvivor(prev, flatIds, s.focusedId), flatIds)
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [flatKey]);

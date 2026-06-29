@@ -65,6 +65,31 @@ export function selectOne(id: OutlineId | null, visible: readonly OutlineId[]): 
   return { focusedId: id, anchorId: id, selectedIds: [id] };
 }
 
+/**
+ * When the focused row leaves the visible set (planned away, completed+hidden,
+ * rescheduled…), pick where the cursor lands: the nearest row that survived,
+ * preferring the one *above* the lost row — so a following ↓ lands on whatever
+ * slid into its place — then the one below, then the top. `prev` is the visible
+ * order before the change, `next` the order after.
+ */
+export function nearestSurvivor(
+  prev: readonly OutlineId[],
+  next: readonly OutlineId[],
+  lostId: OutlineId | null
+): OutlineId | null {
+  if (next.length === 0) return null;
+  const i = lostId == null ? -1 : prev.indexOf(lostId);
+  if (i < 0) return next[0];
+  const survivors = new Set(next);
+  for (let d = 1; d < prev.length; d++) {
+    const up = prev[i - d];
+    if (up != null && survivors.has(up)) return up;
+    const down = prev[i + d];
+    if (down != null && survivors.has(down)) return down;
+  }
+  return next[0];
+}
+
 export function moveSelection(
   sel: Selection,
   visible: readonly OutlineId[],

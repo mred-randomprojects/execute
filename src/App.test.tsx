@@ -253,6 +253,29 @@ function blurActive() {
   (document.activeElement as HTMLElement | null)?.blur();
 }
 
+describe("Cursor after a task leaves the view", () => {
+  it("lands on the row above when `t` unplans the focused task (not the top)", async () => {
+    render(<App />);
+    await addTask("alpha");
+    await addTask("bravo");
+    await addTask("charlie");
+    await addTask("delta"); // top→bottom: alpha, bravo, charlie, delta; focus on delta
+    blurActive();
+
+    fireEvent.keyDown(document.body, { key: "ArrowUp" }); // focus charlie
+    fireEvent.keyDown(document.body, { key: "t" }); // unplan → leaves Today, focus → bravo
+    await waitFor(() => expect(screen.queryByText("charlie")).toBeNull());
+
+    fireEvent.keyDown(document.body, { key: "ArrowDown" }); // bravo → delta (charlie's old slot)
+    fireEvent.keyDown(document.body, { key: "t" }); // unplan delta
+    await waitFor(() => expect(screen.queryByText("delta")).toBeNull());
+
+    // Had the cursor snapped to the top, the second `t` would have unplanned alpha/bravo.
+    expect(screen.getByText("alpha")).toBeTruthy();
+    expect(screen.getByText("bravo")).toBeTruthy();
+  });
+});
+
 describe("Trash", () => {
   it("Backspace trashes a task; Trash view restores it", async () => {
     render(<App />);
@@ -401,12 +424,11 @@ describe("Reorder", () => {
 
     // Hide "mid" between the two visible tasks (raw order: first, mid, second).
     fireEvent.keyDown(document.body, { key: "ArrowUp" }); // second → mid
-    fireEvent.keyDown(document.body, { key: "t" }); // unplan mid
+    fireEvent.keyDown(document.body, { key: "t" }); // unplan mid → cursor lands on "first" (row above)
     await waitFor(() => expect(screen.queryByText("mid")).toBeNull());
 
-    // Focus "first" and move it down. The raw next sibling is the hidden "mid";
+    // Cursor is on "first" now. Its raw next sibling is the hidden "mid";
     // view-aware reorder must move it past the visible "second" instead.
-    fireEvent.keyDown(document.body, { key: "ArrowDown" }); // header → first
     fireEvent.keyDown(document.body, { key: "ArrowDown", metaKey: true }); // reorder down
 
     await waitFor(() => {
