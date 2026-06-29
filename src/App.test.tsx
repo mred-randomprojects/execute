@@ -681,6 +681,24 @@ describe("Command palette", () => {
     );
   });
 
+  it("schedules the focused task to a horizon via Cmd+K (leaves Today)", async () => {
+    render(<App />);
+    await addTask("groceries"); // captured into Today (plannedFor === today)
+    blurActive();
+
+    fireEvent.keyDown(document.body, { key: "k", metaKey: true });
+    const palette = await screen.findByPlaceholderText("Type a command…");
+    // "this week" matches only "Schedule: This week" by label substring.
+    fireEvent.change(palette, { target: { value: "this week" } });
+    fireEvent.keyDown(palette, { key: "Enter" });
+
+    // It becomes a soft horizon, so it drops out of Today…
+    await waitFor(() => expect(screen.queryByText("groceries")).toBeNull());
+    // …and surfaces in the Later/Backlog view (non-dated tasks).
+    fireEvent.keyDown(document.body, { key: "2" });
+    expect(await screen.findByText("groceries")).toBeTruthy();
+  });
+
   it("selects a project row and renames it with Enter", async () => {
     render(<App />);
     await screen.findByPlaceholderText("Add a task for today…");

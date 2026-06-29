@@ -46,7 +46,7 @@ import {
   useStore,
 } from "./store/store";
 import { findById, findParentId } from "./store/tasks";
-import { monthKey, monthKeyOffset, todayISO, weekKey, weekKeyOffset } from "./store/dates";
+import { addDays, monthKey, monthKeyOffset, todayISO, weekKey, weekKeyOffset } from "./store/dates";
 import { parseCapture } from "./store/capture";
 import {
   backlogCount,
@@ -1042,6 +1042,16 @@ export function App() {
     { id: "details", label: "Open details panel", hint: "→", run: openPanel },
     { id: "toggle", label: "Complete / uncomplete task", hint: "space", run: cmd.taskToggle },
     { id: "plan", label: "Plan / unplan for today", hint: "t", run: cmd.taskPlanToday },
+    // Scheduling, reachable from the palette (the `s` picker is the keyboard path).
+    // All act on the focused/selected task(s); no-op when nothing is targeted.
+    { id: "sched-today", label: "Schedule: Today", aliases: ["schedule"], hint: "s t", run: () => applySchedule("today") },
+    { id: "sched-tomorrow", label: "Schedule: Tomorrow", aliases: ["schedule"], run: () => applySchedule({ date: addDays(today, 1) }) },
+    { id: "sched-this-week", label: "Schedule: This week", aliases: ["schedule"], hint: "s w", run: () => applySchedule("thisWeek") },
+    { id: "sched-next-week", label: "Schedule: Next week", aliases: ["schedule"], hint: "s e", run: () => applySchedule("nextWeek") },
+    { id: "sched-this-month", label: "Schedule: This month", aliases: ["schedule"], hint: "s m", run: () => applySchedule("thisMonth") },
+    { id: "sched-next-month", label: "Schedule: Next month", aliases: ["schedule"], hint: "s n", run: () => applySchedule("nextMonth") },
+    { id: "sched-someday", label: "Schedule: Someday", aliases: ["schedule"], hint: "s s", run: () => applySchedule("someday") },
+    { id: "sched-inbox", label: "Schedule: Inbox (untriage)", aliases: ["schedule"], hint: "s i", run: () => applySchedule("inbox") },
     { id: "move", label: "Move task (re-parent)", hint: "m", run: cmd.moveEnter },
     { id: "zoom", label: "Zoom in / focus", hint: "⌥↵", run: cmd.zoomIn },
     {
