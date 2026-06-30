@@ -567,6 +567,13 @@ export function App() {
       }
       setSelection((s) => moveSelection(s, flatIds, "up", false));
     },
+    cursorFirst: () => {
+      if (flatIds.length > 0) setSelection(selectOne(flatIds[0], flatIds));
+    },
+    cursorLast: () => {
+      if (flatIds.length > 0)
+        setSelection(selectOne(flatIds[flatIds.length - 1], flatIds));
+    },
     selectDown: () => setSelection((s) => moveSelection(s, flatIds, "down", true)),
     selectUp: () => setSelection((s) => moveSelection(s, flatIds, "up", true)),
     reorderUp: () => reorderAcrossProjects(actionTargets(), "up", visibleTaskIds),
@@ -809,6 +816,8 @@ export function App() {
   const actionMap: Record<string, () => void> = {
     "cursor.down": cmd.cursorDown,
     "cursor.up": cmd.cursorUp,
+    "cursor.first": cmd.cursorFirst,
+    "cursor.last": cmd.cursorLast,
     "select.down": cmd.selectDown,
     "select.up": cmd.selectUp,
     "reorder.down": cmd.reorderDown,

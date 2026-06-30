@@ -276,6 +276,31 @@ describe("Cursor after a task leaves the view", () => {
   });
 });
 
+describe("Jump navigation (⌘↑ / ⌘↓)", () => {
+  it("jumps to the first/last item instead of reordering", async () => {
+    render(<App />);
+    await addTask("alpha");
+    await addTask("bravo");
+    await addTask("charlie"); // rows: project, alpha, bravo, charlie; focus charlie
+    blurActive();
+
+    // ⌘↑ → first row (project header); ↓ → alpha; `t` removes it.
+    fireEvent.keyDown(document.body, { key: "ArrowUp", metaKey: true });
+    fireEvent.keyDown(document.body, { key: "ArrowDown" });
+    fireEvent.keyDown(document.body, { key: "t" });
+    await waitFor(() => expect(screen.queryByText("alpha")).toBeNull());
+    // Had ⌘↑ reordered instead of jumping, alpha would still be here.
+    expect(screen.getByText("bravo")).toBeTruthy();
+    expect(screen.getByText("charlie")).toBeTruthy();
+
+    // ⌘↓ → last item (charlie); `t` removes it.
+    fireEvent.keyDown(document.body, { key: "ArrowDown", metaKey: true });
+    fireEvent.keyDown(document.body, { key: "t" });
+    await waitFor(() => expect(screen.queryByText("charlie")).toBeNull());
+    expect(screen.getByText("bravo")).toBeTruthy();
+  });
+});
+
 describe("Trash", () => {
   it("Backspace trashes a task; Trash view restores it", async () => {
     render(<App />);
@@ -401,13 +426,13 @@ describe("Indent respects the filtered view", () => {
 });
 
 describe("Reorder", () => {
-  it("Cmd+ArrowUp moves the focused task up", async () => {
+  it("Option+ArrowUp moves the focused task up", async () => {
     render(<App />);
     await addTask("a");
     await addTask("b"); // focused = b, order a,b
     blurActive();
 
-    fireEvent.keyDown(document.body, { key: "ArrowUp", metaKey: true });
+    fireEvent.keyDown(document.body, { key: "ArrowUp", altKey: true });
 
     const a = screen.getByText("a");
     const b = screen.getByText("b");
@@ -415,7 +440,7 @@ describe("Reorder", () => {
     expect(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy();
   });
 
-  it("⌘↓ hops over a task the view is hiding instead of an invisible no-op", async () => {
+  it("⌥↓ hops over a task the view is hiding instead of an invisible no-op", async () => {
     render(<App />);
     await addTask("first");
     await addTask("mid");
@@ -429,7 +454,7 @@ describe("Reorder", () => {
 
     // Cursor is on "first" now. Its raw next sibling is the hidden "mid";
     // view-aware reorder must move it past the visible "second" instead.
-    fireEvent.keyDown(document.body, { key: "ArrowDown", metaKey: true }); // reorder down
+    fireEvent.keyDown(document.body, { key: "ArrowDown", altKey: true }); // reorder down
 
     await waitFor(() => {
       const first = screen.getByText("first");
