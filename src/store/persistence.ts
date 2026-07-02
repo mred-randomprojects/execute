@@ -269,6 +269,7 @@ export function coerceState(raw: unknown): AppState {
     })),
     log: Array.isArray(raw.log) ? raw.log.map(coerceLogEntry) : [],
     theme: coerceTheme(raw.theme),
+    currentTaskId: strOrNull(raw.currentTaskId) as TaskId | null,
     lastOpenedDate: strOrNull(raw.lastOpenedDate),
     devDateOverride: strOrNull(raw.devDateOverride),
   };

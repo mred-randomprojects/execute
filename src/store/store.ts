@@ -122,6 +122,11 @@ export function markOpened(date: ISODate): void {
   update((s) => ({ ...s, lastOpenedDate: date }), false);
 }
 
+/** Set (or clear, with null) the "right now" task. A focus pointer, not undoable. */
+export function setCurrentTask(id: TaskId | null): void {
+  update((s) => ({ ...s, currentTaskId: id }), false);
+}
+
 // ─── Insert ─────────────────────────────────────────────────────────
 
 function insertAfterSibling(tasks: Task[], afterId: TaskId | null, newTask: Task): Task[] {

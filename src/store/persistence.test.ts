@@ -105,3 +105,11 @@ describe("persistence: v5 recurrences", () => {
     expect(state.recurrences[0].rule.interval).toBe(1);
   });
 });
+
+describe("persistence: v6 current task pointer", () => {
+  it("round-trips currentTaskId and defaults it to null", () => {
+    expect(coerceState({}).currentTaskId).toBeNull();
+    expect(coerceState({ currentTaskId: "t9" }).currentTaskId).toBe("t9");
+    expect(coerceState({ currentTaskId: 123 }).currentTaskId).toBeNull(); // junk → null
+  });
+});

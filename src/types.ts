@@ -147,13 +147,15 @@ export interface AppState {
   trash: TrashedTask[];
   log: LogEntry[];
   theme: ThemeName;
+  /** The one task the user is focusing on "right now" — surfaced in a banner. */
+  currentTaskId: TaskId | null;
   /** Last calendar date the app was opened — drives rollover detection. */
   lastOpenedDate: ISODate | null;
   /** Dev-only: pretend "today" is this date, to exercise the rollover ritual. */
   devDateOverride: ISODate | null;
 }
 
-export const SCHEMA_VERSION = 5;
+export const SCHEMA_VERSION = 6;
 export const DEFAULT_PROJECT_ID = "project-inbox" as ProjectId;
 export const PROJECT_ROW_PREFIX = "project:";
 
@@ -198,6 +200,7 @@ export function emptyState(): AppState {
     trash: [],
     log: [],
     theme: "slate",
+    currentTaskId: null,
     lastOpenedDate: null,
     devDateOverride: null,
   };

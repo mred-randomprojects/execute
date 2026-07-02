@@ -15,6 +15,8 @@ export interface Editor {
   /** True in the by-date "Later" layout, where the bucket header already says the horizon. */
   bucketed: boolean;
   cursorId: TaskId | null;
+  /** The "right now" task, highlighted with a marker. `null` when none is set. */
+  currentId: TaskId | null;
   selectedIds: TaskId[];
   editingId: TaskId | null;
   collapsed: Set<TaskId>;

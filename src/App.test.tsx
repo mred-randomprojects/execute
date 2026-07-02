@@ -681,7 +681,7 @@ describe("Keyboard-only outline control", () => {
 
     // Move to parent and collapse it → child hidden.
     fireEvent.keyDown(document.body, { key: "ArrowUp" });
-    fireEvent.keyDown(document.body, { key: "c" });
+    fireEvent.keyDown(document.body, { key: "ArrowLeft" });
     await waitFor(() => expect(screen.queryByText("child")).toBeNull());
 
     // → must EXPAND the collapsed task, not open the panel.
@@ -734,9 +734,9 @@ describe("Keyboard-only outline control", () => {
       expect(screen.queryByPlaceholderText(NOTES_PLACEHOLDER)).toBeNull()
     );
 
-    fireEvent.keyDown(document.body, { key: "c" }); // collapse
+    fireEvent.keyDown(document.body, { key: "ArrowLeft" }); // collapse
     await waitFor(() => expect(screen.queryByText("kid")).toBeNull());
-    fireEvent.keyDown(document.body, { key: "c" }); // expand
+    fireEvent.keyDown(document.body, { key: "ArrowRight" }); // expand
     expect(await screen.findByText("kid")).toBeTruthy();
   });
 });
@@ -1019,5 +1019,43 @@ describe("Recurring tasks", () => {
     // The recurrence regroups under its new pattern.
     await waitFor(() => expect(screen.queryByText("Every day")).toBeNull());
     expect(screen.getByText("Every weekend day")).toBeTruthy();
+  });
+});
+
+describe("Current (focus) task", () => {
+  it("c sets a banner + row marker, and c again clears it", async () => {
+    render(<App />);
+    await addTask("focus me");
+    blurActive();
+    expect(screen.queryByText("Right now")).toBeNull();
+
+    fireEvent.keyDown(document.body, { key: "c" });
+    expect(await screen.findByText("Right now")).toBeTruthy(); // banner
+    expect(screen.getByText("Now")).toBeTruthy(); // row marker pill
+
+    fireEvent.keyDown(document.body, { key: "c" }); // toggle off
+    await waitFor(() => expect(screen.queryByText("Right now")).toBeNull());
+  });
+
+  it("retires the banner once the current task is completed", async () => {
+    render(<App />);
+    await addTask("do this");
+    blurActive();
+    fireEvent.keyDown(document.body, { key: "c" });
+    await screen.findByText("Right now");
+
+    fireEvent.keyDown(document.body, { key: " " }); // complete the focused task
+    await waitFor(() => expect(screen.queryByText("Right now")).toBeNull());
+  });
+
+  it("clears the pointer when the current task is deleted", async () => {
+    render(<App />);
+    await addTask("temp focus");
+    blurActive();
+    fireEvent.keyDown(document.body, { key: "c" });
+    await screen.findByText("Right now");
+
+    fireEvent.keyDown(document.body, { key: "Backspace" }); // trash the leaf
+    await waitFor(() => expect(screen.queryByText("Right now")).toBeNull());
   });
 });

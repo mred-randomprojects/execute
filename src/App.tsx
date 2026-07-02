@@ -44,6 +44,7 @@ import {
   restoreFromTrash,
   setCompleted,
   setCompletedMany,
+  setCurrentTask,
   setDevDateOverride,
   setHorizonMany,
   setNotes,
@@ -112,6 +113,7 @@ import { HelpOverlay } from "./components/HelpOverlay";
 import { DevControls } from "./components/DevControls";
 import { StatusBar } from "./components/StatusBar";
 import { CommandPalette, type Command } from "./components/CommandPalette";
+import { CurrentBanner } from "./components/CurrentBanner";
 import { SchedulePicker, type ScheduleChoice } from "./components/SchedulePicker";
 import { ConfirmModal, type ConfirmRequest } from "./components/ConfirmModal";
 
@@ -349,6 +351,11 @@ export function App() {
   const backlog = useMemo(() => backlogCount(state.tasks), [state.tasks]);
   const focusedTask =
     focusedTaskId != null ? findById(state.tasks, focusedTaskId) ?? null : null;
+  // The "right now" task, resolved from its id. Shown only while it exists and is
+  // incomplete — finishing or deleting it retires the banner.
+  const currentTask =
+    state.currentTaskId != null ? findById(state.tasks, state.currentTaskId) ?? null : null;
+  const activeCurrentTask = currentTask != null && !currentTask.completed ? currentTask : null;
   const focusedProjectId =
     focusedId != null && isProjectRowId(focusedId)
       ? projectIdFromRowId(focusedId)
@@ -409,6 +416,12 @@ export function App() {
   useEffect(() => {
     if (zoom != null && zoomFocus == null) setZoom(null);
   }, [zoom, zoomFocus]);
+  // Clear a dangling "current" pointer if its task was deleted / trashed.
+  useEffect(() => {
+    if (state.currentTaskId != null && findById(state.tasks, state.currentTaskId) == null) {
+      setCurrentTask(null);
+    }
+  }, [state.currentTaskId, state.tasks]);
 
   const didInitialFocus = useRef(false);
   useEffect(() => {
@@ -891,6 +904,12 @@ export function App() {
       const t = findById(filtered, focusedTaskId);
       if (t != null && t.children.length > 0) toggleCollapsedFor(focusedTaskId);
     },
+    taskCurrent: () => {
+      // Definitions and Today suggestions aren't real tasks — they can't be "current".
+      if (view === "recurring" || focusedRecurringToday != null) return;
+      if (focusedTaskId == null) return;
+      setCurrentTask(state.currentTaskId === focusedTaskId ? null : focusedTaskId);
+    },
     zoomIn: () => {
       if (view === "recurring") return; // no zoom into recurrence definitions (v1)
       if (focusedProjectId != null) zoomInto({ kind: "project", id: focusedProjectId });
@@ -1020,6 +1039,7 @@ export function App() {
     "task.outdent": cmd.taskOutdent,
     "task.trash": cmd.taskTrash,
     "task.collapse": cmd.taskCollapse,
+    "task.current": cmd.taskCurrent,
     "zoom.in": cmd.zoomIn,
     "move.enter": cmd.moveEnter,
     "move.dropSibling": cmd.moveDropSibling,
@@ -1074,6 +1094,7 @@ export function App() {
     today,
     bucketed: usingBuckets,
     cursorId: focusedTaskId,
+    currentId: state.currentTaskId,
     selectedIds: selectedTaskIds,
     editingId,
     collapsed,
@@ -1142,6 +1163,7 @@ export function App() {
     today,
     bucketed: false,
     cursorId: focusedTaskId,
+    currentId: null, // recurrence templates are never "current"
     selectedIds: selectedTaskIds,
     editingId,
     collapsed,
@@ -1334,6 +1356,15 @@ export function App() {
     { id: "details", label: "Open details panel", hint: "→", run: openPanel },
     { id: "toggle", label: "Complete / uncomplete task", hint: "space", run: cmd.taskToggle },
     { id: "plan", label: "Plan / unplan for today", hint: "t", run: cmd.taskPlanToday },
+    {
+      id: "current",
+      label:
+        focusedTaskId != null && state.currentTaskId === focusedTaskId
+          ? "Clear current (focus) task"
+          : "Set as current (focus) task",
+      hint: "c",
+      run: cmd.taskCurrent,
+    },
     // Scheduling, reachable from the palette (the `s` picker is the keyboard path).
     // All act on the focused/selected task(s); no-op when nothing is targeted.
     { id: "sched-today", label: "Schedule: Today", aliases: ["schedule"], hint: "s t", run: () => applySchedule("today") },
@@ -1427,6 +1458,13 @@ export function App() {
       </Sidebar>
 
       <main className="flex flex-1 flex-col overflow-hidden">
+        {activeCurrentTask != null && !reckoningActive && (
+          <CurrentBanner
+            task={activeCurrentTask}
+            onFocus={() => setFocus(activeCurrentTask.id)}
+            onClear={() => setCurrentTask(null)}
+          />
+        )}
         <div className="flex flex-1 overflow-hidden">
           <div className="flex-1 overflow-hidden">
             {reckoningActive ? (
