@@ -2,7 +2,7 @@
 
 - [ ] Sub-projects - arbitrarily nested _(model agreed: "a project is just a special task" — own refactor pass)_
 - [x] Scheduling: sometime this week, next week, etc., exact scheduling _(done: `s` opens a scheduler — Today / this·next week / this·next month / Someday / Inbox / a specific date. The "Later" tab toggles **By date** (buckets with concrete labels "Week 25" / "June 2026", a time-elapsed donut, and % done) ↔ **By project**. Horizons are anchored, never reckon.)_
-- [x] Current ("right now") task _(done: `c` toggles the focused task as **current** — a prominent accent banner pins it at the top across views (task stays put in the list), and its row gets a "Now" marker + accent highlight. Persisted (`currentTaskId`, schema v6); retires itself when the task is completed or deleted. `c` was reclaimed from collapse/expand, which stays on ←/→.)_
+- [x] Current ("right now") task _(done: `c` toggles the focused task as **current** — a prominent accent card sits just below the view header (Today/Backlog/All), showing the **full title** (wraps, never truncated); the task stays put in the list and its row gets a "Now" marker + accent highlight. Persisted (`currentTaskId`, schema v6); retires itself when the task is completed or deleted. `c` was reclaimed from collapse/expand, which stays on ←/→.)_
 - [ ] Calendar pairing -> reflect exact-date events into my calendar, connect by ID so that changes in the calendar flow back to the app if needed, 2-way sync: possibly increrdibly hard? _(out of scope for now)_
 
 ## Fixes

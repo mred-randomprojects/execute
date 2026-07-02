@@ -22,6 +22,7 @@ import type {
 import { VIEW_TITLES } from "../selectors";
 import { formatLong } from "../store/dates";
 import { CaptureBar } from "../components/CaptureBar";
+import { CurrentBanner } from "../components/CurrentBanner";
 import { TaskRow } from "../components/TaskRow";
 import { InboxZero } from "../components/InboxZero";
 import { Donut } from "../components/Donut";
@@ -503,6 +504,9 @@ export function OutlineView({
   suggested,
   recurring,
   onAcceptRecurring,
+  current,
+  onFocusCurrent,
+  onClearCurrent,
   buckets,
   laterLayout,
   onToggleLaterLayout,
@@ -536,6 +540,9 @@ export function OutlineView({
   suggested: Task[];
   recurring: Recurrence[];
   onAcceptRecurring: (recId: RecurrenceId) => void;
+  current: Task | null;
+  onFocusCurrent: () => void;
+  onClearCurrent: () => void;
   buckets: LaterGroup[];
   laterLayout: "date" | "project";
   onToggleLaterLayout: () => void;
@@ -607,6 +614,10 @@ export function OutlineView({
             <Subtitle view={view} progress={progress} />
           </p>
         </header>
+      )}
+
+      {current != null && (
+        <CurrentBanner task={current} onFocus={onFocusCurrent} onClear={onClearCurrent} />
       )}
 
       <div className="mb-4">

@@ -113,7 +113,6 @@ import { HelpOverlay } from "./components/HelpOverlay";
 import { DevControls } from "./components/DevControls";
 import { StatusBar } from "./components/StatusBar";
 import { CommandPalette, type Command } from "./components/CommandPalette";
-import { CurrentBanner } from "./components/CurrentBanner";
 import { SchedulePicker, type ScheduleChoice } from "./components/SchedulePicker";
 import { ConfirmModal, type ConfirmRequest } from "./components/ConfirmModal";
 
@@ -1458,13 +1457,6 @@ export function App() {
       </Sidebar>
 
       <main className="flex flex-1 flex-col overflow-hidden">
-        {activeCurrentTask != null && !reckoningActive && (
-          <CurrentBanner
-            task={activeCurrentTask}
-            onFocus={() => setFocus(activeCurrentTask.id)}
-            onClear={() => setCurrentTask(null)}
-          />
-        )}
         <div className="flex flex-1 overflow-hidden">
           <div className="flex-1 overflow-hidden">
             {reckoningActive ? (
@@ -1557,6 +1549,11 @@ export function App() {
                   suggested={suggestedTasks}
                   recurring={recurringToday}
                   onAcceptRecurring={(recId) => acceptRecurrence(recId, today)}
+                  current={activeCurrentTask}
+                  onFocusCurrent={() => {
+                    if (activeCurrentTask != null) setFocus(activeCurrentTask.id);
+                  }}
+                  onClearCurrent={() => setCurrentTask(null)}
                   zoom={zoomFocus}
                   collapsedProjectIds={collapsedProjects}
                   hideCompleted={hideCompleted}
