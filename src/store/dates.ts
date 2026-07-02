@@ -31,6 +31,29 @@ export function isLeftover(plannedFor: ISODate | null, today: ISODate): boolean 
   return plannedFor != null && plannedFor < today;
 }
 
+/** Whole days from `a` to `b` (b − a); negative if `b` precedes `a`. */
+export function daysBetween(a: ISODate, b: ISODate): number {
+  return Math.round((parseISO(b).getTime() - parseISO(a).getTime()) / 86_400_000);
+}
+
+/** Whole calendar months from `a` to `b` (b − a); ignores the day-of-month. */
+export function monthsBetween(a: ISODate, b: ISODate): number {
+  const da = parseISO(a);
+  const db = parseISO(b);
+  return (db.getFullYear() - da.getFullYear()) * 12 + (db.getMonth() - da.getMonth());
+}
+
+/** Number of days in the month containing `iso`. */
+export function daysInMonth(iso: ISODate): number {
+  const d = parseISO(iso);
+  return new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+}
+
+/** Day-of-month, 1–31. */
+export function dayOfMonth(iso: ISODate): number {
+  return parseISO(iso).getDate();
+}
+
 const WEEKDAYS = [
   "Sunday",
   "Monday",
@@ -59,6 +82,22 @@ const MONTHS = [
 export function formatLong(iso: ISODate): string {
   const d = parseISO(iso);
   return `${WEEKDAYS[d.getDay()]}, ${MONTHS[d.getMonth()]} ${d.getDate()}`;
+}
+
+/** Short weekday names indexed by ISO weekday: [_, Mon…Sun]. */
+export const WEEKDAY_SHORT = ["", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
+/** "Jul 4" from an ISO date (month abbrev + day). */
+export function monthDayLabel(iso: ISODate): string {
+  const d = parseISO(iso);
+  return `${MONTHS[d.getMonth()].slice(0, 3)} ${d.getDate()}`;
+}
+
+/** Ordinal, e.g. 1 → "1st", 4 → "4th", 22 → "22nd". */
+export function ordinal(n: number): string {
+  const s = ["th", "st", "nd", "rd"];
+  const v = n % 100;
+  return `${n}${s[(v - 20) % 10] ?? s[v] ?? s[0]}`;
 }
 
 /** Relative label for a planned date vs today: "today", "yesterday", "3d ago", "in 2d". */

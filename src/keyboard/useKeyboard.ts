@@ -36,6 +36,8 @@ export function getActiveContext(state: ContextState): KeyContext {
   // The schedule picker owns the keyboard while open (it has no app bindings),
   // so normal/editing shortcuts stay dormant beneath it.
   if (state.showSchedule) return "schedule";
+  // Likewise the repeat picker.
+  if (state.showRepeat) return "repeat";
   if (isInteractiveElementFocused()) return "editing";
   if (state.reckoningActive) return "reckoning";
   if (state.mode === "move") return "move";

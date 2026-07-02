@@ -1,5 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { OutlineId, ProjectId, Task, TaskId, TaskPriority, ThemeName } from "./types";
+import type {
+  OutlineId,
+  ProjectId,
+  RecurrenceId,
+  Task,
+  TaskId,
+  TaskPriority,
+  ThemeName,
+} from "./types";
 import {
   DEFAULT_PROJECT_ID,
   isProjectRowId,
@@ -7,13 +15,17 @@ import {
   projectRowId,
 } from "./types";
 import {
+  acceptRecurrence,
   addChild,
+  addRecurrenceStep,
   addTaskAfter,
   addTaskAtProjectStart,
   createProject,
+  createRecurrence,
   cycleProjectColor,
   emptyTrash,
   indent,
+  indentRecurrenceNode,
   dropManyWithLog,
   initStore,
   keepForToday,
@@ -22,9 +34,11 @@ import {
   moveAsChild,
   moveBefore,
   outdent,
+  outdentRecurrenceNode,
   postponeManyToBacklog,
   postponeToBacklog,
   purgeFromTrash,
+  removeRecurrenceNode,
   renameProject,
   reorderAcrossProjects,
   restoreFromTrash,
@@ -37,6 +51,8 @@ import {
   setPlannedForMany,
   setProjectForMany,
   setPriority,
+  setRecurrenceRule,
+  setRecurrenceText,
   setText,
   setTheme,
   toggleComplete,
@@ -47,17 +63,20 @@ import {
 } from "./store/store";
 import { findById, findParentId } from "./store/tasks";
 import { addDays, monthKey, monthKeyOffset, todayISO, weekKey, weekKeyOffset } from "./store/dates";
+import { defaultRule } from "./store/recurrence";
 import { parseCapture } from "./store/capture";
 import {
   backlogCount,
   filterTree,
   flattenRows,
+  groupRecurrencesByRule,
   groupTasksByBucket,
   groupTasksByProject,
   leftoverLeaves,
   prevVisibleSiblingId,
   projectSummaries,
   reckoningCards,
+  recurringForToday,
   resolveZoom,
   suggestedForToday,
   taskBucket,
@@ -84,8 +103,10 @@ import { EditorProvider, type Editor } from "./ui/editor";
 import { Sidebar } from "./components/Sidebar";
 import { OutlineView } from "./views/OutlineView";
 import { ProjectsView } from "./views/ProjectsView";
+import { RecurringView } from "./views/RecurringView";
 import { ReckoningView } from "./views/ReckoningView";
 import { TrashView } from "./views/TrashView";
+import { RepeatPicker } from "./components/RepeatPicker";
 import { DetailPanel, type DetailHandlers } from "./components/DetailPanel";
 import { HelpOverlay } from "./components/HelpOverlay";
 import { DevControls } from "./components/DevControls";
@@ -133,6 +154,9 @@ export function App() {
   const [showHelp, setShowHelp] = useState(false);
   const [showPalette, setShowPalette] = useState(false);
   const [showSchedule, setShowSchedule] = useState(false);
+  const [repeatTarget, setRepeatTarget] = useState<{ recId: RecurrenceId; taskId: TaskId } | null>(
+    null
+  );
   const [confirm, setConfirm] = useState<ConfirmRequest | null>(null);
   const [laterLayout, setLaterLayout] = useState<"date" | "project">("date");
   const [showPanel, setShowPanel] = useState(false);
@@ -232,6 +256,20 @@ export function App() {
     () => (view === "today" && zoom == null ? suggestedForToday(state.tasks, today) : []),
     [view, zoom, state.tasks, today]
   );
+  // Recurrence definitions, grouped by pattern for the Recurring view.
+  const recurrenceGroups = useMemo(
+    () => (view === "recurring" ? groupRecurrencesByRule(state.recurrences) : []),
+    [view, state.recurrences]
+  );
+  // Recurrences due today that aren't already accepted — passive suggestions in
+  // Today the user can accept (`t`) to materialize as real dated tasks.
+  const recurringToday = useMemo(
+    () =>
+      view === "today" && zoom == null
+        ? recurringForToday(state.recurrences, state.tasks, today)
+        : [],
+    [view, zoom, state.recurrences, state.tasks, today]
+  );
   const outlineRows = useMemo<OutlineRow[]>(() => {
     if (zoomFocus != null) {
       return flattenRows(zoomFocus.subtree, collapsed).map((row) => ({
@@ -247,6 +285,18 @@ export function App() {
         id: projectRowId(project.id),
         projectId: project.id,
       }));
+    }
+    if (view === "recurring") {
+      // Navigate over the recurrence templates (roots + their steps).
+      return recurrenceGroups.flatMap((group) =>
+        group.recurrences.flatMap((rec) =>
+          flattenRows([rec.template], collapsed).map((row) => ({
+            kind: "task" as const,
+            id: row.task.id,
+            taskId: row.task.id,
+          }))
+        )
+      );
     }
     if (usingBuckets) {
       // By-date "Later": bucket headers aren't focusable; navigate the tasks.
@@ -276,8 +326,13 @@ export function App() {
     for (const t of suggestedTasks) {
       rows.push({ kind: "task" as const, id: t.id, taskId: t.id });
     }
+    // Recurring-today suggestions trail those, again matching render order. Only
+    // the template root is focusable (its steps render as a static preview).
+    for (const rec of recurringToday) {
+      rows.push({ kind: "task" as const, id: rec.template.id, taskId: rec.template.id });
+    }
     return rows;
-  }, [zoomFocus, view, state.projects, projectGroups, usingBuckets, bucketGroups, collapsed, collapsedProjects, suggestedTasks]);
+  }, [zoomFocus, view, state.projects, projectGroups, usingBuckets, bucketGroups, collapsed, collapsedProjects, suggestedTasks, recurrenceGroups, recurringToday]);
   const flatIds = useMemo(() => outlineRows.map((r) => r.id), [outlineRows]);
   const flatKey = flatIds.join(",");
   // The task ids the view actually renders — so structural edits (reorder) act on
@@ -302,6 +357,24 @@ export function App() {
   const selectedTaskIds = selection.selectedIds.filter(
     (id): id is TaskId => !isProjectRowId(id)
   );
+  // The recurrence a focused row belongs to (in the Recurring view), plus whether
+  // that row is the template root. Used to route edits to recurrence actions.
+  const focusedRecurrence =
+    view === "recurring" && focusedTaskId != null
+      ? state.recurrences.find((r) => findById([r.template], focusedTaskId) != null) ?? null
+      : null;
+  const focusedIsRecurrenceRoot =
+    focusedRecurrence != null && focusedRecurrence.template.id === focusedTaskId;
+  const focusedRecurringNode =
+    focusedRecurrence != null && focusedTaskId != null
+      ? findById([focusedRecurrence.template], focusedTaskId) ?? null
+      : null;
+  // In Today, the recurrence suggestion (if any) the cursor is on — its actions
+  // route to "accept", never to mutating the template.
+  const focusedRecurringToday =
+    focusedTaskId != null
+      ? recurringToday.find((r) => r.template.id === focusedTaskId) ?? null
+      : null;
 
   // When the visible set changes, keep the cursor sensible. If the focused row
   // left the view (planned away with `t`, rescheduled, completed+hidden…), land
@@ -439,6 +512,36 @@ export function App() {
         : groups.find((g) => findById(g.tasks, id) != null)?.tasks ?? [];
     const underId = prevVisibleSiblingId(forest, id);
     if (underId != null) indent(id, underId);
+  };
+
+  // Same, but for a step inside a recurrence template (routes to recurrence ops).
+  const indentRecurringInView = (id: TaskId) => {
+    const rec = state.recurrences.find((r) => findById([r.template], id) != null);
+    if (rec == null) return;
+    const underId = prevVisibleSiblingId([rec.template], id);
+    if (underId != null) indentRecurrenceNode(id, underId);
+  };
+
+  const isUntitledRecurringNode = (id: TaskId, raw: string): boolean => {
+    if (parseCapture(raw).text !== "") return false;
+    const rec = state.recurrences.find((r) => findById([r.template], id) != null);
+    const node = rec != null ? findById([rec.template], id) : undefined;
+    return node != null && node.children.length === 0;
+  };
+
+  const openRepeatFor = (recId: RecurrenceId, taskId: TaskId) =>
+    setRepeatTarget({ recId, taskId });
+  // `r` / `s` in the Recurring view (or on a Today recurrence suggestion) opens
+  // the repeat picker for whichever recurrence the cursor belongs to.
+  const openRepeatFocused = () => {
+    if (focusedRecurrence != null) {
+      openRepeatFor(focusedRecurrence.id, focusedRecurrence.template.id);
+    } else if (focusedRecurringToday != null) {
+      openRepeatFor(focusedRecurringToday.id, focusedRecurringToday.template.id);
+    }
+  };
+  const acceptRecurringToday = () => {
+    if (focusedRecurringToday != null) acceptRecurrence(focusedRecurringToday.id, today);
   };
 
   const commitText = (id: TaskId, raw: string) => {
@@ -581,6 +684,18 @@ export function App() {
     // → expands a collapsed project/task first (outliner convention), then
     // descends; only opens the details panel when there's nothing to expand.
     panelOpen: () => {
+      if (view === "recurring") {
+        if (
+          focusedTaskId != null &&
+          (focusedRecurringNode?.children.length ?? 0) > 0 &&
+          collapsed.has(focusedTaskId)
+        ) {
+          toggleCollapsedFor(focusedTaskId);
+          return;
+        }
+        setSelection((s) => moveSelection(s, flatIds, "down", false));
+        return;
+      }
       if (focusedProjectId != null) {
         if (view === "projects") {
           zoomInto({ kind: "project", id: focusedProjectId }); // → opens the project
@@ -607,6 +722,21 @@ export function App() {
         setShowPanel(false);
         return;
       }
+      if (view === "recurring") {
+        if (
+          focusedTaskId != null &&
+          (focusedRecurringNode?.children.length ?? 0) > 0 &&
+          !collapsed.has(focusedTaskId)
+        ) {
+          toggleCollapsedFor(focusedTaskId);
+          return;
+        }
+        if (focusedTaskId != null && focusedRecurrence != null) {
+          const parent = findParentId([focusedRecurrence.template], focusedTaskId);
+          if (parent != null) setFocus(parent);
+        }
+        return;
+      }
       if (focusedProjectId != null) {
         if (view !== "projects" && !collapsedProjects.has(focusedProjectId)) {
           setProjectCollapsed(focusedProjectId, true);
@@ -630,6 +760,7 @@ export function App() {
       // else: at the top of the zoom — use Esc to back out.
     },
     editStart: () => {
+      if (focusedRecurringToday != null) return acceptRecurringToday();
       if (focusedId != null) startEditingOutlineId(focusedId);
     },
     taskNew: () => {
@@ -640,6 +771,13 @@ export function App() {
         setEditingProjectId(null);
         setEditingId(newId);
       };
+      // In the Recurring view "new" builds recurrence definitions and their steps:
+      // nothing focused → a new recurrence; a root → its first step; a step → a
+      // sibling step. Top-level rows are always full recurrences, never stray tasks.
+      if (view === "recurring") {
+        if (focusedTaskId == null) return beginEdit(createRecurrence("", defaultRule(today)).taskId);
+        return beginEdit(addRecurrenceStep(focusedTaskId, focusedIsRecurrenceRoot ? "child" : "sibling"));
+      }
       if (focusedTaskId != null) return beginEdit(addTaskAfter(focusedTaskId, "", defaultPlannedFor()));
       if (focusedProjectId != null) {
         setProjectCollapsed(focusedProjectId, false);
@@ -651,6 +789,8 @@ export function App() {
       beginEdit(addTaskAfter(null, "", defaultPlannedFor()));
     },
     taskToggle: () => {
+      if (focusedRecurringToday != null) return acceptRecurringToday();
+      if (view === "recurring") return; // recurrence templates aren't completable
       const ids = actionTargets();
       if (ids.length === 0) return;
       if (ids.length === 1) return toggleComplete(ids[0]);
@@ -658,6 +798,11 @@ export function App() {
       setCompletedMany(ids, !allDone);
     },
     taskPlanToday: () => {
+      if (focusedRecurringToday != null) return acceptRecurringToday();
+      if (view === "recurring") {
+        if (focusedRecurrence != null) acceptRecurrence(focusedRecurrence.id, today);
+        return;
+      }
       const ids = actionTargets();
       if (ids.length === 0) return;
       if (ids.length === 1) return planToggle(ids[0]);
@@ -665,6 +810,11 @@ export function App() {
       setPlannedForMany(ids, allPlanned ? null : today);
     },
     taskIndent: () => {
+      if (focusedRecurringToday != null) return; // don't restructure a suggestion
+      if (view === "recurring") {
+        if (focusedTaskId != null) indentRecurringInView(focusedTaskId);
+        return;
+      }
       // With the detail panel open (preview), Tab dives into the notes editor
       // instead of indenting — focus leaves the list and lands in the panel.
       if (showPanel && focusedTaskId != null && !reckoningActive && view !== "trash") {
@@ -674,9 +824,34 @@ export function App() {
       if (focusedTaskId != null) indentInView(focusedTaskId);
     },
     taskOutdent: () => {
+      if (focusedRecurringToday != null) return;
+      if (view === "recurring") {
+        if (focusedTaskId != null) outdentRecurrenceNode(focusedTaskId);
+        return;
+      }
       if (focusedTaskId != null) outdent(focusedTaskId);
     },
     taskTrash: () => {
+      if (focusedRecurringToday != null) return; // never trash a template from Today
+      if (view === "recurring") {
+        const id = focusedTaskId;
+        if (id == null) return;
+        const rootWithSteps =
+          focusedIsRecurrenceRoot && (focusedRecurringNode?.children.length ?? 0) > 0;
+        const doRemove = () => {
+          const next = selectAfterRemoving(selection, flatIds, new Set([id]));
+          removeRecurrenceNode(id);
+          setSelection(next);
+        };
+        if (!rootWithSteps) return doRemove();
+        setConfirm({
+          title: "Delete this recurring task and its steps?",
+          body: "The definition is removed. Tasks already added to Today are untouched.",
+          confirmLabel: "Delete",
+          onConfirm: doRemove,
+        });
+        return;
+      }
       const ids = actionTargets();
       if (ids.length === 0) return;
       const doTrash = () => {
@@ -702,6 +877,12 @@ export function App() {
       });
     },
     taskCollapse: () => {
+      if (view === "recurring") {
+        if (focusedTaskId != null && (focusedRecurringNode?.children.length ?? 0) > 0) {
+          toggleCollapsedFor(focusedTaskId);
+        }
+        return;
+      }
       if (focusedProjectId != null) {
         if (view !== "projects") toggleProjectCollapsed(focusedProjectId);
         return;
@@ -711,10 +892,12 @@ export function App() {
       if (t != null && t.children.length > 0) toggleCollapsedFor(focusedTaskId);
     },
     zoomIn: () => {
+      if (view === "recurring") return; // no zoom into recurrence definitions (v1)
       if (focusedProjectId != null) zoomInto({ kind: "project", id: focusedProjectId });
       else if (focusedTaskId != null) zoomInto({ kind: "task", id: focusedTaskId });
     },
     moveEnter: () => {
+      if (view === "recurring") return;
       if (focusedTaskId != null) {
         setMovingId(focusedTaskId);
         setMode("move");
@@ -739,8 +922,11 @@ export function App() {
     helpToggle: () => setShowHelp((v) => !v),
     paletteOpen: () => setShowPalette(true),
     scheduleOpen: () => {
+      // In the Recurring view (or on a Today recurrence), `s` sets the repeat.
+      if (view === "recurring" || focusedRecurringToday != null) return openRepeatFocused();
       if (actionTargets().length > 0) setShowSchedule(true);
     },
+    repeatOpen: openRepeatFocused,
     // Toggle the Later view's grouping (by date / by project). No-op elsewhere,
     // since the layout only exists in the Later (backlog) view.
     toggleLaterLayout: () => {
@@ -752,6 +938,7 @@ export function App() {
     },
     dismiss: () => {
       if (confirm != null) setConfirm(null);
+      else if (repeatTarget != null) setRepeatTarget(null);
       else if (showHelp) setShowHelp(false);
       else if (showPalette) setShowPalette(false);
       else if (showSchedule) setShowSchedule(false);
@@ -809,6 +996,7 @@ export function App() {
     showHelp,
     showPalette,
     showSchedule,
+    showRepeat: repeatTarget != null,
     showConfirm: confirm != null,
     reckoningActive,
     mode,
@@ -843,11 +1031,13 @@ export function App() {
     "help.toggle": cmd.helpToggle,
     "palette.open": cmd.paletteOpen,
     "schedule.open": cmd.scheduleOpen,
+    "recurrence.repeat": cmd.repeatOpen,
     "later.toggleLayout": cmd.toggleLaterLayout,
     "view.today": cmd.gotoView("today"),
     "view.backlog": cmd.gotoView("backlog"),
     "view.all": cmd.gotoView("all"),
     "view.projects": cmd.gotoView("projects"),
+    "view.recurring": cmd.gotoView("recurring"),
     "view.trash": cmd.gotoView("trash"),
     "dismiss": cmd.dismiss,
     // Arg-less wrappers: the keyboard engine calls handlers with the dispatch
@@ -938,6 +1128,71 @@ export function App() {
     },
   };
 
+  // Same surface, but for the Recurring view: every callback routes to recurrence
+  // actions on the template tree, never to `tasks`. Completion/plan/zoom/detail
+  // don't apply to definitions, so they're inert.
+  const commitRecurrence = (id: TaskId, raw: string) => setRecurrenceText(id, parseCapture(raw).text);
+  const removeRecurrenceWithNeighbor = (id: TaskId) => {
+    const next = selectAfterRemoving(selection, flatIds, new Set([id]));
+    removeRecurrenceNode(id);
+    setSelection(next);
+  };
+  const recurrenceEditor: Editor = {
+    view,
+    today,
+    bucketed: false,
+    cursorId: focusedTaskId,
+    selectedIds: selectedTaskIds,
+    editingId,
+    collapsed,
+    mode,
+    movingId,
+    select: setFocus,
+    toggle: () => {},
+    togglePlan: () => {},
+    toggleCollapse: toggleCollapsedFor,
+    openDetail: () => {},
+    zoomInto: () => {},
+    startEdit: (id) => {
+      setFocus(id);
+      setEditingProjectId(null);
+      setEditingId(id);
+    },
+    commit: commitRecurrence,
+    indentEditing: (id, raw) => {
+      commitRecurrence(id, raw);
+      indentRecurringInView(id);
+    },
+    outdentEditing: (id, raw) => {
+      commitRecurrence(id, raw);
+      outdentRecurrenceNode(id);
+    },
+    exitUp: (id, raw) => {
+      const removed = isUntitledRecurringNode(id, raw);
+      if (removed) removeRecurrenceNode(id);
+      else commitRecurrence(id, raw);
+      exitEditTo(id, "up", removed);
+    },
+    exitDown: (id, raw) => {
+      const removed = isUntitledRecurringNode(id, raw);
+      if (removed) removeRecurrenceNode(id);
+      else commitRecurrence(id, raw);
+      exitEditTo(id, "down", removed);
+    },
+    toggleFromEdit: (id, raw) => commitRecurrence(id, raw),
+    exitEdit: (id, raw) => {
+      if (isUntitledRecurringNode(id, raw)) removeRecurrenceWithNeighbor(id);
+      else commitRecurrence(id, raw);
+      setEditingProjectId(null);
+      setEditingId(null);
+    },
+    removeAndExit: (id) => {
+      removeRecurrenceWithNeighbor(id);
+      setEditingProjectId(null);
+      setEditingId(null);
+    },
+  };
+
   // ── Detail panel handlers (content only) ──────────────────────────
   const detailHandlers: DetailHandlers = {
     onCommitNotes: (id, text) => setNotes(id, text),
@@ -971,6 +1226,12 @@ export function App() {
   const onCapture = (raw: string) => {
     const p = parseCapture(raw);
     if (p.text === "") return;
+    // In the Recurring view, capture creates a recurrence definition (default:
+    // every day) — the user then adds steps (o) and sets the repeat (r).
+    if (view === "recurring") {
+      setFocus(createRecurrence(p.text, defaultRule(today)).taskId);
+      return;
+    }
     let id: TaskId;
     if (zoom?.kind === "task") {
       id = addChild(zoom.id, p.text, defaultPlannedFor());
@@ -1067,7 +1328,8 @@ export function App() {
     { id: "backlog", label: "Go to Backlog", hint: "2", run: cmd.gotoView("backlog") },
     { id: "all", label: "Go to All", hint: "3", run: cmd.gotoView("all") },
     { id: "projects", label: "Go to Projects", hint: "4", run: cmd.gotoView("projects") },
-    { id: "trash", label: "Go to Trash", hint: "5", run: cmd.gotoView("trash") },
+    { id: "recurring", label: "Go to Recurring", hint: "5", run: cmd.gotoView("recurring") },
+    { id: "trash", label: "Go to Trash", hint: "6", run: cmd.gotoView("trash") },
     { id: "new", label: "New task", hint: "o", run: cmd.taskNew },
     { id: "details", label: "Open details panel", hint: "→", run: openPanel },
     { id: "toggle", label: "Complete / uncomplete task", hint: "space", run: cmd.taskToggle },
@@ -1153,6 +1415,7 @@ export function App() {
         todayRemaining={progress.remaining}
         backlog={backlog}
         projectCount={state.projects.length}
+        recurring={state.recurrences.length}
         trash={state.trash.length}
         onSelect={setView}
         onOpenHelp={() => setShowHelp(true)}
@@ -1236,6 +1499,17 @@ export function App() {
                 onExitProjectName={() => setEditingProjectId(null)}
                 onArrowProjectName={exitProjectRename}
               />
+            ) : view === "recurring" ? (
+              <EditorProvider value={recurrenceEditor}>
+                <RecurringView
+                  groups={recurrenceGroups}
+                  captureRef={captureRef}
+                  onAdd={onCapture}
+                  onCaptureArrowDown={() => flatIds[0] != null && setFocus(flatIds[0])}
+                  onCaptureFocus={() => setSelection(emptySelection)}
+                  onEditRule={openRepeatFor}
+                />
+              </EditorProvider>
             ) : (
               <EditorProvider value={editor}>
                 <OutlineView
@@ -1243,6 +1517,8 @@ export function App() {
                   today={today}
                   groups={projectGroups}
                   suggested={suggestedTasks}
+                  recurring={recurringToday}
+                  onAcceptRecurring={(recId) => acceptRecurrence(recId, today)}
                   zoom={zoomFocus}
                   collapsedProjectIds={collapsedProjects}
                   hideCompleted={hideCompleted}
@@ -1301,6 +1577,14 @@ export function App() {
           current={scheduleTag}
           onPick={applySchedule}
           onClose={() => setShowSchedule(false)}
+        />
+      )}
+      {repeatTarget != null && (
+        <RepeatPicker
+          anchor={today}
+          current={state.recurrences.find((r) => r.id === repeatTarget.recId)?.rule ?? null}
+          onPick={(rule) => setRecurrenceRule(repeatTarget.recId, rule)}
+          onClose={() => setRepeatTarget(null)}
         />
       )}
       {confirm != null && (

@@ -51,7 +51,7 @@ function Caret({ open }: { open: boolean }) {
   );
 }
 
-function RowInput({ task }: { task: Task }) {
+export function RowInput({ task }: { task: Task }) {
   const ed = useEditor();
   const [value, setValue] = useState(task.text);
   const ref = useRef<HTMLInputElement>(null);

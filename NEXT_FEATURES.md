@@ -9,7 +9,7 @@
 - [x] When you're editing, pressing enters creates a tab, it should instead just stop the edit mode _(done: Enter now just commits + leaves edit mode; it no longer spawns a new task below)_
 - [x] Untitled tasks, whenever you move should be removed _(done: an empty, childless task is discarded when you move off it while editing — Esc / arrow to another row. Open: also discard on plain j/k navigation in normal mode?)_
 - [x] Deleting tasks should probably require some kind of confirmation modal _(done: a keyboard-first confirm dialog — `↵` confirm / `esc` cancel — now guards the high-loss deletes only: Backspace on a task **with subtasks** (a leaf still trashes instantly, reversibly + undo), and **permanent purge / empty trash** in the Trash view. The threshold is deliberate, not final — see Q2 under Open questions.)_
-- [ ] Recurrent tasks _(needs design)_
+- [x] Recurrent tasks _(done: a separate **Recurring** section (key `5`) holds recurrence definitions grouped by pattern ("Every day", "Every 2 weeks on Sat"…). Each is a task **template** (children supported) + an RRULE-ish repeat set via the `r` picker (presets + custom: every N days/weeks/… , weekday pills, ends never/on/after). Templates live in their own array — **never** in `tasks`, so they can't reckon or be counted. On days a rule fires they surface in Today under **"Recurring today"**; `t` **accepts** (materializes the whole subtree as a real, dated-for-today commitment that reckons like any task). On-completion is done as **suppression**: a recurrence won't re-suggest while an accepted instance is still open (or was already accepted today) — so pushing an unfinished instance forward never spawns duplicates. Deferred: "1st Sat"-style by-weekday-position monthly rules; a future-day preview; project assignment for templates.)_
 - [~] "Everything for today is done." -> this appeared at a point where there were still some tasks that were not yet done, okay, I had a task that didn't have the "planned for today" flag, but it was a bit crazy because I can still see it in my list. Maybe we need a more visual way to see when a task is not meant for today? E.g. the main task is not main for today, but some of its subtasks _are_, how to deal with this case? slightly de-highlight? _(done: not-today scaffold tasks are now de-highlighted in Today. Open: should the "everything done" banner suppress while such tasks are visible?)_
 - [x] Selecting a task should also move scrolling to that task! The scrollbar appeared when I had that "everything is done for today" and it was actually quite ugly to see! _(done: focused task scrolls into view; block:"nearest")_
 - [ ] At the beginning of each day, I should probably be able to choose from the tasks for "this week" and choose if I want to do them today or not _(part of the commit/shutdown ritual below — needs design)_
@@ -41,12 +41,17 @@ each hinge on a decision only you can make. Numbered so we can refer to them.
    you want: confirm on **every** Backspace, **only** on purge (never on the
    reversible trash), or a different rule?
 
-3. **Recurring tasks.** Needs a model decision: (a) recurrence rules —
-   daily / weekdays / weekly-on-X / monthly / custom interval? (b) does the next
-   instance appear **on completion** of the current one, or are upcoming instances
-   pre-spawned on a horizon? (c) does a **missed** recurring task feed the
-   Reckoning, or quietly roll to the next occurrence? (d) edit-one vs
-   edit-all-future semantics. Give me the shape and I'll build it.
+3. **Recurring tasks.** ✅ **Resolved & shipped.** (a) Calendar-style rules
+   (every N days/weeks/months/years, weekday pills, ends never/on/after). (b)
+   **On-completion**, implemented as *suggestion suppression* — a recurrence
+   surfaces in Today as a passive suggestion and only becomes a real task when
+   **accepted**; the next occurrence is withheld while an accepted instance is
+   still open, which is what prevents the duplicate pile-up. (c) An **un-accepted**
+   recurrence never touches the Reckoning (definitions live outside `tasks`); only
+   an accepted instance can reckon, giving visibility without guilt. (d) Editing a
+   definition in the Recurring view is edit-all-future; an accepted instance in
+   Today is an independent, edit-one task. See NEXT_FEATURES top item for the
+   as-built summary and the small deferred list.
 
 4. **"Commit" / "shutdown" rituals (incl. the morning "pull from this-week").**
    Items above about (i) choosing each morning which this-week tasks to do today

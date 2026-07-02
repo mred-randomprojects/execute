@@ -11,6 +11,7 @@ export type KeyContext =
   | "help"
   | "palette"
   | "schedule"
+  | "repeat"
   | "confirm"
   | "reckoning"
   | "editing"
@@ -24,6 +25,7 @@ export interface ContextState {
   showHelp: boolean;
   showPalette: boolean;
   showSchedule: boolean;
+  showRepeat: boolean;
   showConfirm: boolean;
   reckoningActive: boolean;
   mode: AppMode;

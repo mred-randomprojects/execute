@@ -1,5 +1,15 @@
-import type { ISODate, OutlineId, Project, ProjectId, Task, TaskId } from "./types";
+import type {
+  ISODate,
+  OutlineId,
+  Project,
+  ProjectId,
+  Recurrence,
+  RecurrenceId,
+  Task,
+  TaskId,
+} from "./types";
 import { DEFAULT_PROJECT_ID, projectRowId } from "./types";
+import { ruleFiresOn, ruleLabel, ruleSortKey } from "./store/recurrence";
 import {
   findById,
   findParentId,
@@ -23,13 +33,14 @@ import {
   weekStart,
 } from "./store/dates";
 
-export type ViewKind = "today" | "backlog" | "all" | "projects" | "trash";
+export type ViewKind = "today" | "backlog" | "all" | "projects" | "recurring" | "trash";
 
 export const VIEW_TITLES: Record<ViewKind, string> = {
   today: "Today",
   backlog: "Backlog",
   all: "All tasks",
   projects: "Projects",
+  recurring: "Recurring",
   trash: "Trash",
 };
 
@@ -54,8 +65,9 @@ export function viewPredicate(view: ViewKind, today: ISODate): TaskPredicate {
     case "all":
     case "projects":
       return () => true;
+    case "recurring":
     case "trash":
-      return () => false; // Trash is rendered from state.trash, not the tree.
+      return () => false; // Rendered from a dedicated array, not the task tree.
   }
 }
 
@@ -303,6 +315,53 @@ export function suggestedForToday(tasks: Task[], today: ISODate): Task[] {
     if (suggestedDayFor(t, today) === today) out.push(t);
   });
   return out;
+}
+
+// ─── Recurrences → the "Recurring" section + today's suggestions ────
+
+/** One "Every day" / "Every Mon" pattern header and the recurrences under it. */
+export interface RecurrenceGroup {
+  label: string;
+  sortKey: number;
+  recurrences: Recurrence[];
+}
+
+/** Group recurrences by their rule's pattern label (day → week → month → year). */
+export function groupRecurrencesByRule(recurrences: Recurrence[]): RecurrenceGroup[] {
+  const byLabel = new Map<string, RecurrenceGroup>();
+  for (const rec of recurrences) {
+    const label = ruleLabel(rec.rule);
+    const existing = byLabel.get(label);
+    if (existing != null) existing.recurrences.push(rec);
+    else byLabel.set(label, { label, sortKey: ruleSortKey(rec.rule), recurrences: [rec] });
+  }
+  return [...byLabel.values()].sort(
+    (a, b) => a.sortKey - b.sortKey || a.label.localeCompare(b.label)
+  );
+}
+
+/**
+ * Recurrence ids that must NOT re-suggest today (the on-completion suppression):
+ * an accepted instance is still open, or one was already accepted for today (so
+ * completing it doesn't immediately re-offer the same task).
+ */
+export function suppressedRecurrenceIds(tasks: Task[], today: ISODate): Set<RecurrenceId> {
+  const out = new Set<RecurrenceId>();
+  walk(tasks, (t) => {
+    if (t.recurrenceId == null) return;
+    if (!t.completed || t.occurrenceDate === today) out.add(t.recurrenceId);
+  });
+  return out;
+}
+
+/** Recurrences firing today that aren't suppressed — Today's "Recurring" suggestions. */
+export function recurringForToday(
+  recurrences: Recurrence[],
+  tasks: Task[],
+  today: ISODate
+): Recurrence[] {
+  const suppressed = suppressedRecurrenceIds(tasks, today);
+  return recurrences.filter((r) => !suppressed.has(r.id) && ruleFiresOn(r.rule, today));
 }
 
 /** Short chip label for a task's horizon (for the by-project layout). `null` for Inbox/dated. */

@@ -310,7 +310,7 @@ describe("Trash", () => {
     fireEvent.keyDown(document.body, { key: "Backspace" });
     await waitFor(() => expect(screen.queryByText("disposable")).toBeNull());
 
-    fireEvent.keyDown(document.body, { key: "5" }); // Trash view
+    fireEvent.keyDown(document.body, { key: "6" }); // Trash view
     expect(await screen.findByText("disposable")).toBeTruthy();
 
     fireEvent.click(screen.getByText("Restore"));
@@ -936,5 +936,88 @@ describe("Scheduling (the s picker)", () => {
     fireEvent.click(screen.getByText("By project"));
     await waitFor(() => expect(screen.queryByText("Someday")).toBeNull()); // bucket gone
     expect(screen.getByText("later thing")).toBeTruthy(); // still listed, now by project
+  });
+});
+
+describe("Recurring tasks", () => {
+  it("defines a recurrence with a step, suggests it in Today, and accepts it", async () => {
+    render(<App />);
+    await screen.findByPlaceholderText("Add a task for today…");
+    blurActive(); // the Today capture bar auto-focuses on mount
+
+    // Go to the Recurring view and capture a recurrence (defaults to Every day).
+    fireEvent.keyDown(document.body, { key: "5" });
+    const cap = await screen.findByPlaceholderText(/New recurring task/);
+    fireEvent.change(cap, { target: { value: "Morning ritual" } });
+    fireEvent.keyDown(cap, { key: "Enter" });
+    expect(await screen.findByText("Morning ritual")).toBeTruthy();
+    expect(screen.getByText("Every day")).toBeTruthy(); // pattern group header
+
+    // Add a step under the (focused) root, name it, commit.
+    blurActive();
+    fireEvent.keyDown(document.body, { key: "o" });
+    const stepInput = await screen.findByPlaceholderText("Task…");
+    fireEvent.change(stepInput, { target: { value: "Brush teeth" } });
+    fireEvent.keyDown(stepInput, { key: "Enter" });
+    expect(await screen.findByText("Brush teeth")).toBeTruthy();
+
+    // In Today it surfaces as a passive suggestion (not a committed task yet).
+    blurActive();
+    fireEvent.keyDown(document.body, { key: "1" });
+    expect(await screen.findByText("Recurring today")).toBeTruthy();
+    expect(screen.getByText("Morning ritual")).toBeTruthy();
+    // No real task exists yet → no completion checkbox for its leaf.
+    expect(screen.queryByLabelText("Mark complete")).toBeNull();
+
+    // Accept it: focus the suggestion and press `t`.
+    fireEvent.keyDown(document.body, { key: "ArrowDown" });
+    fireEvent.keyDown(document.body, { key: "t" });
+
+    // The suggestion is now suppressed and a real, checkable task exists.
+    await waitFor(() => expect(screen.queryByText("Recurring today")).toBeNull());
+    expect(screen.getByText("Morning ritual")).toBeTruthy();
+    expect(screen.getAllByLabelText("Mark complete").length).toBeGreaterThan(0);
+  });
+
+  it("does not let recurrences leak into Today's counts or the Reckoning", async () => {
+    render(<App />);
+    await screen.findByPlaceholderText("Add a task for today…");
+    blurActive();
+    fireEvent.keyDown(document.body, { key: "5" });
+    const cap = await screen.findByPlaceholderText(/New recurring task/);
+    fireEvent.change(cap, { target: { value: "Standup" } });
+    fireEvent.keyDown(cap, { key: "Enter" });
+    await screen.findByText("Standup");
+
+    // Back to Today: the daily recurrence surfaces as a suggestion, but it's not
+    // a commitment — "0 to go" (never counted) and no completion checkbox exists.
+    blurActive();
+    fireEvent.keyDown(document.body, { key: "1" });
+    expect(await screen.findByText("Recurring today")).toBeTruthy();
+    expect(screen.getByText(/0 to go/)).toBeTruthy();
+    expect(screen.queryByLabelText("Mark complete")).toBeNull();
+  });
+
+  it("changes a recurrence's rule via the repeat picker, regrouping it", async () => {
+    render(<App />);
+    await screen.findByPlaceholderText("Add a task for today…");
+    blurActive();
+
+    fireEvent.keyDown(document.body, { key: "5" });
+    const cap = await screen.findByPlaceholderText(/New recurring task/);
+    fireEvent.change(cap, { target: { value: "Laundry" } });
+    fireEvent.keyDown(cap, { key: "Enter" });
+    await screen.findByText("Laundry");
+    expect(screen.getByText("Every day")).toBeTruthy();
+
+    // Open the repeat picker and choose a preset.
+    blurActive();
+    fireEvent.keyDown(document.body, { key: "r" });
+    expect(await screen.findByText("Repeat")).toBeTruthy();
+    fireEvent.click(screen.getByText("Every weekend day"));
+
+    // The recurrence regroups under its new pattern.
+    await waitFor(() => expect(screen.queryByText("Every day")).toBeNull());
+    expect(screen.getByText("Every weekend day")).toBeTruthy();
   });
 });

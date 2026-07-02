@@ -18,7 +18,8 @@ export const keymap: KeyBinding[] = [
   { key: "2", action: "view.backlog", context: "normal", displayKey: "2", description: "go to Backlog", section: "Views" },
   { key: "3", action: "view.all", context: "normal", displayKey: "3", description: "go to All", section: "Views" },
   { key: "4", action: "view.projects", context: "normal", displayKey: "4", description: "go to Projects", section: "Views" },
-  { key: "5", action: "view.trash", context: "normal", displayKey: "5", description: "go to Trash", section: "Views" },
+  { key: "5", action: "view.recurring", context: "normal", displayKey: "5", description: "go to Recurring", section: "Views" },
+  { key: "6", action: "view.trash", context: "normal", displayKey: "6", description: "go to Trash", section: "Views" },
   { key: "h", action: "filter.hideCompleted", context: "normal", displayKey: "h", description: "hide / show completed", section: "Views" },
   { key: "g", action: "later.toggleLayout", context: "normal", displayKey: "g", description: "Later: group by date / project", section: "Views" },
 
@@ -45,6 +46,7 @@ export const keymap: KeyBinding[] = [
   { key: "Meta+Enter", action: "task.toggle", context: ["normal", "editing"], displayKey: "⌘ ↵", description: "complete / uncomplete", section: "Tasks" },
   { key: "t", action: "task.planToday", context: "normal", displayKey: "t", description: "plan / unplan for today", section: "Tasks" },
   { key: "s", action: "schedule.open", context: "normal", displayKey: "s", description: "schedule (this week, someday, a date…)", section: "Tasks" },
+  { key: "r", action: "recurrence.repeat", context: "normal", displayKey: "r", description: "set repeat (in Recurring)", section: "Tasks" },
   { key: "Tab", action: "task.indent", context: "normal", displayKey: "tab", description: "indent (make subtask) · edit notes when the panel is open", section: "Tasks" },
   { key: "Shift+Tab", action: "task.outdent", context: "normal", displayKey: "⇧ tab", description: "outdent", section: "Tasks" },
   { key: "Alt+ArrowUp", action: "reorder.up", context: "normal", displayKey: "⌥ ↑", description: "move task up", section: "Tasks" },

@@ -23,6 +23,17 @@ export function makeTask(
     labels: [],
     estimatedMinutes: null,
     carriedCount: 0,
+    recurrenceId: null,
+    occurrenceDate: null,
+  };
+}
+
+/** Deep-copy a task subtree with fresh ids throughout (for spawning instances). */
+export function cloneWithNewIds(task: Task): Task {
+  return {
+    ...task,
+    id: nanoid() as TaskId,
+    children: task.children.map(cloneWithNewIds),
   };
 }
 

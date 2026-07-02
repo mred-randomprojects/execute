@@ -7,6 +7,9 @@ import type {
   LogAction,
   LogEntry,
   ProjectId,
+  Recurrence,
+  RecurrenceId,
+  RecurrenceRule,
   Task,
   TaskId,
   TaskPriority,
@@ -14,6 +17,7 @@ import type {
 } from "../types";
 import { DEFAULT_PROJECT_ID, PROJECT_COLORS, emptyState } from "../types";
 import {
+  cloneWithNewIds,
   findById,
   findParentId,
   getAncestorPath,
@@ -31,6 +35,7 @@ import {
   reorderSelectedAcrossProjects,
   setProjectForIds,
 } from "./tasks";
+import { normalizeRule } from "./recurrence";
 import { todayISO } from "./dates";
 import { coerceState, loadRaw, saveRaw } from "./persistence";
 
@@ -556,6 +561,142 @@ export function moveAsChild(taskId: TaskId, newParentId: TaskId): void {
       )
     )
   );
+}
+
+// ─── Recurrences (repeating-task definitions) ───────────────────────
+//
+// Templates live only here, never in `tasks`, so they can't reckon or be
+// counted. Node-level edits address a template by any of its task ids and find
+// the owning recurrence; whole-recurrence edits take the recurrence id.
+
+/** Update whichever recurrence's template contains `taskId`. */
+function mapRecurrenceOfNode(
+  recurrences: Recurrence[],
+  taskId: TaskId,
+  fn: (template: Task) => Task
+): Recurrence[] {
+  return recurrences.map((r) =>
+    findById([r.template], taskId) != null ? { ...r, template: fn(r.template) } : r
+  );
+}
+
+/** Create a recurrence with a one-line template. Returns both ids for focus/edit. */
+export function createRecurrence(
+  text: string,
+  rule: RecurrenceRule
+): { id: RecurrenceId; taskId: TaskId } {
+  const id = nanoid() as RecurrenceId;
+  const template = makeTask(text, DEFAULT_PROJECT_ID);
+  update((s) => ({
+    ...s,
+    recurrences: [...s.recurrences, { id, template, rule: normalizeRule(rule), createdAt: Date.now() }],
+  }));
+  return { id, taskId: template.id };
+}
+
+export function setRecurrenceRule(id: RecurrenceId, rule: RecurrenceRule): void {
+  update((s) => ({
+    ...s,
+    recurrences: s.recurrences.map((r) => (r.id === id ? { ...r, rule: normalizeRule(rule) } : r)),
+  }));
+}
+
+export function deleteRecurrence(id: RecurrenceId): void {
+  update((s) => ({ ...s, recurrences: s.recurrences.filter((r) => r.id !== id) }));
+}
+
+export function setRecurrenceText(taskId: TaskId, text: string): void {
+  update((s) => ({
+    ...s,
+    recurrences: mapRecurrenceOfNode(s.recurrences, taskId, (tpl) =>
+      mapById([tpl], taskId, (t) => ({ ...t, text }))[0]
+    ),
+  }));
+}
+
+/** Add an empty step: a child of `taskId`, or a sibling after it. Returns its id. */
+export function addRecurrenceStep(taskId: TaskId, mode: "child" | "sibling"): TaskId {
+  const step = makeTask("");
+  update((s) => ({
+    ...s,
+    recurrences: mapRecurrenceOfNode(s.recurrences, taskId, (tpl) => {
+      const child = { ...step, projectId: tpl.projectId };
+      if (mode === "child") {
+        return mapById([tpl], taskId, (t) => ({ ...t, children: [...t.children, child] }))[0];
+      }
+      return insertAfterSibling([tpl], taskId, child)[0];
+    }),
+  }));
+  return step.id;
+}
+
+export function indentRecurrenceNode(taskId: TaskId, underId?: TaskId | null): void {
+  update((s) => ({
+    ...s,
+    recurrences: mapRecurrenceOfNode(s.recurrences, taskId, (tpl) => {
+      const forest = underId == null ? indentTask([tpl], taskId) : indentUnder([tpl], taskId, underId);
+      return forest[0] ?? tpl;
+    }),
+  }));
+}
+
+export function outdentRecurrenceNode(taskId: TaskId): void {
+  update((s) => ({
+    ...s,
+    recurrences: mapRecurrenceOfNode(s.recurrences, taskId, (tpl) => {
+      const parentId = findParentId([tpl], taskId);
+      // Never lift a node to become a second root of the template.
+      if (parentId == null || parentId === tpl.id) return tpl;
+      return outdentTask([tpl], taskId)[0] ?? tpl;
+    }),
+  }));
+}
+
+/** Remove a step; removing the template root deletes the whole recurrence. */
+export function removeRecurrenceNode(taskId: TaskId): void {
+  update((s) => {
+    const rec = s.recurrences.find((r) => findById([r.template], taskId) != null);
+    if (rec == null) return s;
+    if (rec.template.id === taskId) {
+      return { ...s, recurrences: s.recurrences.filter((r) => r.id !== rec.id) };
+    }
+    return {
+      ...s,
+      recurrences: s.recurrences.map((r) =>
+        r.id === rec.id ? { ...r, template: removeById([r.template], taskId)[0] } : r
+      ),
+    };
+  });
+}
+
+/** Clone a recurrence's template into a concrete, dated-for-today commitment. */
+function materialize(rec: Recurrence, today: ISODate): Task {
+  const planAll = (t: Task): Task => ({
+    ...t,
+    plannedFor: today,
+    horizon: null,
+    completed: false,
+    completedAt: null,
+    children: t.children.map(planAll),
+  });
+  const planned = planAll(cloneWithNewIds(rec.template));
+  return { ...planned, recurrenceId: rec.id, occurrenceDate: today };
+}
+
+/**
+ * Accept a recurrence for today: materialize its template as a real task (dated
+ * for today, linked back to the recurrence for suppression). Returns the new
+ * instance's root id for focusing, or null if the recurrence is gone.
+ */
+export function acceptRecurrence(recId: RecurrenceId, today: ISODate): TaskId | null {
+  const rec = state.recurrences.find((r) => r.id === recId);
+  if (rec == null) return null;
+  const instance = materialize(rec, today);
+  update((s) => ({
+    ...s,
+    tasks: insertAtProjectStart(s.tasks, s.projects, instance.projectId, instance),
+  }));
+  return instance.id;
 }
 
 // ─── Undo ───────────────────────────────────────────────────────────

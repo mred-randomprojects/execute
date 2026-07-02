@@ -7,12 +7,18 @@ import type {
   LogEntry,
   Project,
   ProjectId,
+  Recurrence,
+  RecurrenceEnds,
+  RecurrenceFreq,
+  RecurrenceId,
+  RecurrenceRule,
   Task,
   TaskId,
   TaskPriority,
   ThemeName,
   TrashedTask,
 } from "../types";
+import { normalizeRule } from "./recurrence";
 import {
   DEFAULT_PROJECT_ID,
   PROJECT_COLORS,
@@ -153,6 +159,49 @@ function coerceTask(raw: unknown): Task {
     estimatedMinutes: numOrNull(o.estimatedMinutes),
     // v4: pre-v4 tasks have no carry history → 0. Clamp to a non-negative int.
     carriedCount: Math.max(0, Math.trunc(num(o.carriedCount, 0))),
+    // v5: recurrence instance link. Legacy tasks aren't from recurrences → null.
+    recurrenceId: strOrNull(o.recurrenceId) as RecurrenceId | null,
+    occurrenceDate: strOrNull(o.occurrenceDate),
+  };
+}
+
+const RECURRENCE_FREQS: ReadonlySet<string> = new Set(["day", "week", "month", "year"]);
+const ANCHOR_FALLBACK: string = "2020-01-01";
+
+function coerceFreq(x: unknown): RecurrenceFreq {
+  return typeof x === "string" && RECURRENCE_FREQS.has(x) ? (x as RecurrenceFreq) : "day";
+}
+
+function coerceEnds(raw: unknown): RecurrenceEnds {
+  if (!isObject(raw)) return { kind: "never" };
+  if (raw.kind === "on" && typeof raw.date === "string") return { kind: "on", date: raw.date };
+  if (raw.kind === "after") return { kind: "after", count: Math.max(1, Math.trunc(num(raw.count, 1))) };
+  return { kind: "never" };
+}
+
+function coerceWeekdays(raw: unknown): number[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.filter((n): n is number => typeof n === "number" && n >= 1 && n <= 7);
+}
+
+function coerceRule(raw: unknown): RecurrenceRule {
+  const o = isObject(raw) ? raw : {};
+  return normalizeRule({
+    freq: coerceFreq(o.freq),
+    interval: Math.max(1, Math.trunc(num(o.interval, 1))),
+    weekdays: coerceWeekdays(o.weekdays),
+    anchor: str(o.anchor) || ANCHOR_FALLBACK,
+    ends: coerceEnds(o.ends),
+  });
+}
+
+function coerceRecurrence(raw: unknown): Recurrence {
+  const o = isObject(raw) ? raw : {};
+  return {
+    id: (str(o.id) || nanoid()) as RecurrenceId,
+    template: coerceTask(o.template),
+    rule: coerceRule(o.rule),
+    createdAt: num(o.createdAt, Date.now()),
   };
 }
 
@@ -202,10 +251,18 @@ export function coerceState(raw: unknown): AppState {
     children: task.children.map(normalizeProject),
   });
 
+  const recurrences = Array.isArray(raw.recurrences)
+    ? raw.recurrences.map(coerceRecurrence).map((rec) => ({
+        ...rec,
+        template: normalizeChildProjects([normalizeProject(rec.template)])[0],
+      }))
+    : [];
+
   return {
     schemaVersion: num(raw.schemaVersion, SCHEMA_VERSION),
     projects,
     tasks: normalizeChildProjects(tasks.map(normalizeProject)),
+    recurrences,
     trash: trash.map((entry) => ({
       ...entry,
       task: normalizeChildProjects([normalizeProject(entry.task)])[0],

@@ -1,23 +1,27 @@
 import { describe, it, expect } from "vitest";
 import {
   bucketMeta,
+  groupRecurrencesByRule,
   groupTasksByBucket,
   groupTasksByProject,
   horizonLabel,
   prevVisibleSiblingId,
   projectSummaries,
   reckoningCards,
+  recurringForToday,
   resolveZoom,
   suggestedDayFor,
   suggestedForToday,
+  suppressedRecurrenceIds,
   taskBucket,
   viewPredicate,
   viewTasks,
   zoomParent,
 } from "./selectors";
-import type { Horizon } from "./types";
+import type { Horizon, Recurrence, RecurrenceId, RecurrenceRule } from "./types";
 import { makeTask } from "./store/tasks";
 import { addDays } from "./store/dates";
+import { defaultRule } from "./store/recurrence";
 import {
   defaultProject,
   projectRowId,
@@ -356,5 +360,70 @@ describe("reckoningCards", () => {
     const done = { ...task("done", "work", yest), completed: true };
     const noDate = task("nodate", "work", null);
     expect(reckoningCards([future, done, noDate], today)).toEqual([]);
+  });
+});
+
+// ─── Recurrences ────────────────────────────────────────────────────
+
+function rec(id: string, rule: RecurrenceRule, template: Task): Recurrence {
+  return { id: id as RecurrenceId, template, rule, createdAt: 0 };
+}
+/** An accepted instance of recurrence `recId` for `occ`. */
+function instance(recId: string, occ: string, completed: boolean): Task {
+  return {
+    ...task("instance", "work"),
+    recurrenceId: recId as RecurrenceId,
+    occurrenceDate: occ,
+    completed,
+    plannedFor: occ,
+  };
+}
+
+describe("groupRecurrencesByRule", () => {
+  it("buckets by pattern label, day before week", () => {
+    const daily1 = rec("a", defaultRule("2026-06-01"), task("A", "work"));
+    const daily2 = rec("b", defaultRule("2026-06-01"), task("B", "work"));
+    const weekly = rec(
+      "c",
+      { freq: "week", interval: 1, weekdays: [1], anchor: "2026-06-01", ends: { kind: "never" } },
+      task("C", "work")
+    );
+    const groups = groupRecurrencesByRule([weekly, daily1, daily2]);
+    expect(groups.map((g) => g.label)).toEqual(["Every day", "Every week on Mon"]);
+    expect(groups[0].recurrences.map((r) => r.id)).toEqual(["a", "b"]);
+  });
+});
+
+describe("recurringForToday + suppression", () => {
+  const today = "2026-06-30";
+  const daily = rec("a", defaultRule("2026-06-01"), task("Water plants", "work"));
+
+  it("offers a recurrence that fires today with no open instance", () => {
+    expect(recurringForToday([daily], [], today).map((r) => r.id)).toEqual(["a"]);
+  });
+
+  it("suppresses while an accepted instance is still open", () => {
+    const tasks = [instance("a", today, false)];
+    expect(suppressedRecurrenceIds(tasks, today).has("a" as RecurrenceId)).toBe(true);
+    expect(recurringForToday([daily], tasks, today)).toEqual([]);
+  });
+
+  it("stays suppressed today even after that instance is completed", () => {
+    const tasks = [instance("a", today, true)]; // done today → don't re-offer today
+    expect(recurringForToday([daily], tasks, today)).toEqual([]);
+  });
+
+  it("re-offers once the only instance is a completed one from a past day", () => {
+    const tasks = [instance("a", "2026-06-29", true)];
+    expect(recurringForToday([daily], tasks, today).map((r) => r.id)).toEqual(["a"]);
+  });
+
+  it("does not offer a recurrence that doesn't fire today", () => {
+    const notToday = rec(
+      "z",
+      { freq: "week", interval: 1, weekdays: [1], anchor: "2026-06-01", ends: { kind: "never" } },
+      task("Mon only", "work")
+    ); // today is a Tuesday
+    expect(recurringForToday([notToday], [], today)).toEqual([]);
   });
 });

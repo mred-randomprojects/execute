@@ -1,6 +1,15 @@
 import { useEffect, useRef, useState } from "react";
 import type { RefObject } from "react";
-import type { ISODate, OutlineId, Project, ProjectId, Task, TaskId } from "../types";
+import type {
+  ISODate,
+  OutlineId,
+  Project,
+  ProjectId,
+  Recurrence,
+  RecurrenceId,
+  Task,
+  TaskId,
+} from "../types";
 import { projectRowId } from "../types";
 import type {
   Crumb,
@@ -25,6 +34,7 @@ const PLACEHOLDERS: Record<ViewKind, string> = {
   backlog: "Capture something for later…",
   all: "Capture a task…",
   projects: "Capture into a project…",
+  recurring: "New recurring task…",
   trash: "",
 };
 
@@ -61,6 +71,7 @@ function EmptyState({ view }: { view: ViewKind }) {
     backlog: "Backlog is clear.",
     all: "No tasks yet — capture your first above.",
     projects: "No projects yet — create one above.",
+    recurring: "No recurring tasks yet — capture one above.",
     trash: "",
   };
   return (
@@ -388,11 +399,110 @@ function BucketSection({ group }: { group: LaterGroup }) {
   );
 }
 
+/** A recurrence template rendered read-only, to preview its structure in Today. */
+function RecurringPreviewTree({ task, depth }: { task: Task; depth: number }) {
+  return (
+    <>
+      <div
+        className="flex items-center gap-2 py-[3px] text-[13px] text-ink-soft"
+        style={{ paddingLeft: `${depth * 22 + 30}px` }}
+      >
+        <span className="h-[5px] w-[5px] shrink-0 rounded-full bg-ink-faint" aria-hidden />
+        <span className="truncate">{task.text === "" ? "Untitled step" : task.text}</span>
+      </div>
+      {task.children.map((c) => (
+        <RecurringPreviewTree key={c.id} task={c} depth={depth + 1} />
+      ))}
+    </>
+  );
+}
+
+function RecurringSuggestions({
+  recurring,
+  focusedId,
+  onSelect,
+  onAccept,
+}: {
+  recurring: Recurrence[];
+  focusedId: OutlineId | null;
+  onSelect: (id: OutlineId) => void;
+  onAccept: (recId: RecurrenceId) => void;
+}) {
+  return (
+    <section className="mt-6 px-2">
+      <div className="mb-1 flex items-center justify-between border-t border-line pt-3">
+        <span className="eyebrow">Recurring today</span>
+        <span className="text-[11px] text-ink-faint">
+          <span className="kbd">t</span> add to today
+        </span>
+      </div>
+      <p className="mb-1.5 text-[12px] text-ink-faint">
+        Repeats due today — not on your list until you take them on.
+      </p>
+      {recurring.map((rec) => {
+        const focused = focusedId === rec.template.id;
+        const count = rec.template.children.length;
+        return (
+          <div key={rec.id}>
+            <div
+              onClick={() => onSelect(rec.template.id)}
+              className={[
+                "group relative flex cursor-default select-none items-center gap-2 rounded-sm py-[5px] pr-2",
+                focused ? "bg-surface-2" : "hover:bg-surface-2/60",
+              ].join(" ")}
+              style={{ paddingLeft: "6px" }}
+            >
+              {focused && (
+                <span className="absolute left-0 top-[6px] bottom-[6px] w-[2px] bg-accent" />
+              )}
+              <span className="grid h-[17px] w-[17px] shrink-0 place-items-center text-ink-faint" aria-hidden>
+                <svg viewBox="0 0 16 16" width="12" height="12">
+                  <path
+                    d="M4 6.5V6a3 3 0 0 1 3-3h4l-1.5-1.5M12 9.5V10a3 3 0 0 1-3 3H5l1.5 1.5"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.4"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+              </span>
+              <span className="flex-1 truncate text-[14px] text-ink">
+                {rec.template.text === "" ? "Untitled recurring task" : rec.template.text}
+              </span>
+              {count > 0 && (
+                <span className="mono shrink-0 text-[11px] text-ink-faint">
+                  {count} {count === 1 ? "step" : "steps"}
+                </span>
+              )}
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  e.currentTarget.blur();
+                  onAccept(rec.id);
+                }}
+                className="shrink-0 rounded-sm border border-line px-2 py-[2px] text-[11px] text-ink-soft opacity-0 transition hover:border-line-strong hover:text-ink focus:opacity-100 group-hover:opacity-100"
+              >
+                Add
+              </button>
+            </div>
+            {rec.template.children.map((c) => (
+              <RecurringPreviewTree key={c.id} task={c} depth={1} />
+            ))}
+          </div>
+        );
+      })}
+    </section>
+  );
+}
+
 export function OutlineView({
   view,
   today,
   groups,
   suggested,
+  recurring,
+  onAcceptRecurring,
   buckets,
   laterLayout,
   onToggleLaterLayout,
@@ -424,6 +534,8 @@ export function OutlineView({
   today: ISODate;
   groups: ProjectTaskGroup[];
   suggested: Task[];
+  recurring: Recurrence[];
+  onAcceptRecurring: (recId: RecurrenceId) => void;
   buckets: LaterGroup[];
   laterLayout: "date" | "project";
   onToggleLaterLayout: () => void;
@@ -601,6 +713,15 @@ export function OutlineView({
               <TaskRow key={t.id} task={t} depth={0} />
             ))}
           </section>
+        )}
+
+        {zoom == null && view === "today" && recurring.length > 0 && (
+          <RecurringSuggestions
+            recurring={recurring}
+            focusedId={focusedId}
+            onSelect={onSelectRow}
+            onAccept={onAcceptRecurring}
+          />
         )}
       </div>
     </div>

@@ -4,6 +4,7 @@
 export type TaskId = string & { readonly __brand: "TaskId" };
 export type ProjectId = string & { readonly __brand: "ProjectId" };
 export type ProjectRowId = string & { readonly __brand: "ProjectRowId" };
+export type RecurrenceId = string & { readonly __brand: "RecurrenceId" };
 export type OutlineId = TaskId | ProjectRowId;
 
 /** Local-calendar date, "YYYY-MM-DD". The unit the whole app reasons in. */
@@ -22,6 +23,44 @@ export type HorizonUnit = "week" | "month" | "someday";
 export interface Horizon {
   unit: HorizonUnit;
   anchor: string | null;
+}
+
+// ─── Recurrence (repeating tasks) ───────────────────────────────────
+//
+// A recurrence is a *definition*, not a spawned task: a task template plus a
+// rule. On days the rule fires, the template surfaces in Today as a suggestion
+// the user can accept (which materializes a real, dated commitment). Templates
+// live in their own array, never in `tasks`, so they can never reckon or be
+// counted — only accepted instances do.
+
+export type RecurrenceFreq = "day" | "week" | "month" | "year";
+
+/** When a recurrence stops offering itself. */
+export type RecurrenceEnds =
+  | { kind: "never" }
+  | { kind: "on"; date: ISODate }
+  | { kind: "after"; count: number };
+
+/**
+ * An RRULE-ish spec matching the familiar calendar "Repeat" UI. `anchor` is the
+ * reference day the cadence is measured from (also the day-of-month for monthly
+ * and the month/day for yearly). `weekdays` (ISO 1=Mon…7=Sun) only applies to
+ * the weekly frequency.
+ */
+export interface RecurrenceRule {
+  freq: RecurrenceFreq;
+  interval: number; // "every N" — always >= 1
+  weekdays: number[]; // ISO weekdays; meaningful only when freq === "week"
+  anchor: ISODate;
+  ends: RecurrenceEnds;
+}
+
+export interface Recurrence {
+  id: RecurrenceId;
+  /** The task subtree spawned on acceptance (children preserved verbatim). */
+  template: Task;
+  rule: RecurrenceRule;
+  createdAt: number;
 }
 
 export interface Project {
@@ -61,6 +100,14 @@ export interface Task {
    * Drives the "carried N×" badge so chronic dodging stays visible. Never reset.
    */
   carriedCount: number;
+  /**
+   * If this task was materialized from a recurrence, the source recurrence id
+   * (set on the instance root only) — used to suppress re-suggesting while the
+   * instance is still open. `null` for ordinary tasks.
+   */
+  recurrenceId: RecurrenceId | null;
+  /** Which occurrence (its firing day) this instance represents. `null` otherwise. */
+  occurrenceDate: ISODate | null;
 }
 
 export type ThemeName = "slate" | "ivory" | "carbon" | "bordeaux";
@@ -95,6 +142,8 @@ export interface AppState {
   schemaVersion: number;
   projects: Project[];
   tasks: Task[];
+  /** Recurrence definitions (templates + rules). Never counted or reckoned. */
+  recurrences: Recurrence[];
   trash: TrashedTask[];
   log: LogEntry[];
   theme: ThemeName;
@@ -104,7 +153,7 @@ export interface AppState {
   devDateOverride: ISODate | null;
 }
 
-export const SCHEMA_VERSION = 4;
+export const SCHEMA_VERSION = 5;
 export const DEFAULT_PROJECT_ID = "project-inbox" as ProjectId;
 export const PROJECT_ROW_PREFIX = "project:";
 
@@ -145,6 +194,7 @@ export function emptyState(): AppState {
     schemaVersion: SCHEMA_VERSION,
     projects: [defaultProject()],
     tasks: [],
+    recurrences: [],
     trash: [],
     log: [],
     theme: "slate",
