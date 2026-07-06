@@ -946,6 +946,21 @@ export function App() {
       if (focusedTaskId == null) return;
       setCurrentTask(state.currentTaskId === focusedTaskId ? null : focusedTaskId);
     },
+    // `w` = "won't do · why": edit the skip reason inline. On an open task it
+    // first marks it won't-do (a reason presupposes the state); on a completed or
+    // non-task row it's inert.
+    taskReason: () => {
+      if (view === "recurring" || focusedRecurringToday != null) return;
+      if (focusedTaskId == null) return;
+      const t = findById(state.tasks, focusedTaskId);
+      if (t == null) return;
+      if (t.wontDo == null) {
+        if (!isOpen(t)) return; // a completed task isn't "won't do"
+        markWontDo(focusedTaskId);
+      }
+      setFocus(focusedTaskId);
+      setReasonEditId(focusedTaskId);
+    },
     zoomIn: () => {
       if (view === "recurring") return; // no zoom into recurrence definitions (v1)
       if (focusedProjectId != null) zoomInto({ kind: "project", id: focusedProjectId });
@@ -1077,6 +1092,7 @@ export function App() {
     "task.trash": cmd.taskTrash,
     "task.collapse": cmd.taskCollapse,
     "task.current": cmd.taskCurrent,
+    "task.reason": cmd.taskReason,
     "zoom.in": cmd.zoomIn,
     "move.enter": cmd.moveEnter,
     "move.dropSibling": cmd.moveDropSibling,
@@ -1408,6 +1424,16 @@ export function App() {
     { id: "new", label: "New task", hint: "o", run: cmd.taskNew },
     { id: "details", label: "Open details panel", hint: "→", run: openPanel },
     { id: "toggle", label: "Complete / uncomplete task", hint: "space", run: cmd.taskToggle },
+    {
+      id: "wontdo",
+      label:
+        focusedTask?.wontDo != null
+          ? "Won’t do · edit the reason"
+          : "Won’t do (skip) · add a reason",
+      aliases: ["wont do", "skip", "reason"],
+      hint: "w",
+      run: cmd.taskReason,
+    },
     { id: "plan", label: "Plan / unplan for today", hint: "t", run: cmd.taskPlanToday },
     {
       id: "current",

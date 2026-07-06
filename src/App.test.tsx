@@ -395,6 +395,28 @@ describe("Won't do (intentionally skipped)", () => {
     await waitFor(() => expect(screen.queryByLabelText(/won.t do/i)).toBeNull());
     expect(screen.getByText("skip me")).toBeTruthy();
   });
+
+  it("`w` skips an open task and re-edits the reason — all from the keyboard", async () => {
+    render(<App />);
+    await addTask("maybe later");
+    blurActive(); // focus it, still open
+
+    // `w` on an open task marks it won't-do and opens the reason field.
+    fireEvent.keyDown(document.body, { key: "w" });
+    expect(await screen.findByLabelText(/won.t do/i)).toBeTruthy();
+    const field = screen.getByPlaceholderText(/why\?/i);
+    fireEvent.change(field, { target: { value: "too busy" } });
+    fireEvent.keyDown(field, { key: "Enter" });
+    expect(await screen.findByText(/too busy/)).toBeTruthy();
+
+    // `w` again re-opens the same reason for editing — no click needed.
+    fireEvent.keyDown(document.body, { key: "w" });
+    const field2 = screen.getByPlaceholderText(/why\?/i);
+    fireEvent.change(field2, { target: { value: "not a priority" } });
+    fireEvent.keyDown(field2, { key: "Enter" });
+    expect(await screen.findByText(/not a priority/)).toBeTruthy();
+    expect(screen.queryByText(/too busy/)).toBeNull();
+  });
 });
 
 describe("Trivial editing", () => {
