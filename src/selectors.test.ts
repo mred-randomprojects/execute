@@ -2,7 +2,6 @@ import { describe, it, expect } from "vitest";
 import {
   backlogCount,
   bucketMeta,
-  filterTree,
   groupRecurrencesByRule,
   groupTasksByBucket,
   groupTasksByProject,
@@ -472,25 +471,32 @@ describe("won't do (intentionally skipped) drops out of counts", () => {
   });
 });
 
-describe("Today + hide-completed doesn't strand a context-only parent", () => {
+describe("Today shows only live subtrees (no done-only branches)", () => {
   const today = "2026-07-06";
-  // The hide-completed pass App runs: keep only nodes that still match the view
-  // *and* aren't completed (ancestors survive via kept children).
-  const hidePred = (t: Task) => viewPredicate("today", today)(t) && !t.completed;
+  const shownRoots = (tasks: Task[]) => viewTasks(tasks, "today", today).map((t) => t.text);
 
-  it("keeps a not-for-today parent while its today child is still open", () => {
-    const openChild = task("do it", "work", today);
-    const parent = withChildren(task("umbrella", "work", null), [openChild]); // parent not planned today
-    const filtered = viewTasks([parent], "today", today);
-    expect(filtered.map((t) => t.text)).toEqual(["umbrella"]); // shown as context
-    expect(filterTree(filtered, hidePred).map((t) => t.text)).toEqual(["umbrella"]);
+  it("keeps a not-for-today parent while an open today child remains (context)", () => {
+    const parent = withChildren(task("umbrella", "work", null), [task("do it", "work", today)]);
+    expect(shownRoots([parent])).toEqual(["umbrella"]);
   });
 
-  it("drops the parent once its only today child is completed (nothing left to anchor it)", () => {
+  it("drops a not-for-today parent once its only today child is completed", () => {
     const doneChild = { ...task("do it", "work", today), completed: true };
     const parent = withChildren(task("umbrella", "work", null), [doneChild]);
-    const filtered = viewTasks([parent], "today", today);
-    expect(filtered.map((t) => t.text)).toEqual(["umbrella"]); // still context without hiding
-    expect(filterTree(filtered, hidePred)).toEqual([]); // …but hiding completed removes both
+    expect(shownRoots([parent])).toEqual([]); // no open today-work left to anchor it
+  });
+
+  it("still shows a top-level task planned for today even when completed", () => {
+    const done = { ...task("shipped it", "work", today), completed: true };
+    expect(shownRoots([done])).toEqual(["shipped it"]); // a direct today commitment
+  });
+
+  it("keeps a finished today leaf beside an open today sibling", () => {
+    const doneC = { ...task("done step", "work", today), completed: true };
+    const openC = task("open step", "work", today);
+    const epic = withChildren(task("epic", "work", null), [doneC, openC]);
+    const shown = viewTasks([epic], "today", today);
+    expect(shown.map((t) => t.text)).toEqual(["epic"]);
+    expect(shown[0].children.map((c) => c.text)).toEqual(["done step", "open step"]);
   });
 });

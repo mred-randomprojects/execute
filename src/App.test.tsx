@@ -419,8 +419,8 @@ describe("Won't do (intentionally skipped)", () => {
   });
 });
 
-describe("Today view: no stranded parents", () => {
-  it("hides a not-for-today parent whose only today child is completed (hide-completed on)", async () => {
+describe("Today view: drops done-only subtrees", () => {
+  it("removes a not-for-today parent from Today once its only today child is completed", async () => {
     render(<App />);
     await addTask("umbrella");
     await addTask("do today");
@@ -429,33 +429,28 @@ describe("Today view: no stranded parents", () => {
     fireEvent.keyDown(document.body, { key: "ArrowUp" }); // focus the parent
     fireEvent.keyDown(document.body, { key: "t" }); // unplan the parent (not for today)
     fireEvent.keyDown(document.body, { key: "ArrowDown" }); // back to the child
-    fireEvent.keyDown(document.body, { key: " " }); // complete the child
 
-    // Without hiding, the parent still shows as context for the completed child.
+    // While the child is open, the parent shows as context.
     expect(screen.getByText("umbrella")).toBeTruthy();
 
-    // Hiding completed removes the child — and the parent must not linger alone,
-    // since it isn't planned for today and now has nothing under it.
-    fireEvent.keyDown(document.body, { key: "h" });
+    // Completing it leaves no open today-work under the parent → the whole
+    // subtree drops from Today (no hide-completed needed).
+    fireEvent.keyDown(document.body, { key: " " });
     await waitFor(() => {
       expect(screen.queryByText("do today")).toBeNull();
       expect(screen.queryByText("umbrella")).toBeNull();
     });
   });
 
-  it("keeps a not-for-today parent while an open today child remains", async () => {
+  it("keeps a completed top-level task planned for today (a direct commitment)", async () => {
     render(<App />);
-    await addTask("umbrella");
-    await addTask("do today");
+    await addTask("shipped it");
     blurActive();
-    fireEvent.keyDown(document.body, { key: "Tab" }); // nest child
-    fireEvent.keyDown(document.body, { key: "ArrowUp" }); // focus parent
-    fireEvent.keyDown(document.body, { key: "t" }); // unplan parent
-
-    // Child is still open, so even with completed hidden the parent stays (context).
-    fireEvent.keyDown(document.body, { key: "h" });
-    await waitFor(() => expect(screen.getByText("umbrella")).toBeTruthy());
-    expect(screen.getByText("do today")).toBeTruthy();
+    fireEvent.keyDown(document.body, { key: " " }); // complete it
+    // A top-level today task lingers when done (progress / satisfaction), unlike a
+    // done sub-step of a non-today epic.
+    await waitFor(() => expect(screen.getByLabelText("Mark incomplete")).toBeTruthy());
+    expect(screen.getByText("shipped it")).toBeTruthy();
   });
 });
 

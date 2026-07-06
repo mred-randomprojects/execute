@@ -72,11 +72,41 @@ export function viewPredicate(view: ViewKind, today: ISODate): TaskPredicate {
   }
 }
 
+/** A subtree still holds live today-work: an *open* leaf planned for today. */
+export function hasOpenTodayLeaf(t: Task, today: ISODate): boolean {
+  if (t.children.length === 0) return t.plannedFor === today && isOpen(t);
+  return t.children.some((c) => hasOpenTodayLeaf(c, today));
+}
+
+/**
+ * The Today outline. A subtree shows only while it still holds an *open* task
+ * planned for today; inside such a live subtree, already-resolved today-leaves
+ * ride along (so "what you did today" sits beside the open work) and non-today
+ * ancestors appear as context. A subtree with no open today-work is dropped
+ * whole — so a container that was never a today commitment doesn't linger just
+ * because one scheduled subtask is already done.
+ *
+ * Tasks *themselves* planned for today always show (done or open) — they're
+ * direct commitments; `parentLive` carries that permission down through a live
+ * subtree so their finished siblings show too.
+ */
+export function todayTasks(tasks: Task[], today: ISODate, parentLive = true): Task[] {
+  const out: Task[] = [];
+  for (const t of tasks) {
+    const shown = hasOpenTodayLeaf(t, today) || (t.plannedFor === today && parentLive);
+    if (shown) out.push({ ...t, children: todayTasks(t.children, today, true) });
+  }
+  return out;
+}
+
 export function viewTasks(
   tasks: Task[],
   view: ViewKind,
   today: ISODate
 ): Task[] {
+  // Today needs subtree-level reasoning (drop done-only branches), which a flat
+  // per-node predicate can't express; the other views are simple predicates.
+  if (view === "today") return todayTasks(tasks, today);
   return filterTree(tasks, viewPredicate(view, today));
 }
 
@@ -159,8 +189,26 @@ export function prevVisibleSiblingId(forest: Task[], id: TaskId): TaskId | null 
 
 // ─── Counts for the sidebar / progress ──────────────────────────────
 
+/**
+ * Today-planned *leaves* the Today view actually shows (open + resolved), for
+ * counting. Walks the real tree so "leaf" reflects the true structure, but
+ * follows the same subtree visibility as {@link todayTasks} — a done leaf in a
+ * branch that's no longer a today commitment is hidden, so it isn't counted.
+ */
 export function todayLeaves(tasks: Task[], today: ISODate): Task[] {
-  return leavesWhere(tasks, (t) => t.plannedFor === today);
+  const out: Task[] = [];
+  const walk = (list: Task[], parentLive: boolean) => {
+    for (const t of list) {
+      if (!(hasOpenTodayLeaf(t, today) || (t.plannedFor === today && parentLive))) continue;
+      if (t.children.length === 0) {
+        if (t.plannedFor === today) out.push(t);
+      } else {
+        walk(t.children, true);
+      }
+    }
+  };
+  walk(tasks, true);
+  return out;
 }
 
 export interface TodayProgress {
@@ -170,8 +218,9 @@ export interface TodayProgress {
 }
 
 export function todayProgress(tasks: Task[], today: ISODate): TodayProgress {
-  // Skipped ("won't do") leaves drop out of the tally entirely — set aside, not
-  // counted as done or remaining. `total` is everything still on the hook.
+  // Count only what Today shows: a done sub-step of a branch that's no longer a
+  // today commitment (and thus hidden) shouldn't inflate the tally. Skipped
+  // ("won't do") leaves also drop out — set aside, neither done nor remaining.
   const leaves = todayLeaves(tasks, today).filter((t) => t.wontDo == null);
   const done = leaves.filter((t) => t.completed).length;
   return { done, total: leaves.length, remaining: leaves.length - done };
