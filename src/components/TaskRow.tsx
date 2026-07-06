@@ -166,6 +166,8 @@ export function TaskRow({ task, depth }: { task: Task; depth: number }) {
   const ed = useEditor();
   const isFocused = ed.cursorId === task.id;
   const wontDo = task.wontDo != null;
+  const reasonText = task.wontDo?.reason ?? "";
+  const hasReason = reasonText !== "";
   const isCurrent = ed.currentId === task.id && isOpen(task);
   const inSelection = ed.selectedIds.includes(task.id);
   const editing = ed.editingId === task.id;
@@ -278,24 +280,26 @@ export function TaskRow({ task, depth }: { task: Task; depth: number }) {
           </span>
         )}
 
-        {/* Won't-do reason: an inline field right after a fresh skip, else a
-            quiet italic note of the recorded reason. */}
+        {/* Won't-do reason: an inline field right after a fresh skip; otherwise
+            the recorded reason (or a "why?" prompt when none yet). The focused
+            row shows a `w` keycap so the edit shortcut is discoverable. */}
         {!editing && reasonEditing ? (
           <ReasonInput task={task} />
-        ) : (
-          !editing &&
-          wontDo &&
-          task.wontDo?.reason != null &&
-          task.wontDo.reason !== "" && (
-            <span
-              onClick={() => isFocused && ed.startReason(task.id)}
-              className="min-w-0 max-w-[50%] shrink truncate text-[12px] italic text-ink-faint"
-              title={task.wontDo.reason}
-            >
-              — {task.wontDo.reason}
-            </span>
-          )
-        )}
+        ) : !editing && wontDo && (hasReason || isFocused) ? (
+          <span
+            onClick={() => isFocused && ed.startReason(task.id)}
+            className="flex min-w-0 max-w-[50%] shrink items-center gap-1.5"
+          >
+            {hasReason ? (
+              <span className="min-w-0 truncate text-[12px] italic text-ink-faint" title={reasonText}>
+                — {reasonText}
+              </span>
+            ) : (
+              <span className="text-[12px] text-ink-faint">why?</span>
+            )}
+            {isFocused && <span className="kbd shrink-0">w</span>}
+          </span>
+        ) : null}
 
         {isCurrent && !editing && (
           <span className="mono shrink-0 rounded-sm bg-accent px-1.5 py-[1px] text-[10px] font-medium uppercase tracking-[0.12em] text-white">
