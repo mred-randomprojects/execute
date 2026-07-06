@@ -620,6 +620,25 @@ describe("Detail panel", () => {
     fireEvent.keyDown(document.body, { key: "ArrowRight" });
     expect(await screen.findByText(/^Created /)).toBeTruthy();
   });
+
+  it("lists subtasks in the panel even when the list is hiding completed ones", async () => {
+    render(<App />);
+    await addTask("parent");
+    await addTask("child");
+    blurActive();
+    fireEvent.keyDown(document.body, { key: "Tab" }); // child → subtask of parent
+    fireEvent.keyDown(document.body, { key: " " }); // complete the (focused) child
+
+    // Hide completed: the child vanishes from the outline, and the parent — its
+    // only child now hidden — looks childless in the list.
+    fireEvent.keyDown(document.body, { key: "h" });
+    await waitFor(() => expect(screen.queryByText("child")).toBeNull());
+
+    // → opens the parent's detail panel, which still shows the whole subtree.
+    fireEvent.keyDown(document.body, { key: "ArrowRight" });
+    expect(await screen.findByText("Subtasks")).toBeTruthy();
+    expect(screen.getByText("child")).toBeTruthy();
+  });
 });
 
 describe("Suggested for today", () => {

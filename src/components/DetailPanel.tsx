@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import type { ISODate, LogEntry, Project, ProjectId, Task, TaskPriority } from "../types";
 import { renderBlock, renderInline } from "../ui/markdown";
+import { countAll } from "../store/tasks";
 import { NO_SPELLCHECK } from "../ui/noSpellcheck";
 
 const PRIORITIES: Array<{ value: TaskPriority; label: string }> = [
@@ -33,6 +34,54 @@ function exactLocal(at: number): string {
     dateStyle: "medium",
     timeStyle: "short",
   });
+}
+
+/** A read-only status box for a subtask: done ✓ / won't-do ✕ / open. */
+function SubtaskGlyph({ task }: { task: Task }) {
+  const done = task.completed;
+  const skipped = task.wontDo != null;
+  return (
+    <span
+      aria-hidden
+      className={[
+        "mt-[2px] grid h-[14px] w-[14px] shrink-0 place-items-center rounded-[3px] border text-white",
+        done ? "border-good bg-good" : skipped ? "border-bad bg-bad" : "border-line-strong",
+      ].join(" ")}
+    >
+      {done ? (
+        <svg viewBox="0 0 16 16" width="9" height="9">
+          <path d="M13 4.5 6.5 11 3 7.5" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      ) : skipped ? (
+        <svg viewBox="0 0 16 16" width="9" height="9">
+          <path d="M4 4l8 8M12 4l-8 8" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      ) : null}
+    </span>
+  );
+}
+
+/** The task's subtree, read-only — so hidden (e.g. completed) children stay visible here. */
+function SubtaskTree({ task, depth }: { task: Task; depth: number }) {
+  const resolved = task.completed || task.wontDo != null;
+  return (
+    <>
+      <div className="flex items-start gap-2 py-[3px]" style={{ paddingLeft: `${depth * 14}px` }}>
+        <SubtaskGlyph task={task} />
+        <span
+          className={[
+            "text-[13px] leading-snug [overflow-wrap:anywhere]",
+            resolved ? "text-ink-faint line-through" : "text-ink-soft",
+          ].join(" ")}
+        >
+          {task.text === "" ? "Untitled" : renderInline(task.text)}
+        </span>
+      </div>
+      {task.children.map((c) => (
+        <SubtaskTree key={c.id} task={c} depth={depth + 1} />
+      ))}
+    </>
+  );
 }
 
 export interface DetailHandlers {
@@ -96,6 +145,9 @@ export function DetailPanel({
   const commitNotes = () => handlers.onCommitNotes(task.id, notes);
   const plannedToday = task.plannedFor === today;
   const wontDo = task.wontDo != null;
+  // Counts come from the full subtree the panel is handed, so they're accurate
+  // even when the list is hiding completed children.
+  const childProgress = task.children.length > 0 ? countAll(task) : null;
 
   // Leave the notes editor but keep the panel open: blur returns the keyboard to
   // the list (context → normal), so previewing resumes from the same task.
@@ -146,6 +198,22 @@ export function DetailPanel({
           renderInline(task.text)
         )}
       </div>
+
+      {childProgress != null && (
+        <div className="mb-4">
+          <div className="mb-1.5 flex items-center justify-between">
+            <span className="eyebrow">Subtasks</span>
+            <span className="mono text-[11px] text-ink-faint">
+              {childProgress.done}/{childProgress.total} done
+            </span>
+          </div>
+          <div className="rounded border border-line bg-bg px-2.5 py-1.5">
+            {task.children.map((c) => (
+              <SubtaskTree key={c.id} task={c} depth={0} />
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="mb-1.5 flex items-center justify-between">
         <span className="eyebrow">Content</span>
