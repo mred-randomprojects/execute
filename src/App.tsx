@@ -87,6 +87,7 @@ import {
   suggestedForToday,
   taskBucket,
   todayProgress,
+  viewPredicate,
   viewTasks,
   VIEW_TITLES,
   zoomParent,
@@ -230,9 +231,18 @@ export function App() {
   // "Hide all completed" (toggle on `h`) prunes done tasks from the outline,
   // keeping a completed parent only when it still has a visible (incomplete)
   // descendant. Counts/progress read from state.tasks, so they stay accurate.
+  //
+  // The pruning re-applies the view's *own* predicate (not just `!completed`), so
+  // a context-only parent — one shown in Today solely because a descendant is
+  // planned for today — drops out once that descendant is completed and hidden,
+  // instead of stranding an empty, not-for-today row. (A parent still shows while
+  // any open today-descendant remains, since it's kept via that child.)
   const visibleTasks = useMemo(
-    () => (hideCompleted ? filterTree(filtered, (t) => !t.completed) : filtered),
-    [filtered, hideCompleted]
+    () =>
+      hideCompleted
+        ? filterTree(filtered, (t) => viewPredicate(view, today)(t) && !t.completed)
+        : filtered,
+    [filtered, hideCompleted, view, today]
   );
   const projectGroups = useMemo(
     () => groupTasksByProject(visibleTasks, state.projects),

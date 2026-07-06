@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   backlogCount,
   bucketMeta,
+  filterTree,
   groupRecurrencesByRule,
   groupTasksByBucket,
   groupTasksByProject,
@@ -468,5 +469,28 @@ describe("won't do (intentionally skipped) drops out of counts", () => {
     ];
     const sum = projectSummaries(tasks, projects, today).find((s) => s.project.id === "work");
     expect(sum).toMatchObject({ open: 1, today: 1, done: 1 });
+  });
+});
+
+describe("Today + hide-completed doesn't strand a context-only parent", () => {
+  const today = "2026-07-06";
+  // The hide-completed pass App runs: keep only nodes that still match the view
+  // *and* aren't completed (ancestors survive via kept children).
+  const hidePred = (t: Task) => viewPredicate("today", today)(t) && !t.completed;
+
+  it("keeps a not-for-today parent while its today child is still open", () => {
+    const openChild = task("do it", "work", today);
+    const parent = withChildren(task("umbrella", "work", null), [openChild]); // parent not planned today
+    const filtered = viewTasks([parent], "today", today);
+    expect(filtered.map((t) => t.text)).toEqual(["umbrella"]); // shown as context
+    expect(filterTree(filtered, hidePred).map((t) => t.text)).toEqual(["umbrella"]);
+  });
+
+  it("drops the parent once its only today child is completed (nothing left to anchor it)", () => {
+    const doneChild = { ...task("do it", "work", today), completed: true };
+    const parent = withChildren(task("umbrella", "work", null), [doneChild]);
+    const filtered = viewTasks([parent], "today", today);
+    expect(filtered.map((t) => t.text)).toEqual(["umbrella"]); // still context without hiding
+    expect(filterTree(filtered, hidePred)).toEqual([]); // …but hiding completed removes both
   });
 });
