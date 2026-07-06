@@ -19,15 +19,21 @@ export interface Editor {
   currentId: TaskId | null;
   selectedIds: TaskId[];
   editingId: TaskId | null;
+  /** Task whose "won't do" reason is being captured inline (empty field). */
+  reasonEditId: TaskId | null;
   collapsed: Set<TaskId>;
   mode: AppMode;
   movingId: TaskId | null;
 
   select: (id: TaskId) => void;
   toggle: (id: TaskId) => void;
+  /** Clear a "won't do" back to open (clicking the ✕ checkbox). */
+  reopen: (id: TaskId) => void;
   togglePlan: (id: TaskId) => void;
   toggleCollapse: (id: TaskId) => void;
   startEdit: (id: TaskId) => void;
+  /** Begin editing the "won't do" reason inline (on an already-skipped task). */
+  startReason: (id: TaskId) => void;
   openDetail: (id: TaskId) => void;
   zoomInto: (id: TaskId) => void;
 
@@ -42,6 +48,10 @@ export interface Editor {
   toggleFromEdit: (id: TaskId, raw: string) => void;
   exitEdit: (id: TaskId, raw: string) => void;
   removeAndExit: (id: TaskId) => void;
+
+  // Inline "won't do" reason field: save the typed reason (empty saves none). The
+  // task stays "won't do" regardless of whether a reason is given.
+  commitReason: (id: TaskId, reason: string) => void;
 }
 
 const EditorContext = createContext<Editor | null>(null);

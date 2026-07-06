@@ -17,6 +17,7 @@ import type {
   TaskPriority,
   ThemeName,
   TrashedTask,
+  WontDo,
 } from "../types";
 import { normalizeRule } from "./recurrence";
 import {
@@ -133,6 +134,11 @@ function coerceHorizon(raw: unknown): Horizon | null {
   return { unit, anchor: unit === "someday" ? null : strOrNull(raw.anchor) };
 }
 
+function coerceWontDo(raw: unknown): WontDo | null {
+  if (!isObject(raw)) return null;
+  return { reason: strOrNull(raw.reason), at: num(raw.at, Date.now()) };
+}
+
 function coerceTask(raw: unknown): Task {
   const o = isObject(raw) ? raw : {};
   const children = Array.isArray(o.children) ? o.children.map(coerceTask) : [];
@@ -143,13 +149,18 @@ function coerceTask(raw: unknown): Task {
   // Invariant: a concrete date and a fuzzy horizon are mutually exclusive; a
   // date always wins. (Legacy v2 data has no horizon → null, a clean migration.)
   const horizon = plannedFor != null ? null : coerceHorizon(o.horizon);
+  const completed = bool(o.completed);
+  // v7: "won't do" resolution. Mutually exclusive with `completed` — completion
+  // wins. Pre-v7 tasks have no field → null (open), a clean migration.
+  const wontDo = completed ? null : coerceWontDo(o.wontDo);
   return {
     id: (str(o.id) || nanoid()) as TaskId,
     projectId: (str(o.projectId) || DEFAULT_PROJECT_ID) as ProjectId,
     text: str(o.text),
     notes: str(o.notes),
-    completed: bool(o.completed),
+    completed,
     completedAt: numOrNull(o.completedAt),
+    wontDo,
     children,
     createdAt: num(o.createdAt, Date.now()),
     priority: coercePriority(o.priority),
@@ -217,6 +228,7 @@ const LOG_ACTIONS: ReadonlySet<string> = new Set([
   "dropped",
   "brokeDown",
   "kept",
+  "skipped",
 ]);
 
 function coerceLogAction(x: unknown): LogAction {

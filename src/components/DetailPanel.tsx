@@ -22,6 +22,8 @@ const ACTION_LABEL: Record<string, string> = {
   postponed: "Postponed",
   dropped: "Dropped",
   brokeDown: "Broke down",
+  kept: "Kept for today",
+  skipped: "Won’t do",
 };
 
 const LOCAL_TZ = Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -36,6 +38,10 @@ function exactLocal(at: number): string {
 export interface DetailHandlers {
   onCommitNotes: (id: Task["id"], text: string) => void;
   onToggle: (id: Task["id"]) => void;
+  /** Toggle the "won't do" (intentionally skipped) state. */
+  onToggleWontDo: (id: Task["id"]) => void;
+  /** Save the reason on an already-skipped task. */
+  onCommitReason: (id: Task["id"], reason: string) => void;
   onPriority: (id: Task["id"], p: TaskPriority) => void;
   onProject: (id: Task["id"], projectId: ProjectId) => void;
   onTogglePlan: (id: Task["id"]) => void;
@@ -59,6 +65,7 @@ export function DetailPanel({
   editSignal: number;
 }) {
   const [notes, setNotes] = useState(task.notes);
+  const [reason, setReason] = useState(task.wontDo?.reason ?? "");
   // Open in preview: focus stays on the list so ↑/↓ keep navigating and the
   // panel follows. Editing the notes is an explicit step (Tab → editSignal).
   const [editing, setEditing] = useState(false);
@@ -68,6 +75,9 @@ export function DetailPanel({
     setNotes(task.notes);
     setEditing(false);
   }, [task.id, task.notes]);
+  useEffect(() => {
+    setReason(task.wontDo?.reason ?? "");
+  }, [task.id, task.wontDo?.reason]);
 
   // React only to *changes* in editSignal, not to its value on mount — otherwise
   // reopening the panel after a previous Tab would steal focus into the notes.
@@ -85,6 +95,7 @@ export function DetailPanel({
 
   const commitNotes = () => handlers.onCommitNotes(task.id, notes);
   const plannedToday = task.plannedFor === today;
+  const wontDo = task.wontDo != null;
 
   // Leave the notes editor but keep the panel open: blur returns the keyboard to
   // the list (context → normal), so previewing resumes from the same task.
@@ -173,6 +184,7 @@ export function DetailPanel({
       <div className="mt-3 text-[11px] text-ink-faint">
         Created {exactLocal(task.createdAt)}
         {task.completedAt != null && <> · Completed {exactLocal(task.completedAt)}</>}
+        {task.wontDo != null && <> · Won’t do {exactLocal(task.wontDo.at)}</>}
         <span className="ml-1">({LOCAL_TZ})</span>
       </div>
 
@@ -238,6 +250,37 @@ export function DetailPanel({
         >
           {plannedToday ? "Planned for today ✓" : "Plan for today"}
         </button>
+      </div>
+
+      <div className="mt-3">
+        <button
+          onClick={() => handlers.onToggleWontDo(task.id)}
+          className={[
+            "w-full rounded-sm border px-3 py-2 text-[13px] transition-colors",
+            FOCUS_RING,
+            wontDo
+              ? "border-bad bg-bad-soft text-bad"
+              : "border-line text-ink-soft hover:bg-surface-2",
+          ].join(" ")}
+        >
+          {wontDo ? "Won’t do ✕ — click to reopen" : "Mark won’t do"}
+        </button>
+        {wontDo && (
+          <input
+            {...NO_SPELLCHECK}
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            onBlur={() => handlers.onCommitReason(task.id, reason)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                e.currentTarget.blur();
+              }
+            }}
+            placeholder="Why not? (optional)"
+            className="mt-2 w-full rounded-sm border border-line bg-bg px-3 py-1.5 text-[13px] text-ink outline-none placeholder:text-ink-faint focus:border-line-strong"
+          />
+        )}
       </div>
 
       {log.length > 0 && (

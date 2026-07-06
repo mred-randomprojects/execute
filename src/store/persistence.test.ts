@@ -113,3 +113,36 @@ describe("persistence: v6 current task pointer", () => {
     expect(coerceState({ currentTaskId: 123 }).currentTaskId).toBeNull(); // junk → null
   });
 });
+
+describe("persistence: v7 won't-do resolution", () => {
+  it("defaults a pre-v7 task's wontDo to null (open)", () => {
+    expect(coerceState({ tasks: [rawTask()] }).tasks[0].wontDo).toBeNull();
+  });
+
+  it("round-trips a wontDo object with its reason and timestamp", () => {
+    const state = coerceState({
+      tasks: [rawTask({ wontDo: { reason: "not worth it", at: 42 } })],
+    });
+    expect(state.tasks[0].wontDo).toEqual({ reason: "not worth it", at: 42 });
+  });
+
+  it("tolerates a reasonless skip (reason → null)", () => {
+    const state = coerceState({ tasks: [rawTask({ wontDo: { at: 7 } })] });
+    expect(state.tasks[0].wontDo).toEqual({ reason: null, at: 7 });
+  });
+
+  it("drops wontDo when the task is also completed — completion wins", () => {
+    const state = coerceState({
+      tasks: [rawTask({ completed: true, wontDo: { reason: "x", at: 1 } })],
+    });
+    expect(state.tasks[0].completed).toBe(true);
+    expect(state.tasks[0].wontDo).toBeNull();
+  });
+
+  it("keeps a 'skipped' log entry instead of coercing it to 'completed'", () => {
+    const state = coerceState({
+      log: [{ id: "l1", taskId: "t1", taskText: "a task", action: "skipped", at: 1, date: "2026-07-06" }],
+    });
+    expect(state.log[0].action).toBe("skipped");
+  });
+});

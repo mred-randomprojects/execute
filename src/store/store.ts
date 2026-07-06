@@ -14,6 +14,7 @@ import type {
   TaskId,
   TaskPriority,
   ThemeName,
+  WontDo,
 } from "../types";
 import { DEFAULT_PROJECT_ID, PROJECT_COLORS, emptyState } from "../types";
 import {
@@ -301,6 +302,8 @@ export function toggleComplete(id: TaskId): void {
         ...x,
         completed,
         completedAt: completed ? Date.now() : null,
+        // Completing resolves the task positively — clear any "won't do".
+        wontDo: completed ? null : x.wontDo,
       })),
       log: [makeLog(s, t, completed ? "completed" : "uncompleted", null), ...s.log],
     };
@@ -321,8 +324,96 @@ export function setCompleted(
         ...x,
         completed,
         completedAt: completed ? Date.now() : null,
+        wontDo: completed ? null : x.wontDo,
       })),
       log: completed ? [makeLog(s, t, "completed", reason), ...s.log] : s.log,
+    };
+  });
+}
+
+// ─── Won't do (intentionally skipped) ───────────────────────────────
+//
+// A parallel terminal state to `completed`, mutually exclusive with it. Marking
+// won't-do clears completion; the reason is optional and captured after the fact
+// (inline or in the detail panel), so `markWontDo` records the "skipped" log with
+// a null reason and `setWontDoReason` back-fills both the task and that log entry.
+
+/** The newest "skipped" log entry for `taskId`, patched with a reason. */
+function patchLatestSkip(log: LogEntry[], taskId: TaskId, reason: string | null): LogEntry[] {
+  const idx = log.findIndex((e) => e.taskId === taskId && e.action === "skipped");
+  if (idx === -1) return log;
+  const next = [...log];
+  next[idx] = { ...next[idx], reason };
+  return next;
+}
+
+function applyWontDo(task: Task, reason: string | null): Task {
+  const wontDo: WontDo = { reason, at: Date.now() };
+  return { ...task, completed: false, completedAt: null, wontDo };
+}
+
+/** Mark one task "won't do" (clears completion). No-op if already skipped. */
+export function markWontDo(id: TaskId, reason: string | null = null): void {
+  update((s) => {
+    const t = findById(s.tasks, id);
+    if (t == null || t.wontDo != null) return s;
+    return {
+      ...s,
+      tasks: mapById(s.tasks, id, (x) => applyWontDo(x, reason)),
+      log: [makeLog(s, t, "skipped", reason), ...s.log],
+    };
+  });
+}
+
+/** Mark a batch "won't do" — each a "skipped" log entry, one undo step. */
+export function markWontDoMany(ids: TaskId[], reason: string | null = null): void {
+  update((s) => {
+    let tasks = s.tasks;
+    const logs: LogEntry[] = [];
+    for (const id of ids) {
+      const t = findById(tasks, id);
+      if (t == null || t.wontDo != null) continue;
+      tasks = mapById(tasks, id, (x) => applyWontDo(x, reason));
+      logs.push(makeLog(s, t, "skipped", reason));
+    }
+    return { ...s, tasks, log: [...logs, ...s.log] };
+  });
+}
+
+/** Reopen a skipped task (or clear a skip). Logs a reopen for the record. */
+export function clearWontDo(id: TaskId): void {
+  update((s) => {
+    const t = findById(s.tasks, id);
+    if (t == null || t.wontDo == null) return s;
+    return {
+      ...s,
+      tasks: mapById(s.tasks, id, (x) => ({ ...x, wontDo: null })),
+      log: [makeLog(s, t, "uncompleted", null), ...s.log],
+    };
+  });
+}
+
+/** Toggle the won't-do state (detail-panel / mouse affordance). */
+export function toggleWontDo(id: TaskId, reason: string | null = null): void {
+  const t = findById(state.tasks, id);
+  if (t == null) return;
+  if (t.wontDo != null) clearWontDo(id);
+  else markWontDo(id, reason);
+}
+
+/** Set the reason on an already-skipped task, back-filling its log entry. */
+export function setWontDoReason(id: TaskId, reason: string): void {
+  const clean = reason.trim();
+  const value = clean === "" ? null : clean;
+  update((s) => {
+    const t = findById(s.tasks, id);
+    if (t == null || t.wontDo == null) return s;
+    return {
+      ...s,
+      tasks: mapById(s.tasks, id, (x) =>
+        x.wontDo == null ? x : { ...x, wontDo: { ...x.wontDo, reason: value } }
+      ),
+      log: patchLatestSkip(s.log, id, value),
     };
   });
 }
@@ -485,6 +576,7 @@ export function setCompletedMany(ids: TaskId[], completed: boolean): void {
         ...x,
         completed,
         completedAt: completed ? Date.now() : null,
+        wontDo: completed ? null : x.wontDo,
       }));
       if (completed) logs.push(makeLog(s, t, "completed", null));
     }
@@ -682,6 +774,7 @@ function materialize(rec: Recurrence, today: ISODate): Task {
     horizon: null,
     completed: false,
     completedAt: null,
+    wontDo: null,
     children: t.children.map(planAll),
   });
   const planned = planAll(cloneWithNewIds(rec.template));

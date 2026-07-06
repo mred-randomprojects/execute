@@ -15,6 +15,7 @@ import {
   findParentId,
   getAncestorPath,
   isLeaf,
+  isOpen,
   leavesWhere,
   walk,
 } from "./store/tasks";
@@ -61,7 +62,7 @@ export function viewPredicate(view: ViewKind, today: ISODate): TaskPredicate {
     case "today":
       return (t) => t.plannedFor === today;
     case "backlog":
-      return (t) => t.plannedFor == null && !t.completed;
+      return (t) => t.plannedFor == null && isOpen(t);
     case "all":
     case "projects":
       return () => true;
@@ -169,20 +170,22 @@ export interface TodayProgress {
 }
 
 export function todayProgress(tasks: Task[], today: ISODate): TodayProgress {
-  const leaves = todayLeaves(tasks, today);
+  // Skipped ("won't do") leaves drop out of the tally entirely — set aside, not
+  // counted as done or remaining. `total` is everything still on the hook.
+  const leaves = todayLeaves(tasks, today).filter((t) => t.wontDo == null);
   const done = leaves.filter((t) => t.completed).length;
   return { done, total: leaves.length, remaining: leaves.length - done };
 }
 
 export function backlogCount(tasks: Task[]): number {
-  return leavesWhere(tasks, (t) => t.plannedFor == null && !t.completed).length;
+  return leavesWhere(tasks, (t) => t.plannedFor == null && isOpen(t)).length;
 }
 
-/** Incomplete leaves planned strictly before today — the Reckoning's input. */
+/** Open leaves planned strictly before today — the Reckoning's input. */
 export function leftoverLeaves(tasks: Task[], today: ISODate): Task[] {
   return leavesWhere(
     tasks,
-    (t) => !t.completed && t.plannedFor != null && t.plannedFor < today
+    (t) => isOpen(t) && t.plannedFor != null && t.plannedFor < today
   );
 }
 
@@ -225,7 +228,7 @@ export function reckoningCards(tasks: Task[], today: ISODate): ReckoningCard[] {
 }
 
 export function isActionableLeaf(t: Task): boolean {
-  return isLeaf(t) && !t.completed;
+  return isLeaf(t) && isOpen(t);
 }
 
 // ─── Fuzzy horizons → "Later" buckets ───────────────────────────────
@@ -296,7 +299,7 @@ function pickSuggested(window: ISODate[], today: ISODate): ISODate {
  * null), or Someday (no clock). Never mutates — purely derived from the horizon.
  */
 export function suggestedDayFor(task: Task, today: ISODate): ISODate | null {
-  if (task.completed || task.plannedFor != null) return null;
+  if (!isOpen(task) || task.plannedFor != null) return null;
   const h = task.horizon;
   if (h == null || h.unit === "someday" || h.anchor == null) return null;
   const anchor = h.anchor; // narrowed to string by the guard above
@@ -435,6 +438,7 @@ export function groupTasksByBucket(
   const total = new Map<LaterBucket, number>();
   for (const t of allTasks) {
     if (t.plannedFor != null) continue; // dated tasks live in Today / on their day
+    if (t.wontDo != null) continue; // skipped tasks drop out of the tally
     const id = taskBucket(t, today);
     total.set(id, (total.get(id) ?? 0) + 1);
     if (t.completed) done.set(id, (done.get(id) ?? 0) + 1);
@@ -475,6 +479,7 @@ export function projectSummaries(
 
   walk(tasks, (t) => {
     if (!isLeaf(t)) return;
+    if (t.wontDo != null) return; // skipped — neither open nor done; set aside
     if (t.completed) bump(done, t.projectId);
     else {
       bump(open, t.projectId);

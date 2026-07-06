@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { Task } from "../types";
-import { countAll } from "../store/tasks";
+import { countAll, isOpen } from "../store/tasks";
 import { relativeLabel } from "../store/dates";
 import { horizonLabel } from "../selectors";
 import { useEditor } from "../ui/editor";
@@ -27,6 +27,21 @@ function CheckIcon() {
     <svg viewBox="0 0 16 16" width="11" height="11" aria-hidden="true">
       <path
         d="M13 4.5 6.5 11 3 7.5"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2.2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function XIcon() {
+  return (
+    <svg viewBox="0 0 16 16" width="11" height="11" aria-hidden="true">
+      <path
+        d="M4 4l8 8M12 4l-8 8"
         fill="none"
         stroke="currentColor"
         strokeWidth="2.2"
@@ -111,12 +126,50 @@ export function RowInput({ task }: { task: Task }) {
   );
 }
 
+/** Inline "why won't you do this?" field, shown just after a fresh skip. */
+export function ReasonInput({ task }: { task: Task }) {
+  const ed = useEditor();
+  const [value, setValue] = useState(task.wontDo?.reason ?? "");
+  const ref = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (el == null) return;
+    el.focus();
+    el.select();
+  }, []);
+
+  return (
+    <input
+      {...NO_SPELLCHECK}
+      ref={ref}
+      value={value}
+      onChange={(e) => setValue(e.target.value)}
+      onBlur={() => ed.commitReason(task.id, value)}
+      onKeyDown={(e) => {
+        // Enter and Escape both save-and-exit (matching the title editor), so an
+        // unmount-time blur can only ever re-commit the same value — never a
+        // value the user meant to discard.
+        if (e.key === "Enter" || e.key === "Escape") {
+          e.preventDefault();
+          e.stopPropagation();
+          ed.commitReason(task.id, value);
+        }
+      }}
+      placeholder="why? (optional — enter to save)"
+      className="min-w-0 flex-1 bg-transparent text-[12px] italic text-ink-soft outline-none placeholder:not-italic placeholder:text-ink-faint"
+    />
+  );
+}
+
 export function TaskRow({ task, depth }: { task: Task; depth: number }) {
   const ed = useEditor();
   const isFocused = ed.cursorId === task.id;
-  const isCurrent = ed.currentId === task.id && !task.completed;
+  const wontDo = task.wontDo != null;
+  const isCurrent = ed.currentId === task.id && isOpen(task);
   const inSelection = ed.selectedIds.includes(task.id);
   const editing = ed.editingId === task.id;
+  const reasonEditing = ed.reasonEditId === task.id;
   const isMoving = ed.movingId === task.id;
   const isDropTarget = ed.mode === "move" && isFocused && !isMoving;
   const hasChildren = task.children.length > 0;
@@ -125,7 +178,7 @@ export function TaskRow({ task, depth }: { task: Task; depth: number }) {
   const progress = hasChildren ? countAll(task) : null;
   // In Today, a task that isn't itself planned for today only shows because a
   // descendant is — dim it so the "for today" items stand out.
-  const dimNotToday = ed.view === "today" && !plannedToday && !task.completed;
+  const dimNotToday = ed.view === "today" && !plannedToday && isOpen(task);
 
   const rowRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -176,20 +229,30 @@ export function TaskRow({ task, depth }: { task: Task; depth: number }) {
           onClick={(e) => {
             e.stopPropagation();
             e.currentTarget.blur();
-            ed.toggle(task.id);
+            // The ✕ box reopens a skip; otherwise it's the ordinary done toggle.
+            if (wontDo) ed.reopen(task.id);
+            else ed.toggle(task.id);
           }}
-          aria-label={task.completed ? "Mark incomplete" : "Mark complete"}
+          aria-label={
+            task.completed
+              ? "Mark incomplete"
+              : wontDo
+                ? "Won’t do — click to reopen"
+                : "Mark complete"
+          }
           className={[
             "flex h-[17px] w-[17px] shrink-0 items-center justify-center rounded-sm border transition-colors",
             task.completed
               ? "border-good bg-good text-white"
-              : "border-line-strong text-transparent hover:border-ink-soft",
+              : wontDo
+                ? "border-bad bg-bad text-white"
+                : "border-line-strong text-transparent hover:border-ink-soft",
           ].join(" ")}
         >
-          <CheckIcon />
+          {wontDo ? <XIcon /> : <CheckIcon />}
         </button>
 
-        {task.priority < 4 && !task.completed && (
+        {task.priority < 4 && isOpen(task) && (
           <span
             className={`h-[6px] w-[6px] shrink-0 rounded-full ${PRIORITY_DOT[task.priority] ?? ""}`}
             title={`priority ${task.priority}`}
@@ -203,7 +266,7 @@ export function TaskRow({ task, depth }: { task: Task; depth: number }) {
             onClick={() => isFocused && ed.startEdit(task.id)}
             className={[
               "flex-1 truncate text-[14px]",
-              task.completed
+              task.completed || wontDo
                 ? "text-ink-faint line-through"
                 : dimNotToday
                   ? "text-ink-soft"
@@ -213,6 +276,25 @@ export function TaskRow({ task, depth }: { task: Task; depth: number }) {
           >
             {task.text === "" ? "Untitled" : renderInline(task.text)}
           </span>
+        )}
+
+        {/* Won't-do reason: an inline field right after a fresh skip, else a
+            quiet italic note of the recorded reason. */}
+        {!editing && reasonEditing ? (
+          <ReasonInput task={task} />
+        ) : (
+          !editing &&
+          wontDo &&
+          task.wontDo?.reason != null &&
+          task.wontDo.reason !== "" && (
+            <span
+              onClick={() => isFocused && ed.startReason(task.id)}
+              className="min-w-0 max-w-[50%] shrink truncate text-[12px] italic text-ink-faint"
+              title={task.wontDo.reason}
+            >
+              — {task.wontDo.reason}
+            </span>
+          )
         )}
 
         {isCurrent && !editing && (
@@ -247,7 +329,7 @@ export function TaskRow({ task, depth }: { task: Task; depth: number }) {
           <FocusIcon />
         </button>
 
-        {task.plannedFor != null && !task.completed && ed.view !== "today" && (
+        {task.plannedFor != null && isOpen(task) && ed.view !== "today" && (
           <span
             className={[
               "mono shrink-0 rounded-sm px-1.5 py-[1px] text-[10px] font-medium",
@@ -262,7 +344,7 @@ export function TaskRow({ task, depth }: { task: Task; depth: number }) {
           </span>
         )}
 
-        {task.horizon != null && !ed.bucketed && !task.completed && ed.view !== "today" && (
+        {task.horizon != null && !ed.bucketed && isOpen(task) && ed.view !== "today" && (
           <span className="mono shrink-0 rounded-sm bg-surface-2 px-1.5 py-[1px] text-[10px] font-medium text-ink-soft">
             {horizonLabel(task, ed.today)}
           </span>

@@ -25,6 +25,18 @@ export interface Horizon {
   anchor: string | null;
 }
 
+/**
+ * A deliberate "won't do" / intentionally-skipped resolution. Distinct from
+ * `completed`: the task is *resolved* (out of the Reckoning, off the counts) but
+ * consciously declined rather than accomplished. Mutually exclusive with
+ * `completed` — setters clear one when setting the other. `reason` is optional
+ * (captured inline, like the Reckoning's reasons); `at` is when it was skipped.
+ */
+export interface WontDo {
+  reason: string | null;
+  at: number;
+}
+
 // ─── Recurrence (repeating tasks) ───────────────────────────────────
 //
 // A recurrence is a *definition*, not a spawned task: a task template plus a
@@ -77,6 +89,12 @@ export interface Task {
   notes: string;
   completed: boolean;
   completedAt: number | null;
+  /**
+   * When set, the task is "won't do" — intentionally skipped (see {@link WontDo}).
+   * Mutually exclusive with `completed`; both false/null = an open task. Skipped
+   * leaves never reckon and are dropped from the done/total counts.
+   */
+  wontDo: WontDo | null;
   children: Task[];
   createdAt: number;
   priority: TaskPriority;
@@ -125,7 +143,8 @@ export type LogAction =
   | "postponed"
   | "dropped"
   | "brokeDown"
-  | "kept";
+  | "kept"
+  | "skipped";
 
 export interface LogEntry {
   id: string;
@@ -155,7 +174,7 @@ export interface AppState {
   devDateOverride: ISODate | null;
 }
 
-export const SCHEMA_VERSION = 6;
+export const SCHEMA_VERSION = 7;
 export const DEFAULT_PROJECT_ID = "project-inbox" as ProjectId;
 export const PROJECT_ROW_PREFIX = "project:";
 

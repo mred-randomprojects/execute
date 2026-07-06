@@ -31,8 +31,11 @@ import {
   keepForToday,
   logBreakdown,
   markOpened,
+  markWontDo,
+  markWontDoMany,
   moveAsChild,
   moveBefore,
+  clearWontDo,
   outdent,
   outdentRecurrenceNode,
   postponeManyToBacklog,
@@ -56,13 +59,15 @@ import {
   setRecurrenceText,
   setText,
   setTheme,
+  setWontDoReason,
   toggleComplete,
+  toggleWontDo,
   trashMany,
   trashTask,
   undo,
   useStore,
 } from "./store/store";
-import { findById, findParentId } from "./store/tasks";
+import { findById, findParentId, isOpen } from "./store/tasks";
 import { addDays, monthKey, monthKeyOffset, todayISO, weekKey, weekKeyOffset } from "./store/dates";
 import { defaultRule } from "./store/recurrence";
 import { parseCapture } from "./store/capture";
@@ -145,6 +150,9 @@ export function App() {
   const [view, setView] = useState<ViewKind>("today");
   const [selection, setSelection] = useState<Selection>(emptySelection);
   const [editingId, setEditingId] = useState<TaskId | null>(null);
+  // Task whose "won't do" reason is being typed inline (empty field). Cleared when
+  // the reason is saved/skipped, or when the row leaves the view.
+  const [reasonEditId, setReasonEditId] = useState<TaskId | null>(null);
   const [editingProjectId, setEditingProjectId] = useState<ProjectId | null>(null);
   const [collapsed, setCollapsed] = useState<Set<TaskId>>(new Set());
   const [collapsedProjects, setCollapsedProjects] = useState<Set<ProjectId>>(new Set());
@@ -354,7 +362,7 @@ export function App() {
   // incomplete — finishing or deleting it retires the banner.
   const currentTask =
     state.currentTaskId != null ? findById(state.tasks, state.currentTaskId) ?? null : null;
-  const activeCurrentTask = currentTask != null && !currentTask.completed ? currentTask : null;
+  const activeCurrentTask = currentTask != null && isOpen(currentTask) ? currentTask : null;
   const focusedProjectId =
     focusedId != null && isProjectRowId(focusedId)
       ? projectIdFromRowId(focusedId)
@@ -403,6 +411,15 @@ export function App() {
     if (editingId !== null && !flatIds.includes(editingId)) setEditingId(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [flatKey]);
+  // Drop the inline reason field if its row left the view or was reopened.
+  useEffect(() => {
+    if (reasonEditId === null) return;
+    const t = findById(state.tasks, reasonEditId);
+    if (t == null || t.wontDo == null || !flatIds.includes(reasonEditId)) {
+      setReasonEditId(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [flatKey, state.tasks, reasonEditId]);
   useEffect(() => {
     if (
       editingProjectId !== null &&
@@ -866,6 +883,26 @@ export function App() {
       }
       const ids = actionTargets();
       if (ids.length === 0) return;
+      const targets = ids
+        .map((id) => findById(state.tasks, id))
+        .filter((t): t is Task => t != null);
+      // Backspace escalates by state: open → won't-do → trash. As long as any
+      // target is still open, the first press marks the open ones "won't do"
+      // (resolved, but kept with a reason). Only once every target is already
+      // resolved does the next press take them to the Trash.
+      const allResolved = targets.length > 0 && targets.every((t) => !isOpen(t));
+      if (!allResolved) {
+        const openIds = targets.filter((t) => isOpen(t)).map((t) => t.id);
+        if (openIds.length === 0) return;
+        if (openIds.length === 1) {
+          markWontDo(openIds[0]);
+          setFocus(openIds[0]);
+          setReasonEditId(openIds[0]); // one skip → capture a reason inline
+        } else {
+          markWontDoMany(openIds);
+        }
+        return;
+      }
       const doTrash = () => {
         const next = selectAfterRemoving(selection, flatIds, new Set(ids));
         if (ids.length === 1) trashTask(ids[0]);
@@ -961,6 +998,7 @@ export function App() {
       else if (showPalette) setShowPalette(false);
       else if (showSchedule) setShowSchedule(false);
       else if (mode === "move") exitMove();
+      else if (reasonEditId != null) setReasonEditId(null);
       else if (editingProjectId != null) setEditingProjectId(null);
       else if (editingId != null) setEditingId(null);
       else if (showPanel) setShowPanel(false);
@@ -1096,11 +1134,13 @@ export function App() {
     currentId: state.currentTaskId,
     selectedIds: selectedTaskIds,
     editingId,
+    reasonEditId,
     collapsed,
     mode,
     movingId,
     select: setFocus,
     toggle: toggleComplete,
+    reopen: clearWontDo,
     togglePlan: planToggle,
     toggleCollapse: toggleCollapsedFor,
     openDetail: openDetailFor,
@@ -1109,6 +1149,10 @@ export function App() {
       setFocus(id);
       setEditingProjectId(null);
       setEditingId(id);
+    },
+    startReason: (id) => {
+      setFocus(id);
+      setReasonEditId(id);
     },
     commit: commitText,
     indentEditing: (id, raw) => {
@@ -1146,6 +1190,10 @@ export function App() {
       setEditingProjectId(null);
       setEditingId(null);
     },
+    commitReason: (id, reason) => {
+      setWontDoReason(id, reason);
+      setReasonEditId(null);
+    },
   };
 
   // Same surface, but for the Recurring view: every callback routes to recurrence
@@ -1165,11 +1213,13 @@ export function App() {
     currentId: null, // recurrence templates are never "current"
     selectedIds: selectedTaskIds,
     editingId,
+    reasonEditId: null, // recurrence templates are never "won't do"
     collapsed,
     mode,
     movingId,
     select: setFocus,
     toggle: () => {},
+    reopen: () => {},
     togglePlan: () => {},
     toggleCollapse: toggleCollapsedFor,
     openDetail: () => {},
@@ -1179,6 +1229,7 @@ export function App() {
       setEditingProjectId(null);
       setEditingId(id);
     },
+    startReason: () => {},
     commit: commitRecurrence,
     indentEditing: (id, raw) => {
       commitRecurrence(id, raw);
@@ -1212,12 +1263,15 @@ export function App() {
       setEditingProjectId(null);
       setEditingId(null);
     },
+    commitReason: () => {},
   };
 
   // ── Detail panel handlers (content only) ──────────────────────────
   const detailHandlers: DetailHandlers = {
     onCommitNotes: (id, text) => setNotes(id, text),
     onToggle: (id) => toggleComplete(id),
+    onToggleWontDo: (id) => toggleWontDo(id),
+    onCommitReason: (id, reason) => setWontDoReason(id, reason),
     onPriority: (id, p: TaskPriority) => setPriority(id, p),
     onProject: (id, projectId) => setProjectForMany([id], projectId),
     onTogglePlan: (id) => planToggle(id),

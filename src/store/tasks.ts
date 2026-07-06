@@ -15,6 +15,7 @@ export function makeTask(
     notes: "",
     completed: false,
     completedAt: null,
+    wontDo: null,
     children: [],
     createdAt: Date.now(),
     priority: 4,
@@ -541,6 +542,19 @@ export function walk(tasks: Task[], fn: (t: Task, parent: Task | null) => void):
 
 export function isLeaf(t: Task): boolean {
   return t.children.length === 0;
+}
+
+/**
+ * A task is *resolved* once it's either completed or intentionally skipped
+ * ("won't do"). Resolved leaves never reckon and drop out of the done/total
+ * counts. `isOpen` is the complement — still awaiting a decision.
+ */
+export function isResolved(t: Task): boolean {
+  return t.completed || t.wontDo != null;
+}
+
+export function isOpen(t: Task): boolean {
+  return !isResolved(t);
 }
 
 export function countPending(tasks: Task[]): number {

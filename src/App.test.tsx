@@ -302,11 +302,17 @@ describe("Jump navigation (⌘↑ / ⌘↓)", () => {
 });
 
 describe("Trash", () => {
-  it("Backspace trashes a task; Trash view restores it", async () => {
+  it("Backspace marks won't-do, then trashes; Trash view restores it", async () => {
     render(<App />);
     await addTask("disposable");
     blurActive();
 
+    // First Backspace: intentionally skip — the task stays listed as "won't do".
+    fireEvent.keyDown(document.body, { key: "Backspace" });
+    expect(await screen.findByText("disposable")).toBeTruthy();
+    fireEvent.keyDown(document.body, { key: "Escape" }); // dismiss the inline reason field
+
+    // Second Backspace (already resolved) sends it to the Trash.
     fireEvent.keyDown(document.body, { key: "Backspace" });
     await waitFor(() => expect(screen.queryByText("disposable")).toBeNull());
 
@@ -326,7 +332,12 @@ describe("Trash", () => {
     fireEvent.keyDown(document.body, { key: "Tab" }); // child → subtask of parent
     fireEvent.keyDown(document.body, { key: "ArrowUp" }); // focus parent
 
-    // Backspace on a task with subtasks asks first — nothing is gone yet.
+    // First Backspace marks the parent "won't do" — the subtree is untouched.
+    fireEvent.keyDown(document.body, { key: "Backspace" });
+    expect(screen.getByText("parent")).toBeTruthy();
+    fireEvent.keyDown(document.body, { key: "Escape" }); // leave the reason field
+
+    // A second Backspace on the (now resolved) task with subtasks asks first.
     fireEvent.keyDown(document.body, { key: "Backspace" });
     expect(await screen.findByText("Delete this task and its subtasks?")).toBeTruthy();
     expect(screen.getByText("parent")).toBeTruthy();
@@ -347,7 +358,9 @@ describe("Trash", () => {
     fireEvent.keyDown(document.body, { key: "Tab" }); // sub → subtask of keep me
     fireEvent.keyDown(document.body, { key: "ArrowUp" }); // focus keep me
 
-    fireEvent.keyDown(document.body, { key: "Backspace" });
+    fireEvent.keyDown(document.body, { key: "Backspace" }); // → won't do
+    fireEvent.keyDown(document.body, { key: "Escape" }); // leave the reason field
+    fireEvent.keyDown(document.body, { key: "Backspace" }); // → delete confirmation
     const dialog = await screen.findByText("Delete this task and its subtasks?");
     fireEvent.keyDown(dialog, { key: "Escape" }); // cancel
 
@@ -355,6 +368,32 @@ describe("Trash", () => {
       expect(screen.queryByText("Delete this task and its subtasks?")).toBeNull()
     );
     expect(screen.getByText("keep me")).toBeTruthy();
+  });
+});
+
+describe("Won't do (intentionally skipped)", () => {
+  it("Backspace marks won't-do, captures an inline reason, and stays listed", async () => {
+    render(<App />);
+    await addTask("skip me");
+    await addTask("keep me"); // order: skip me, keep me; selection = keep me
+    blurActive();
+    fireEvent.keyDown(document.body, { key: "ArrowUp" }); // focus skip me
+
+    // One Backspace: skip it (not trashed — the row is still there, now a ✕).
+    fireEvent.keyDown(document.body, { key: "Backspace" });
+    expect(await screen.findByLabelText(/won.t do/i)).toBeTruthy();
+    expect(screen.getByText("skip me")).toBeTruthy();
+
+    // The inline reason field is focused; type a reason and save it.
+    const reasonInput = screen.getByPlaceholderText(/why\?/i);
+    fireEvent.change(reasonInput, { target: { value: "changed my mind" } });
+    fireEvent.keyDown(reasonInput, { key: "Enter" });
+    expect(await screen.findByText(/changed my mind/)).toBeTruthy();
+
+    // Clicking the ✕ checkbox reopens it — back to an ordinary open task.
+    fireEvent.click(screen.getByLabelText(/won.t do/i));
+    await waitFor(() => expect(screen.queryByLabelText(/won.t do/i)).toBeNull());
+    expect(screen.getByText("skip me")).toBeTruthy();
   });
 });
 
@@ -469,7 +508,7 @@ describe("Reorder", () => {
 });
 
 describe("Multi-select", () => {
-  it("Shift+ArrowDown selects a range and Backspace trashes all of it", async () => {
+  it("Shift+ArrowDown selects a range; Backspace skips all, then trashes all", async () => {
     render(<App />);
     await addTask("one");
     await addTask("two");
@@ -480,6 +519,12 @@ describe("Multi-select", () => {
     fireEvent.keyDown(document.body, { key: "ArrowUp" }); // → one
     fireEvent.keyDown(document.body, { key: "ArrowDown", shiftKey: true }); // one..two
 
+    // A bulk skip leaves the selection in place (no inline reason prompt).
+    fireEvent.keyDown(document.body, { key: "Backspace" });
+    expect(screen.getByText("one")).toBeTruthy();
+    expect(screen.getByText("two")).toBeTruthy();
+
+    // Second Backspace (both resolved) trashes the whole range.
     fireEvent.keyDown(document.body, { key: "Backspace" });
     await waitFor(() => {
       expect(screen.queryByText("one")).toBeNull();

@@ -1,10 +1,12 @@
 import { describe, it, expect } from "vitest";
 import {
+  backlogCount,
   bucketMeta,
   groupRecurrencesByRule,
   groupTasksByBucket,
   groupTasksByProject,
   horizonLabel,
+  leftoverLeaves,
   prevVisibleSiblingId,
   projectSummaries,
   reckoningCards,
@@ -14,6 +16,7 @@ import {
   suggestedForToday,
   suppressedRecurrenceIds,
   taskBucket,
+  todayProgress,
   viewPredicate,
   viewTasks,
   zoomParent,
@@ -425,5 +428,45 @@ describe("recurringForToday + suppression", () => {
       task("Mon only", "work")
     ); // today is a Tuesday
     expect(recurringForToday([notToday], [], today)).toEqual([]);
+  });
+});
+
+describe("won't do (intentionally skipped) drops out of counts", () => {
+  const today = "2026-07-06";
+  const skip = (t: Task): Task => ({ ...t, completed: false, wontDo: { reason: null, at: 0 } });
+  const complete = (t: Task): Task => ({ ...t, completed: true });
+
+  it("todayProgress drops skipped leaves — neither done nor remaining", () => {
+    const tasks = [
+      complete(task("did", "work", today)),
+      task("open", "work", today),
+      skip(task("skipped", "work", today)),
+    ];
+    expect(todayProgress(tasks, today)).toEqual({ done: 1, total: 2, remaining: 1 });
+  });
+
+  it("leftoverLeaves excludes a skipped past-due task (it never reckons)", () => {
+    const yesterday = addDays(today, -1);
+    const tasks = [
+      task("open leftover", "work", yesterday),
+      skip(task("skipped leftover", "work", yesterday)),
+    ];
+    expect(leftoverLeaves(tasks, today).map((t) => t.text)).toEqual(["open leftover"]);
+  });
+
+  it("the backlog view and count exclude skipped undated tasks", () => {
+    const tasks = [task("open backlog", "work"), skip(task("skipped backlog", "work"))];
+    expect(backlogCount(tasks)).toBe(1);
+    expect(viewTasks(tasks, "backlog", today).map((t) => t.text)).toEqual(["open backlog"]);
+  });
+
+  it("projectSummaries sets a skipped leaf aside (neither open nor done)", () => {
+    const tasks = [
+      task("open", "work", today),
+      skip(task("skipped", "work")),
+      complete(task("did", "work")),
+    ];
+    const sum = projectSummaries(tasks, projects, today).find((s) => s.project.id === "work");
+    expect(sum).toMatchObject({ open: 1, today: 1, done: 1 });
   });
 });
