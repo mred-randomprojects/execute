@@ -25,6 +25,8 @@ module.exports = {
       /^\/(tsconfig.*\.json|vite\.config\.ts|tailwind\.config\.ts|postcss\.config\.js)$/,
       /^\/README\.md$/,
       /^\/LICENSE$/,
+      // Stray media in the repo root (e.g. saved talks) must never ship in the asar.
+      /\.(webm|mp4|mov|mkv)$/i,
       /^\/\.npmrc$/,
       /^\/build\.sh$/,
       /^\/index\.html$/,
