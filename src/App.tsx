@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type {
+  ISODate,
   OutlineId,
   ProjectId,
   RecurrenceId,
@@ -536,9 +537,9 @@ export function App() {
     setMovingId(null);
   };
 
-  const planToggle = (id: TaskId) => {
+  const planToggle = (id: TaskId, date: ISODate = today) => {
     const t = findById(state.tasks, id);
-    setPlannedFor(id, t?.plannedFor === today ? null : today);
+    setPlannedFor(id, t?.plannedFor === date ? null : date);
   };
 
   // Tab nests a task under the row visually above it — its previous *visible*
@@ -611,9 +612,8 @@ export function App() {
         ? [focusedTaskId]
         : [];
 
-  // ── Scheduling (the `s` picker) ───────────────────────────────────
-  const applySchedule = (choice: ScheduleChoice) => {
-    const ids = actionTargets();
+  // ── Scheduling (the `s` picker + the detail panel's chips) ────────
+  const applyScheduleTo = (ids: TaskId[], choice: ScheduleChoice) => {
     if (ids.length === 0) return;
     if (typeof choice === "object") return setPlannedForMany(ids, choice.date);
     switch (choice) {
@@ -635,6 +635,7 @@ export function App() {
         return setHorizonMany(ids, { unit: "month", anchor: monthKeyOffset(today, 1) });
     }
   };
+  const applySchedule = (choice: ScheduleChoice) => applyScheduleTo(actionTargets(), choice);
   // The picker's current-state dot: "today" / a horizon bucket / "inbox" (null = a specific date).
   const scheduleTag =
     focusedTask == null
@@ -852,6 +853,16 @@ export function App() {
       if (ids.length === 1) return planToggle(ids[0]);
       const allPlanned = ids.every((id) => findById(state.tasks, id)?.plannedFor === today);
       setPlannedForMany(ids, allPlanned ? null : today);
+    },
+    taskPlanTomorrow: () => {
+      // Recurrence suggestions are accepted for *today* only; tomorrow doesn't apply.
+      if (view === "recurring" || focusedRecurringToday != null) return;
+      const ids = actionTargets();
+      if (ids.length === 0) return;
+      const tomorrow = addDays(today, 1);
+      if (ids.length === 1) return planToggle(ids[0], tomorrow);
+      const allPlanned = ids.every((id) => findById(state.tasks, id)?.plannedFor === tomorrow);
+      setPlannedForMany(ids, allPlanned ? null : tomorrow);
     },
     taskIndent: () => {
       if (focusedRecurringToday != null) return; // don't restructure a suggestion
@@ -1102,6 +1113,7 @@ export function App() {
     "task.new": cmd.taskNew,
     "task.toggle": cmd.taskToggle,
     "task.planToday": cmd.taskPlanToday,
+    "task.planTomorrow": cmd.taskPlanTomorrow,
     "task.indent": cmd.taskIndent,
     "task.outdent": cmd.taskOutdent,
     "task.trash": cmd.taskTrash,
@@ -1305,7 +1317,7 @@ export function App() {
     onCommitReason: (id, reason) => setWontDoReason(id, reason),
     onPriority: (id, p: TaskPriority) => setPriority(id, p),
     onProject: (id, projectId) => setProjectForMany([id], projectId),
-    onTogglePlan: (id) => planToggle(id),
+    onSchedule: (id, choice) => applyScheduleTo([id], choice),
     onBack: () => {
       setShowPanel(false);
       (document.activeElement as HTMLElement | null)?.blur();
@@ -1462,7 +1474,7 @@ export function App() {
     // Scheduling, reachable from the palette (the `s` picker is the keyboard path).
     // All act on the focused/selected task(s); no-op when nothing is targeted.
     { id: "sched-today", label: "Schedule: Today", aliases: ["schedule"], hint: "s t", run: () => applySchedule("today") },
-    { id: "sched-tomorrow", label: "Schedule: Tomorrow", aliases: ["schedule"], run: () => applySchedule({ date: addDays(today, 1) }) },
+    { id: "sched-tomorrow", label: "Schedule: Tomorrow", aliases: ["schedule"], hint: "⇧ t", run: () => applySchedule("tomorrow") },
     { id: "sched-this-week", label: "Schedule: This week", aliases: ["schedule"], hint: "s w", run: () => applySchedule("thisWeek") },
     { id: "sched-next-week", label: "Schedule: Next week", aliases: ["schedule"], hint: "s e", run: () => applySchedule("nextWeek") },
     { id: "sched-this-month", label: "Schedule: This month", aliases: ["schedule"], hint: "s m", run: () => applySchedule("thisMonth") },
@@ -1693,7 +1705,7 @@ export function App() {
           {panelOpen && focusedTask != null && (
             <DetailPanel
               task={focusedTask}
-              today={today}
+              scheduleTag={scheduleTag}
               log={panelTaskLog}
               projects={state.projects}
               handlers={detailHandlers}

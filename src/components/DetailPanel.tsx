@@ -5,12 +5,27 @@ import { renderBlock, renderInline } from "../ui/markdown";
 import { countAll } from "../store/tasks";
 import { copyText } from "../ui/clipboard";
 import { NO_SPELLCHECK } from "../ui/noSpellcheck";
+import type { ScheduleChoice } from "./SchedulePicker";
 
 const PRIORITIES: Array<{ value: TaskPriority; label: string }> = [
   { value: 1, label: "Urgent" },
   { value: 2, label: "High" },
   { value: 3, label: "Medium" },
   { value: 4, label: "None" },
+];
+
+/** The current schedule as a chip key (null = a concrete date that isn't today/tomorrow). */
+export type ScheduleTag = Exclude<ScheduleChoice, { date: ISODate }> | null;
+
+const SCHEDULES: Array<{ value: Exclude<ScheduleChoice, { date: ISODate }>; label: string }> = [
+  { value: "today", label: "Today" },
+  { value: "tomorrow", label: "Tomorrow" },
+  { value: "thisWeek", label: "This week" },
+  { value: "nextWeek", label: "Next week" },
+  { value: "thisMonth", label: "This month" },
+  { value: "nextMonth", label: "Next month" },
+  { value: "someday", label: "Someday" },
+  { value: "inbox", label: "Inbox" },
 ];
 
 // Panel controls are reached by native Tab (the keyboard engine goes dormant
@@ -94,20 +109,21 @@ export interface DetailHandlers {
   onCommitReason: (id: Task["id"], reason: string) => void;
   onPriority: (id: Task["id"], p: TaskPriority) => void;
   onProject: (id: Task["id"], projectId: ProjectId) => void;
-  onTogglePlan: (id: Task["id"]) => void;
+  /** Apply a schedule (the Schedule chips + exact-date field). */
+  onSchedule: (id: Task["id"], choice: ScheduleChoice) => void;
   onBack: () => void;
 }
 
 export function DetailPanel({
   task,
-  today,
+  scheduleTag,
   log,
   projects,
   handlers,
   editSignal,
 }: {
   task: Task;
-  today: ISODate;
+  scheduleTag: ScheduleTag;
   log: LogEntry[];
   projects: Project[];
   handlers: DetailHandlers;
@@ -116,6 +132,7 @@ export function DetailPanel({
 }) {
   const [notes, setNotes] = useState(task.notes);
   const [reason, setReason] = useState(task.wontDo?.reason ?? "");
+  const [planDate, setPlanDate] = useState(task.plannedFor ?? "");
   // Open in preview: focus stays on the list so ↑/↓ keep navigating and the
   // panel follows. Editing the notes is an explicit step (Tab → editSignal).
   const [editing, setEditing] = useState(false);
@@ -128,6 +145,9 @@ export function DetailPanel({
   useEffect(() => {
     setReason(task.wontDo?.reason ?? "");
   }, [task.id, task.wontDo?.reason]);
+  useEffect(() => {
+    setPlanDate(task.plannedFor ?? "");
+  }, [task.id, task.plannedFor]);
 
   // React only to *changes* in editSignal, not to its value on mount — otherwise
   // reopening the panel after a previous Tab would steal focus into the notes.
@@ -144,7 +164,11 @@ export function DetailPanel({
   }, [editing]);
 
   const commitNotes = () => handlers.onCommitNotes(task.id, notes);
-  const plannedToday = task.plannedFor === today;
+  const commitPlanDate = () => {
+    if (planDate !== "" && planDate !== task.plannedFor) {
+      handlers.onSchedule(task.id, { date: planDate });
+    }
+  };
   const wontDo = task.wontDo != null;
   // Counts come from the full subtree the panel is handed, so they're accurate
   // even when the list is hiding completed children.
@@ -318,18 +342,45 @@ export function DetailPanel({
       </div>
 
       <div className="mt-4">
-        <button
-          onClick={() => handlers.onTogglePlan(task.id)}
-          className={[
-            "w-full rounded-sm border px-3 py-2 text-[13px] transition-colors",
-            FOCUS_RING,
-            plannedToday
-              ? "border-accent bg-accent-soft text-accent"
-              : "border-line text-ink-soft hover:bg-surface-2",
-          ].join(" ")}
-        >
-          {plannedToday ? "Planned for today ✓" : "Plan for today"}
-        </button>
+        <div className="eyebrow mb-2">Schedule</div>
+        <div className="flex flex-wrap gap-1.5">
+          {SCHEDULES.map((o) => {
+            const active = scheduleTag === o.value;
+            return (
+              <button
+                key={o.value}
+                onClick={() => handlers.onSchedule(task.id, active ? "inbox" : o.value)}
+                className={[
+                  "rounded-sm border px-2 py-1.5 text-[12px] transition-colors",
+                  FOCUS_RING,
+                  active
+                    ? "border-accent bg-accent-soft text-accent"
+                    : "border-line text-ink-soft hover:bg-surface-2",
+                ].join(" ")}
+              >
+                {o.label}
+              </button>
+            );
+          })}
+        </div>
+        <div className="mt-2 flex items-center gap-2">
+          <span className="shrink-0 text-[12px] text-ink-faint">Or a date</span>
+          <input
+            {...NO_SPELLCHECK}
+            type="date"
+            aria-label="Schedule date"
+            value={planDate}
+            onChange={(e) => setPlanDate(e.target.value)}
+            onBlur={commitPlanDate}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                e.currentTarget.blur();
+              }
+            }}
+            className="min-w-0 flex-1 rounded-sm border border-line bg-transparent px-2 py-1 text-[13px] text-ink outline-none focus:border-line-strong"
+          />
+        </div>
       </div>
 
       <div className="mt-3">

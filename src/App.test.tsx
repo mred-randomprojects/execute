@@ -1,6 +1,6 @@
 import { describe, it, expect, afterEach, beforeEach, vi } from "vitest";
 import { act } from "react";
-import { render, screen, fireEvent, cleanup, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent, cleanup, waitFor, within } from "@testing-library/react";
 import { App } from "./App";
 import { createProject, initStore, setDevDateOverride } from "./store/store";
 import { addDays, todayISO } from "./store/dates";
@@ -247,6 +247,12 @@ async function addTask(text: string) {
   fireEvent.change(input, { target: { value: text } });
   fireEvent.keyDown(input, { key: "Enter" });
   await screen.findByText(text);
+}
+
+function panel(): HTMLElement {
+  const el = document.querySelector('[data-keyzone="panel"]');
+  if (!(el instanceof HTMLElement)) throw new Error("detail panel is not open");
+  return el;
 }
 
 function blurActive() {
@@ -654,6 +660,43 @@ describe("Detail panel", () => {
     blurActive();
     fireEvent.keyDown(document.body, { key: "ArrowRight" });
     expect(await screen.findByText(/^Created /)).toBeTruthy();
+  });
+
+  it("schedules by clicking a chip: Tomorrow moves the task out of Today", async () => {
+    render(<App />);
+    await addTask("clicky");
+    blurActive();
+
+    fireEvent.keyDown(document.body, { key: "ArrowRight" }); // open the panel
+    fireEvent.click(await within(panel()).findByText("Tomorrow"));
+    await waitFor(() => expect(screen.queryByText("clicky")).toBeNull());
+  });
+
+  it("clicking the active chip clears the schedule back to Inbox", async () => {
+    render(<App />);
+    await addTask("undone"); // planned today → the Today chip is the active one
+    blurActive();
+
+    fireEvent.keyDown(document.body, { key: "ArrowRight" });
+    fireEvent.click(await within(panel()).findByText("Today"));
+    await waitFor(() => expect(screen.queryByText("undone")).toBeNull()); // left Today
+  });
+
+  it("schedules an exact date from the panel's date field", async () => {
+    render(<App />);
+    await addTask("dated");
+    blurActive();
+
+    fireEvent.keyDown(document.body, { key: "ArrowRight" });
+    const dateInput = await screen.findByLabelText("Schedule date");
+    fireEvent.change(dateInput, { target: { value: addDays(todayISO(null), 3) } });
+    fireEvent.blur(dateInput);
+    await waitFor(() => expect(screen.queryByText("dated")).toBeNull()); // left Today
+
+    blurActive();
+    fireEvent.keyDown(document.body, { key: "3" }); // All
+    expect(await screen.findByText("dated")).toBeTruthy();
+    expect(screen.getByText("in 3d")).toBeTruthy(); // the date chip
   });
 
   it("lists subtasks in the panel even when the list is hiding completed ones", async () => {
@@ -1094,6 +1137,33 @@ describe("Scheduling (the s picker)", () => {
     fireEvent.keyDown(document.body, { key: "2" }); // Later view (by-date default)
     expect(await screen.findByText("write spec")).toBeTruthy();
     expect(screen.getByText("This week")).toBeTruthy(); // the bucket header
+  });
+
+  it("⇧t plans the task for tomorrow: it leaves Today and gets a 'tomorrow' chip", async () => {
+    render(<App />);
+    await addTask("prep slides"); // planned today by default
+    blurActive();
+
+    fireEvent.keyDown(document.body, { key: "T" });
+    await waitFor(() => expect(screen.queryByText("prep slides")).toBeNull());
+
+    fireEvent.keyDown(document.body, { key: "3" }); // All
+    expect(await screen.findByText("prep slides")).toBeTruthy();
+    expect(screen.getByText("tomorrow")).toBeTruthy(); // the date chip
+  });
+
+  it("⇧t on a tomorrow task unplans it (toggle)", async () => {
+    render(<App />);
+    await addTask("flip flop");
+    blurActive();
+
+    fireEvent.keyDown(document.body, { key: "3" }); // All (task stays visible here)
+    await screen.findByText("flip flop");
+    fireEvent.keyDown(document.body, { key: "T" });
+    expect(await screen.findByText("tomorrow")).toBeTruthy();
+
+    fireEvent.keyDown(document.body, { key: "T" });
+    await waitFor(() => expect(screen.queryByText("tomorrow")).toBeNull());
   });
 
   it("toggles the Later view between by-date and by-project", async () => {
