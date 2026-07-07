@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { Task } from "../types";
 import { countAll, isOpen } from "../store/tasks";
+import { copyText } from "../ui/clipboard";
 import { relativeLabel } from "../store/dates";
 import { horizonLabel } from "../selectors";
 import { useEditor } from "../ui/editor";
@@ -317,6 +318,25 @@ export function TaskRow({ task, depth }: { task: Task; depth: number }) {
           <span className="mono shrink-0 text-[11px] text-ink-faint">
             {progress.done}/{progress.total}
           </span>
+        )}
+
+        {!editing && (
+          <button
+            tabIndex={-1}
+            onClick={(e) => {
+              e.stopPropagation();
+              e.currentTarget.blur();
+              void copyText(task.id);
+            }}
+            className={[
+              "mono shrink-0 rounded-sm bg-surface-2 px-1 py-[1px] text-[10px] text-ink-faint transition hover:text-ink",
+              isFocused ? "opacity-100" : "opacity-0 group-hover:opacity-100",
+            ].join(" ")}
+            aria-label={`Task id ${task.id} — click to copy`}
+            title={`${task.id} · click to copy`}
+          >
+            {task.id.slice(0, 4)}
+          </button>
         )}
 
         <button

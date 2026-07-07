@@ -862,6 +862,41 @@ describe("Keyboard-only outline control", () => {
   });
 });
 
+describe("Task IDs", () => {
+  it("shows a 4-char id chip on the row and copies the full id on click", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.assign(navigator, { clipboard: { writeText } });
+    render(<App />);
+    await addTask("chip me");
+    blurActive();
+
+    const chip = screen.getByRole("button", { name: /task id .* click to copy/i });
+    expect(chip.textContent).toHaveLength(4); // first 4 chars of the id
+    fireEvent.click(chip);
+
+    await waitFor(() => expect(writeText).toHaveBeenCalledTimes(1));
+    const full = writeText.mock.calls[0][0] as string;
+    expect(full.startsWith(chip.textContent as string)).toBe(true);
+    expect(full.length).toBeGreaterThan(4);
+  });
+
+  it("copies the focused task's id via the Cmd+K command", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.assign(navigator, { clipboard: { writeText } });
+    render(<App />);
+    await addTask("bug here");
+    blurActive();
+
+    fireEvent.keyDown(document.body, { key: "k", metaKey: true });
+    const palette = await screen.findByPlaceholderText("Type a command…");
+    fireEvent.change(palette, { target: { value: "copy task id" } });
+    fireEvent.keyDown(palette, { key: "Enter" });
+
+    await waitFor(() => expect(writeText).toHaveBeenCalledTimes(1));
+    expect((writeText.mock.calls[0][0] as string).length).toBeGreaterThan(4);
+  });
+});
+
 describe("Command palette", () => {
   it("opens with Cmd+K and runs a theme command", async () => {
     render(<App />);

@@ -107,6 +107,7 @@ import { keymap } from "./keyboard/keymap";
 import { useKeyboard } from "./keyboard/useKeyboard";
 import type { AppMode, ContextState } from "./keyboard/types";
 import { EditorProvider, type Editor } from "./ui/editor";
+import { copyText } from "./ui/clipboard";
 import { Sidebar } from "./components/Sidebar";
 import { OutlineView } from "./views/OutlineView";
 import { ProjectsView } from "./views/ProjectsView";
@@ -1464,6 +1465,14 @@ export function App() {
     { id: "sched-next-month", label: "Schedule: Next month", aliases: ["schedule"], hint: "s n", run: () => applySchedule("nextMonth") },
     { id: "sched-someday", label: "Schedule: Someday", aliases: ["schedule"], hint: "s s", run: () => applySchedule("someday") },
     { id: "sched-inbox", label: "Schedule: Inbox (untriage)", aliases: ["schedule"], hint: "s i", run: () => applySchedule("inbox") },
+    {
+      id: "copy-id",
+      label: "Copy task ID to clipboard",
+      aliases: ["id", "copy id", "task id"],
+      run: () => {
+        if (focusedTaskId != null) void copyText(focusedTaskId);
+      },
+    },
     { id: "move", label: "Move task (re-parent)", hint: "m", run: cmd.moveEnter },
     { id: "zoom", label: "Zoom in / focus", hint: "⌥↵", run: cmd.zoomIn },
     {

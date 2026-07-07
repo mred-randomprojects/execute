@@ -3,6 +3,7 @@ import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import type { ISODate, LogEntry, Project, ProjectId, Task, TaskPriority } from "../types";
 import { renderBlock, renderInline } from "../ui/markdown";
 import { countAll } from "../store/tasks";
+import { copyText } from "../ui/clipboard";
 import { NO_SPELLCHECK } from "../ui/noSpellcheck";
 
 const PRIORITIES: Array<{ value: TaskPriority; label: string }> = [
@@ -254,6 +255,17 @@ export function DetailPanel({
         {task.completedAt != null && <> · Completed {exactLocal(task.completedAt)}</>}
         {task.wontDo != null && <> · Won’t do {exactLocal(task.wontDo.at)}</>}
         <span className="ml-1">({LOCAL_TZ})</span>
+      </div>
+
+      <div className="mt-1.5 flex items-center gap-1.5 text-[11px] text-ink-faint">
+        <span>ID</span>
+        <button
+          onClick={() => void copyText(task.id)}
+          className={`mono rounded-sm bg-surface-2 px-1.5 py-[1px] text-ink-soft transition-colors hover:text-ink ${FOCUS_RING}`}
+          title="Click to copy the full task ID"
+        >
+          {task.id} ⧉
+        </button>
       </div>
 
       <div className="mt-4">
