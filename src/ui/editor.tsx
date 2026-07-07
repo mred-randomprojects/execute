@@ -29,7 +29,6 @@ export interface Editor {
   toggle: (id: TaskId) => void;
   /** Clear a "won't do" back to open (clicking the ✕ checkbox). */
   reopen: (id: TaskId) => void;
-  togglePlan: (id: TaskId) => void;
   toggleCollapse: (id: TaskId) => void;
   startEdit: (id: TaskId) => void;
   /** Begin editing the "won't do" reason inline (on an already-skipped task). */

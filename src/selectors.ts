@@ -315,6 +315,47 @@ export function taskBucket(task: Task, today: ISODate): LaterBucket {
   return (h.anchor ?? "") >= monthKeyOffset(today, 1) ? "nextMonth" : "thisMonth";
 }
 
+// ─── The schedule ladder (t / ⇧t step through it) ───────────────────
+// The s-picker's options in display order. Stepping wraps at the ends, so
+// `t` on an inbox task plans it for today and `⇧t` on a today task unplans it.
+
+export const SCHEDULE_LADDER = [
+  "today",
+  "tomorrow",
+  "thisWeek",
+  "nextWeek",
+  "thisMonth",
+  "nextMonth",
+  "someday",
+  "inbox",
+] as const;
+export type ScheduleStep = (typeof SCHEDULE_LADDER)[number];
+
+/**
+ * Where a task currently sits on the ladder. Concrete dates map into their
+ * containing rung (tomorrow / this week / …, far future → someday) and an
+ * overdue date counts as today, so stepping is meaningful from any schedule.
+ */
+export function scheduleStep(task: Task, today: ISODate): ScheduleStep {
+  const p = task.plannedFor;
+  if (p != null) {
+    if (p <= today) return "today";
+    if (p === addDays(today, 1)) return "tomorrow";
+    if (weekKey(p) === weekKey(today)) return "thisWeek";
+    if (weekKey(p) === weekKeyOffset(today, 1)) return "nextWeek";
+    if (monthKey(p) === monthKey(today)) return "thisMonth";
+    if (monthKey(p) === monthKeyOffset(today, 1)) return "nextMonth";
+    return "someday";
+  }
+  return taskBucket(task, today);
+}
+
+/** One rung right (dir 1, later) or left (dir -1, sooner), wrapping around. */
+export function stepSchedule(step: ScheduleStep, dir: 1 | -1): ScheduleStep {
+  const n = SCHEDULE_LADDER.length;
+  return SCHEDULE_LADDER[(SCHEDULE_LADDER.indexOf(step) + dir + n) % n];
+}
+
 // ─── Soft horizons → a suggested concrete day (the AI-swappable heuristic) ──
 //
 // Horizons stay the source of truth and never reckon. This only *projects* a

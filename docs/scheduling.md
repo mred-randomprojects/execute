@@ -125,9 +125,12 @@ practice.
 - **`s` (schedule / "send later")** in normal mode opens a tiny inline picker:
   `Today · This week · This month · Someday · Pick a date… · Inbox`. Single key
   per tier for power users (e.g. `s` then `w`/`m`/`d`).
-- **`t`** keeps its meaning (toggle Today). "Not for today" = `s` then choose a
-  lower tier, or a dedicated `Shift+T` that demotes one tier
-  (Today → week → month → someday → inbox).
+- **`t` / `Shift+T`** step the schedule one tier later / sooner along the
+  picker's ladder (Today → Tomorrow → week → … → Someday → Inbox), wrapping at
+  the ends — so `t` on an inbox task still means "today", and `Shift+T` on a
+  today task unplans it. Accept flows stay special: `t` on a recurrence or a
+  "Suggested for today" row accepts it for today. (As built 2026-07-07;
+  supersedes the original "t toggles Today" + demote-key sketch.)
 - **Capture tokens** (later): `~week`, `~month`, `~someday`, `@2026-06-30` parsed
   in `store/capture.ts` alongside the existing completion token.
 

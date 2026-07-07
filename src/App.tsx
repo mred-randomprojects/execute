@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type {
-  ISODate,
   OutlineId,
   ProjectId,
   RecurrenceId,
@@ -52,7 +51,6 @@ import {
   setDevDateOverride,
   setHorizonMany,
   setNotes,
-  setPlannedFor,
   setPlannedForMany,
   setProjectForMany,
   setPriority,
@@ -68,7 +66,7 @@ import {
   undo,
   useStore,
 } from "./store/store";
-import { findById, findParentId, isOpen } from "./store/tasks";
+import { findById, findParentId, isOpen, walk } from "./store/tasks";
 import { addDays, monthKey, monthKeyOffset, todayISO, weekKey, weekKeyOffset } from "./store/dates";
 import { defaultRule } from "./store/recurrence";
 import { parseCapture } from "./store/capture";
@@ -85,6 +83,8 @@ import {
   reckoningCards,
   recurringForToday,
   resolveZoom,
+  scheduleStep,
+  stepSchedule,
   suggestedForToday,
   taskBucket,
   todayProgress,
@@ -93,6 +93,7 @@ import {
   VIEW_TITLES,
   zoomParent,
   type ReckoningCard,
+  type ScheduleStep,
   type ViewKind,
   type ZoomTarget,
 } from "./selectors";
@@ -537,11 +538,6 @@ export function App() {
     setMovingId(null);
   };
 
-  const planToggle = (id: TaskId, date: ISODate = today) => {
-    const t = findById(state.tasks, id);
-    setPlannedFor(id, t?.plannedFor === date ? null : date);
-  };
-
   // Tab nests a task under the row visually above it — its previous *visible*
   // sibling in the current (filtered) view — never under a sibling the view is
   // hiding. So we resolve the parent from the displayed forest, not the raw tree.
@@ -635,7 +631,61 @@ export function App() {
         return setHorizonMany(ids, { unit: "month", anchor: monthKeyOffset(today, 1) });
     }
   };
-  const applySchedule = (choice: ScheduleChoice) => applyScheduleTo(actionTargets(), choice);
+
+  // Deliberate schedule sets (picker, palette, panel) on a task with subtasks
+  // offer to carry the subtree along. Default is no — Enter and esc both apply
+  // the choice to just the targeted task(s); each branch is one store update,
+  // so a single ⌘z reverts it entirely.
+  const applyScheduleAsking = (ids: TaskId[], choice: ScheduleChoice) => {
+    const subtree: TaskId[] = [];
+    for (const id of ids) {
+      const t = findById(state.tasks, id);
+      if (t != null) walk(t.children, (x) => subtree.push(x.id));
+    }
+    if (subtree.length === 0) return applyScheduleTo(ids, choice);
+    setConfirm({
+      title: subtree.length === 1 ? "Also schedule its subtask?" : `Also schedule its ${subtree.length} subtasks?`,
+      body: "Give everything underneath the same schedule. Enter / esc schedules just the selected task(s).",
+      confirmLabel: "Subtasks too",
+      tone: "neutral",
+      enterAction: "cancel",
+      onConfirm: () => applyScheduleTo([...ids, ...subtree], choice),
+      onCancel: () => applyScheduleTo(ids, choice),
+    });
+  };
+  const applySchedule = (choice: ScheduleChoice) => applyScheduleAsking(actionTargets(), choice);
+
+  // t / ⇧t walk the schedule ladder (the s-picker's options in order, wrapping).
+  // Accept flows stay special: on a recurrence suggestion (or in Recurring) t
+  // still accepts today's occurrence, and on a "Suggested for today" row t
+  // accepts the suggestion — a real today commitment — instead of stepping the
+  // fuzzy horizon it came from. Steppers never prompt about subtasks; they're
+  // rapid-fire keys, and the picker is the deliberate path.
+  const stepFocusedSchedule = (dir: 1 | -1) => {
+    if (focusedRecurringToday != null) {
+      if (dir === 1) acceptRecurringToday();
+      return;
+    }
+    if (view === "recurring") {
+      if (dir === 1 && focusedRecurrence != null) acceptRecurrence(focusedRecurrence.id, today);
+      return;
+    }
+    const ids = actionTargets();
+    if (ids.length === 0) return;
+    const suggested = new Set(suggestedTasks.map((t) => t.id));
+    // Group by destination rung so a multi-selection stays one update per rung.
+    const groups = new Map<ScheduleStep, TaskId[]>();
+    for (const id of ids) {
+      const t = findById(state.tasks, id);
+      if (t == null) continue;
+      const next =
+        dir === 1 && suggested.has(id) ? "today" : stepSchedule(scheduleStep(t, today), dir);
+      const g = groups.get(next);
+      if (g != null) g.push(id);
+      else groups.set(next, [id]);
+    }
+    for (const [step, group] of groups) applyScheduleTo(group, step);
+  };
   // The picker's current-state dot: "today" / a horizon bucket / "inbox" (null = a specific date).
   const scheduleTag =
     focusedTask == null
@@ -842,28 +892,8 @@ export function App() {
       const allDone = ids.every((id) => findById(state.tasks, id)?.completed);
       setCompletedMany(ids, !allDone);
     },
-    taskPlanToday: () => {
-      if (focusedRecurringToday != null) return acceptRecurringToday();
-      if (view === "recurring") {
-        if (focusedRecurrence != null) acceptRecurrence(focusedRecurrence.id, today);
-        return;
-      }
-      const ids = actionTargets();
-      if (ids.length === 0) return;
-      if (ids.length === 1) return planToggle(ids[0]);
-      const allPlanned = ids.every((id) => findById(state.tasks, id)?.plannedFor === today);
-      setPlannedForMany(ids, allPlanned ? null : today);
-    },
-    taskPlanTomorrow: () => {
-      // Recurrence suggestions are accepted for *today* only; tomorrow doesn't apply.
-      if (view === "recurring" || focusedRecurringToday != null) return;
-      const ids = actionTargets();
-      if (ids.length === 0) return;
-      const tomorrow = addDays(today, 1);
-      if (ids.length === 1) return planToggle(ids[0], tomorrow);
-      const allPlanned = ids.every((id) => findById(state.tasks, id)?.plannedFor === tomorrow);
-      setPlannedForMany(ids, allPlanned ? null : tomorrow);
-    },
+    scheduleLater: () => stepFocusedSchedule(1),
+    scheduleEarlier: () => stepFocusedSchedule(-1),
     taskIndent: () => {
       if (focusedRecurringToday != null) return; // don't restructure a suggestion
       if (view === "recurring") {
@@ -1112,8 +1142,8 @@ export function App() {
     "edit.start": cmd.editStart,
     "task.new": cmd.taskNew,
     "task.toggle": cmd.taskToggle,
-    "task.planToday": cmd.taskPlanToday,
-    "task.planTomorrow": cmd.taskPlanTomorrow,
+    "task.scheduleLater": cmd.scheduleLater,
+    "task.scheduleEarlier": cmd.scheduleEarlier,
     "task.indent": cmd.taskIndent,
     "task.outdent": cmd.taskOutdent,
     "task.trash": cmd.taskTrash,
@@ -1184,7 +1214,6 @@ export function App() {
     select: setFocus,
     toggle: toggleComplete,
     reopen: clearWontDo,
-    togglePlan: planToggle,
     toggleCollapse: toggleCollapsedFor,
     openDetail: openDetailFor,
     zoomInto: (id) => zoomInto({ kind: "task", id }),
@@ -1263,7 +1292,6 @@ export function App() {
     select: setFocus,
     toggle: () => {},
     reopen: () => {},
-    togglePlan: () => {},
     toggleCollapse: toggleCollapsedFor,
     openDetail: () => {},
     zoomInto: () => {},
@@ -1461,7 +1489,8 @@ export function App() {
       hint: "w",
       run: cmd.taskReason,
     },
-    { id: "plan", label: "Plan / unplan for today", hint: "t", run: cmd.taskPlanToday },
+    { id: "sched-later", label: "Schedule: one step later", aliases: ["defer", "postpone"], hint: "t", run: cmd.scheduleLater },
+    { id: "sched-earlier", label: "Schedule: one step sooner", aliases: ["advance"], hint: "⇧ t", run: cmd.scheduleEarlier },
     {
       id: "current",
       label:
@@ -1474,7 +1503,7 @@ export function App() {
     // Scheduling, reachable from the palette (the `s` picker is the keyboard path).
     // All act on the focused/selected task(s); no-op when nothing is targeted.
     { id: "sched-today", label: "Schedule: Today", aliases: ["schedule"], hint: "s t", run: () => applySchedule("today") },
-    { id: "sched-tomorrow", label: "Schedule: Tomorrow", aliases: ["schedule"], hint: "⇧ t", run: () => applySchedule("tomorrow") },
+    { id: "sched-tomorrow", label: "Schedule: Tomorrow", aliases: ["schedule"], hint: "s r", run: () => applySchedule("tomorrow") },
     { id: "sched-this-week", label: "Schedule: This week", aliases: ["schedule"], hint: "s w", run: () => applySchedule("thisWeek") },
     { id: "sched-next-week", label: "Schedule: Next week", aliases: ["schedule"], hint: "s e", run: () => applySchedule("nextWeek") },
     { id: "sched-this-month", label: "Schedule: This month", aliases: ["schedule"], hint: "s m", run: () => applySchedule("thisMonth") },
@@ -1742,12 +1771,18 @@ export function App() {
           title={confirm.title}
           body={confirm.body}
           confirmLabel={confirm.confirmLabel}
+          enterAction={confirm.enterAction}
+          tone={confirm.tone}
           onConfirm={() => {
             const req = confirm;
             setConfirm(null);
             req.onConfirm();
           }}
-          onCancel={() => setConfirm(null)}
+          onCancel={() => {
+            const req = confirm;
+            setConfirm(null);
+            req.onCancel?.();
+          }}
         />
       )}
     </div>

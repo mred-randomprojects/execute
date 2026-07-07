@@ -59,7 +59,7 @@ describe("App integration", () => {
     );
   });
 
-  it("unplanning with 't' removes the task from Today", async () => {
+  it("'t' defers a today task one step, removing it from Today", async () => {
     render(<App />);
     const input = await screen.findByPlaceholderText("Add a task for today…");
     fireEvent.change(input, { target: { value: "planned today" } });
@@ -269,11 +269,11 @@ describe("Cursor after a task leaves the view", () => {
     blurActive();
 
     fireEvent.keyDown(document.body, { key: "ArrowUp" }); // focus charlie
-    fireEvent.keyDown(document.body, { key: "t" }); // unplan → leaves Today, focus → bravo
+    fireEvent.keyDown(document.body, { key: "t" }); // defer → leaves Today, focus → bravo
     await waitFor(() => expect(screen.queryByText("charlie")).toBeNull());
 
     fireEvent.keyDown(document.body, { key: "ArrowDown" }); // bravo → delta (charlie's old slot)
-    fireEvent.keyDown(document.body, { key: "t" }); // unplan delta
+    fireEvent.keyDown(document.body, { key: "t" }); // defer delta
     await waitFor(() => expect(screen.queryByText("delta")).toBeNull());
 
     // Had the cursor snapped to the top, the second `t` would have unplanned alpha/bravo.
@@ -433,7 +433,7 @@ describe("Today view: drops done-only subtrees", () => {
     blurActive();
     fireEvent.keyDown(document.body, { key: "Tab" }); // "do today" → child of "umbrella"
     fireEvent.keyDown(document.body, { key: "ArrowUp" }); // focus the parent
-    fireEvent.keyDown(document.body, { key: "t" }); // unplan the parent (not for today)
+    fireEvent.keyDown(document.body, { key: "t" }); // defer the parent (not for today)
     fireEvent.keyDown(document.body, { key: "ArrowDown" }); // back to the child
 
     // While the child is open, the parent shows as context.
@@ -511,7 +511,7 @@ describe("Indent respects the filtered view", () => {
     // two visible tasks. This is the trap: "second"'s raw previous sibling is
     // the hidden "mid".
     fireEvent.keyDown(document.body, { key: "ArrowUp" }); // second → mid
-    fireEvent.keyDown(document.body, { key: "t" }); // unplan mid
+    fireEvent.keyDown(document.body, { key: "t" }); // defer mid
     await waitFor(() => expect(screen.queryByText("mid")).toBeNull());
 
     // Focus reconciles to the project header; descend to "second" and indent.
@@ -551,7 +551,7 @@ describe("Reorder", () => {
 
     // Hide "mid" between the two visible tasks (raw order: first, mid, second).
     fireEvent.keyDown(document.body, { key: "ArrowUp" }); // second → mid
-    fireEvent.keyDown(document.body, { key: "t" }); // unplan mid → cursor lands on "first" (row above)
+    fireEvent.keyDown(document.body, { key: "t" }); // defer mid → cursor lands on "first" (row above)
     await waitFor(() => expect(screen.queryByText("mid")).toBeNull());
 
     // Cursor is on "first" now. Its raw next sibling is the hidden "mid";
@@ -1139,12 +1139,12 @@ describe("Scheduling (the s picker)", () => {
     expect(screen.getByText("This week")).toBeTruthy(); // the bucket header
   });
 
-  it("⇧t plans the task for tomorrow: it leaves Today and gets a 'tomorrow' chip", async () => {
+  it("t defers a today task to tomorrow (it leaves Today, gains the chip)", async () => {
     render(<App />);
     await addTask("prep slides"); // planned today by default
     blurActive();
 
-    fireEvent.keyDown(document.body, { key: "T" });
+    fireEvent.keyDown(document.body, { key: "t" }); // today → tomorrow
     await waitFor(() => expect(screen.queryByText("prep slides")).toBeNull());
 
     fireEvent.keyDown(document.body, { key: "3" }); // All
@@ -1152,18 +1152,28 @@ describe("Scheduling (the s picker)", () => {
     expect(screen.getByText("tomorrow")).toBeTruthy(); // the date chip
   });
 
-  it("⇧t on a tomorrow task unplans it (toggle)", async () => {
+  it("t and ⇧t walk the schedule ladder, wrapping at the ends", async () => {
     render(<App />);
-    await addTask("flip flop");
+    await addTask("stepper"); // planned today
     blurActive();
 
-    fireEvent.keyDown(document.body, { key: "3" }); // All (task stays visible here)
-    await screen.findByText("flip flop");
-    fireEvent.keyDown(document.body, { key: "T" });
+    fireEvent.keyDown(document.body, { key: "3" }); // All — stays visible while stepping
+    await screen.findByText("stepper");
+
+    fireEvent.keyDown(document.body, { key: "t" }); // today → tomorrow
     expect(await screen.findByText("tomorrow")).toBeTruthy();
 
-    fireEvent.keyDown(document.body, { key: "T" });
+    fireEvent.keyDown(document.body, { key: "t" }); // tomorrow → this week (fuzzy)
     await waitFor(() => expect(screen.queryByText("tomorrow")).toBeNull());
+
+    fireEvent.keyDown(document.body, { key: "T" }); // this week → back to tomorrow
+    expect(await screen.findByText("tomorrow")).toBeTruthy();
+
+    fireEvent.keyDown(document.body, { key: "T" }); // tomorrow → today
+    expect(await screen.findByText("today")).toBeTruthy();
+
+    fireEvent.keyDown(document.body, { key: "T" }); // today → inbox (wrap = unplan)
+    await waitFor(() => expect(screen.queryByText("today")).toBeNull());
   });
 
   it("toggles the Later view between by-date and by-project", async () => {
@@ -1180,6 +1190,57 @@ describe("Scheduling (the s picker)", () => {
     fireEvent.click(screen.getByText("By project"));
     await waitFor(() => expect(screen.queryByText("Someday")).toBeNull()); // bucket gone
     expect(screen.getByText("later thing")).toBeTruthy(); // still listed, now by project
+  });
+});
+
+describe("Cascade a schedule change to subtasks", () => {
+  // A parent ("big rock") planned today with one subtask ("pebble"), parent focused.
+  async function seedParentChild() {
+    render(<App />);
+    await addTask("big rock");
+    await addTask("pebble");
+    blurActive();
+    fireEvent.keyDown(document.body, { key: "Tab" }); // pebble → subtask of big rock
+    fireEvent.keyDown(document.body, { key: "ArrowUp" }); // focus the parent
+  }
+
+  it("y applies the choice to the whole subtree, and one ⌘z reverts it all", async () => {
+    await seedParentChild();
+
+    fireEvent.keyDown(document.body, { key: "s" }); // the deliberate path prompts
+    fireEvent.click(await screen.findByText("This week"));
+    await screen.findByText("Also schedule its subtask?");
+    fireEvent.keyDown(document.activeElement as HTMLElement, { key: "y" });
+
+    // Both now carry the This-week horizon → they appear in Later together.
+    blurActive();
+    fireEvent.keyDown(document.body, { key: "2" });
+    expect(await screen.findByText("big rock")).toBeTruthy();
+    expect(await screen.findByText("pebble")).toBeTruthy();
+
+    // The cascade was one store update, so a single undo restores everything.
+    fireEvent.keyDown(document.body, { key: "z", metaKey: true });
+    await waitFor(() => expect(screen.queryByText("big rock")).toBeNull()); // left Later
+    fireEvent.keyDown(document.body, { key: "1" }); // Today
+    expect(await screen.findByText("big rock")).toBeTruthy();
+    expect(screen.getByText("pebble")).toBeTruthy();
+  });
+
+  it("Enter keeps the safe default: only the task itself is rescheduled", async () => {
+    await seedParentChild();
+
+    fireEvent.keyDown(document.body, { key: "s" });
+    fireEvent.click(await screen.findByText("This week"));
+    await screen.findByText("Also schedule its subtask?");
+    fireEvent.keyDown(document.activeElement as HTMLElement, { key: "Enter" });
+
+    // The subtask stays planned for today…
+    expect(await screen.findByText("pebble")).toBeTruthy();
+    // …while the parent moved to the This-week bucket in Later.
+    blurActive();
+    fireEvent.keyDown(document.body, { key: "2" });
+    expect(await screen.findByText("big rock")).toBeTruthy();
+    expect(screen.getByText("This week")).toBeTruthy();
   });
 });
 

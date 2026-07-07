@@ -12,6 +12,8 @@ import {
   reckoningCards,
   recurringForToday,
   resolveZoom,
+  scheduleStep,
+  stepSchedule,
   suggestedDayFor,
   suggestedForToday,
   suppressedRecurrenceIds,
@@ -189,6 +191,26 @@ describe("Later buckets (fuzzy horizons)", () => {
     expect(bucketMeta("thisMonth", today)).toMatchObject({ label: "This month", sublabel: "June 2026" });
     expect(bucketMeta("nextMonth", today)).toMatchObject({ label: "Next month", sublabel: "July 2026", elapsed: null });
     expect(bucketMeta("someday", today)).toMatchObject({ sublabel: null, elapsed: null });
+  });
+
+  it("scheduleStep maps concrete dates into ladder rungs (overdue → today)", () => {
+    expect(scheduleStep(task("x", "work", "2026-06-18"), today)).toBe("today");
+    expect(scheduleStep(task("x", "work", "2026-06-01"), today)).toBe("today"); // overdue
+    expect(scheduleStep(task("x", "work", "2026-06-19"), today)).toBe("tomorrow");
+    expect(scheduleStep(task("x", "work", "2026-06-21"), today)).toBe("thisWeek"); // Sunday, week 25
+    expect(scheduleStep(task("x", "work", "2026-06-24"), today)).toBe("nextWeek");
+    expect(scheduleStep(task("x", "work", "2026-06-30"), today)).toBe("thisMonth");
+    expect(scheduleStep(task("x", "work", "2026-07-15"), today)).toBe("nextMonth");
+    expect(scheduleStep(task("x", "work", "2026-11-01"), today)).toBe("someday"); // far future
+    expect(scheduleStep(horizon({ unit: "week", anchor: "2026-W26" }), today)).toBe("nextWeek");
+    expect(scheduleStep(task("x", "work"), today)).toBe("inbox");
+  });
+
+  it("stepSchedule walks the ladder and wraps at both ends", () => {
+    expect(stepSchedule("today", 1)).toBe("tomorrow");
+    expect(stepSchedule("tomorrow", -1)).toBe("today");
+    expect(stepSchedule("inbox", 1)).toBe("today"); // wrap: t plans an inbox task
+    expect(stepSchedule("today", -1)).toBe("inbox"); // wrap: ⇧t unplans a today task
   });
 
   it("horizonLabel gives a chip for the by-project layout", () => {

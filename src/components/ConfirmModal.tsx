@@ -4,16 +4,23 @@ import { useRef, useEffect } from "react";
 export interface ConfirmRequest {
   title: string;
   body?: string;
-  /** Label for the destructive action button (e.g. "Delete", "Empty trash"). */
+  /** Label for the action button (e.g. "Delete", "Empty trash", "Subtasks too"). */
   confirmLabel: string;
   onConfirm: () => void;
+  /** Runs on decline (esc / Cancel). Optional: most confirms just do nothing. */
+  onCancel?: () => void;
+  /** What Enter does. Point it at "cancel" when declining is the safe default. */
+  enterAction?: "confirm" | "cancel";
+  /** "danger" (default) styles the confirm button red; "neutral" uses the accent. */
+  tone?: "danger" | "neutral";
 }
 
 /**
- * Keyboard-first confirmation dialog for destructive, hard-to-undo actions.
- * Enter accepts, Escape cancels; the overlay owns the keyboard while open (the
- * resolver maps it to the binding-less "confirm" context, so nothing fires
- * beneath it). Visual language matches SchedulePicker.
+ * Keyboard-first confirmation dialog. Enter triggers `enterAction` (accept by
+ * default), Escape cancels, and `y` / `n` always answer directly; the overlay
+ * owns the keyboard while open (the resolver maps it to the binding-less
+ * "confirm" context, so nothing fires beneath it). Visual language matches
+ * SchedulePicker.
  */
 export function ConfirmModal({
   title,
@@ -21,12 +28,16 @@ export function ConfirmModal({
   confirmLabel,
   onConfirm,
   onCancel,
+  enterAction = "confirm",
+  tone = "danger",
 }: {
   title: string;
   body?: string;
   confirmLabel: string;
   onConfirm: () => void;
   onCancel: () => void;
+  enterAction?: "confirm" | "cancel";
+  tone?: "danger" | "neutral";
 }) {
   const ref = useRef<HTMLDivElement>(null);
 
@@ -46,10 +57,13 @@ export function ConfirmModal({
           e.stopPropagation();
           if (e.key === "Enter") {
             e.preventDefault();
-            onConfirm();
-          } else if (e.key === "Escape") {
+            (enterAction === "confirm" ? onConfirm : onCancel)();
+          } else if (e.key === "Escape" || e.key === "n") {
             e.preventDefault();
             onCancel();
+          } else if (e.key === "y") {
+            e.preventDefault();
+            onConfirm();
           }
         }}
         onClick={(e) => e.stopPropagation()}
@@ -66,13 +80,18 @@ export function ConfirmModal({
             onClick={onCancel}
             className="flex items-center gap-1.5 rounded-sm px-2.5 py-1 text-[13px] text-ink-soft hover:text-ink"
           >
-            Cancel <span className="kbd">esc</span>
+            Cancel <span className="kbd">{enterAction === "cancel" ? "↵ / esc" : "esc"}</span>
           </button>
           <button
             onClick={onConfirm}
-            className="flex items-center gap-1.5 rounded-sm border border-bad/40 bg-bad-soft px-2.5 py-1 text-[13px] font-medium text-bad hover:border-bad/70"
+            className={[
+              "flex items-center gap-1.5 rounded-sm border px-2.5 py-1 text-[13px] font-medium",
+              tone === "danger"
+                ? "border-bad/40 bg-bad-soft text-bad hover:border-bad/70"
+                : "border-accent/40 bg-accent-soft text-accent hover:border-accent/70",
+            ].join(" ")}
           >
-            {confirmLabel} <span className="kbd">↵</span>
+            {confirmLabel} <span className="kbd">{enterAction === "confirm" ? "↵" : "y"}</span>
           </button>
         </div>
       </div>
