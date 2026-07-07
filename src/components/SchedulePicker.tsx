@@ -1,6 +1,8 @@
 import { useRef, useState, useEffect } from "react";
 import type { ISODate } from "../types";
 import {
+  addDays,
+  monthDayLabel,
   monthKey,
   monthKeyOffset,
   monthLabel,
@@ -13,6 +15,7 @@ import { NO_SPELLCHECK } from "../ui/noSpellcheck";
 /** What the user picked in the scheduler; App resolves it to plannedFor/horizon. */
 export type ScheduleChoice =
   | "today"
+  | "tomorrow"
   | "thisWeek"
   | "nextWeek"
   | "thisMonth"
@@ -43,6 +46,7 @@ export function SchedulePicker({
 }) {
   const opts: Opt[] = [
     { key: "today", label: "Today", sub: null, hint: "t" },
+    { key: "tomorrow", label: "Tomorrow", sub: monthDayLabel(addDays(today, 1)), hint: "r" },
     { key: "thisWeek", label: "This week", sub: weekLabel(weekKey(today)), hint: "w" },
     { key: "nextWeek", label: "Next week", sub: weekLabel(weekKeyOffset(today, 1)), hint: "e" },
     { key: "thisMonth", label: "This month", sub: monthLabel(monthKey(today)), hint: "m" },

@@ -897,6 +897,24 @@ describe("Task IDs", () => {
   });
 });
 
+describe("Schedule picker (s)", () => {
+  it("offers Tomorrow and schedules the task for it (leaves Today)", async () => {
+    render(<App />);
+    await addTask("call the bank"); // captured into Today
+    blurActive();
+
+    fireEvent.keyDown(document.body, { key: "s" }); // open the schedule picker
+    const tomorrow = await screen.findByText("Tomorrow");
+    fireEvent.click(tomorrow);
+
+    // Planned for tomorrow (a future date) → drops out of Today…
+    await waitFor(() => expect(screen.queryByText("call the bank")).toBeNull());
+    // …and is still there in All.
+    fireEvent.keyDown(document.body, { key: "3" });
+    expect(await screen.findByText("call the bank")).toBeTruthy();
+  });
+});
+
 describe("Command palette", () => {
   it("opens with Cmd+K and runs a theme command", async () => {
     render(<App />);

@@ -619,6 +619,8 @@ export function App() {
     switch (choice) {
       case "today":
         return setPlannedForMany(ids, today);
+      case "tomorrow":
+        return setPlannedForMany(ids, addDays(today, 1));
       case "inbox":
         return setHorizonMany(ids, null);
       case "someday":
@@ -639,9 +641,11 @@ export function App() {
       ? null
       : focusedTask.plannedFor === today
         ? "today"
-        : focusedTask.plannedFor != null
-          ? null
-          : taskBucket(focusedTask, today);
+        : focusedTask.plannedFor === addDays(today, 1)
+          ? "tomorrow"
+          : focusedTask.plannedFor != null
+            ? null
+            : taskBucket(focusedTask, today);
 
   // ── Commands ──────────────────────────────────────────────────────
   const moveReckCursor = (dir: "up" | "down") => {
