@@ -7,11 +7,13 @@ export interface ConfirmRequest {
   /** Label for the action button (e.g. "Delete", "Empty trash", "Subtasks too"). */
   confirmLabel: string;
   onConfirm: () => void;
-  /** Runs on decline (esc / Cancel). Optional: most confirms just do nothing. */
+  /** Runs on decline (esc / the cancel button). Optional: most confirms just do nothing. */
   onCancel?: () => void;
+  /** Label for the decline button when "Cancel" would misread (e.g. "Just this task"). */
+  cancelLabel?: string;
   /** What Enter does. Point it at "cancel" when declining is the safe default. */
   enterAction?: "confirm" | "cancel";
-  /** "danger" (default) styles the confirm button red; "neutral" uses the accent. */
+  /** "danger" (default) styles the emphasized button red; "neutral" uses the accent. */
   tone?: "danger" | "neutral";
 }
 
@@ -28,6 +30,7 @@ export function ConfirmModal({
   confirmLabel,
   onConfirm,
   onCancel,
+  cancelLabel = "Cancel",
   enterAction = "confirm",
   tone = "danger",
 }: {
@@ -36,10 +39,18 @@ export function ConfirmModal({
   confirmLabel: string;
   onConfirm: () => void;
   onCancel: () => void;
+  cancelLabel?: string;
   enterAction?: "confirm" | "cancel";
   tone?: "danger" | "neutral";
 }) {
   const ref = useRef<HTMLDivElement>(null);
+  // The visual emphasis must follow what Enter actually does — a highlighted
+  // button the user's Enter doesn't trigger is a lie about the default.
+  const emphasis =
+    tone === "danger"
+      ? "border-bad/40 bg-bad-soft font-medium text-bad hover:border-bad/70"
+      : "border-accent/40 bg-accent-soft font-medium text-accent hover:border-accent/70";
+  const quiet = "border-transparent text-ink-soft hover:text-ink";
 
   useEffect(() => {
     ref.current?.focus();
@@ -78,17 +89,18 @@ export function ConfirmModal({
         <div className="flex items-center justify-end gap-2 border-t border-line px-4 py-2.5">
           <button
             onClick={onCancel}
-            className="flex items-center gap-1.5 rounded-sm px-2.5 py-1 text-[13px] text-ink-soft hover:text-ink"
+            className={[
+              "flex items-center gap-1.5 rounded-sm border px-2.5 py-1 text-[13px]",
+              enterAction === "cancel" ? emphasis : quiet,
+            ].join(" ")}
           >
-            Cancel <span className="kbd">{enterAction === "cancel" ? "↵ / esc" : "esc"}</span>
+            {cancelLabel} <span className="kbd">{enterAction === "cancel" ? "↵ / esc" : "esc"}</span>
           </button>
           <button
             onClick={onConfirm}
             className={[
-              "flex items-center gap-1.5 rounded-sm border px-2.5 py-1 text-[13px] font-medium",
-              tone === "danger"
-                ? "border-bad/40 bg-bad-soft text-bad hover:border-bad/70"
-                : "border-accent/40 bg-accent-soft text-accent hover:border-accent/70",
+              "flex items-center gap-1.5 rounded-sm border px-2.5 py-1 text-[13px]",
+              enterAction === "confirm" ? emphasis : quiet,
             ].join(" ")}
           >
             {confirmLabel} <span className="kbd">{enterAction === "confirm" ? "↵" : "y"}</span>

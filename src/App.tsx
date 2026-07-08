@@ -694,8 +694,9 @@ export function App() {
     if (subtree.length === 0) return applyScheduleTo(ids, choice);
     setConfirm({
       title: subtree.length === 1 ? "Also schedule its subtask?" : `Also schedule its ${subtree.length} subtasks?`,
-      body: "Give everything underneath the same schedule. Enter / esc schedules just the selected task(s).",
+      body: "Subtasks keep their own schedules unless you include them (y).",
       confirmLabel: "Subtasks too",
+      cancelLabel: "Just this task",
       tone: "neutral",
       enterAction: "cancel",
       onConfirm: () => applyScheduleTo([...ids, ...subtree], choice),
@@ -1851,6 +1852,7 @@ export function App() {
           title={confirm.title}
           body={confirm.body}
           confirmLabel={confirm.confirmLabel}
+          cancelLabel={confirm.cancelLabel}
           enterAction={confirm.enterAction}
           tone={confirm.tone}
           onConfirm={() => {

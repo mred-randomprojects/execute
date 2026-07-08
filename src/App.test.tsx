@@ -1254,6 +1254,8 @@ describe("Cascade a schedule change to subtasks", () => {
     const picker = await screen.findByRole("dialog", { name: "Schedule" });
     fireEvent.click(within(picker).getByText("This week"));
     await screen.findByText("Also schedule its subtask?");
+    // The Enter default is spelled out (and visually emphasized) as its own button.
+    expect(screen.getByText("Just this task")).toBeTruthy();
     fireEvent.keyDown(document.activeElement as HTMLElement, { key: "Enter" });
 
     // The subtask stays planned for today…
