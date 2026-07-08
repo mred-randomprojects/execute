@@ -250,7 +250,7 @@ export function App() {
   const visibleTasks = useMemo(
     () =>
       hideCompleted
-        ? filterTree(filtered, (t) => viewPredicate(view, today, period)(t) && !t.completed)
+        ? filterTree(filtered, (t) => viewPredicate(view, today, period)(t) && isOpen(t))
         : filtered,
     [filtered, hideCompleted, view, today, period]
   );
@@ -289,7 +289,7 @@ export function App() {
     if (zoom == null) return null;
     const z = resolveZoom(state.tasks, state.projects, zoom, VIEW_TITLES[view]);
     if (z == null || !hideCompleted) return z;
-    return { ...z, subtree: filterTree(z.subtree, (t) => !t.completed) };
+    return { ...z, subtree: filterTree(z.subtree, (t) => isOpen(t)) };
   }, [zoom, state.tasks, state.projects, view, hideCompleted]);
   // Soft-horizon tasks the engine projects onto today — shown as a passive,
   // non-reckoning "Suggested for today" group at the foot of Today. They join the
@@ -1600,7 +1600,7 @@ export function App() {
     { id: "zoom", label: "Zoom in / focus", hint: "⌥↵", run: cmd.zoomIn },
     {
       id: "hide-completed",
-      label: hideCompleted ? "Show completed tasks" : "Hide all completed tasks",
+      label: hideCompleted ? "Show completed & won't-do tasks" : "Hide completed & won't-do tasks",
       hint: "h",
       run: cmd.toggleHideCompleted,
     },

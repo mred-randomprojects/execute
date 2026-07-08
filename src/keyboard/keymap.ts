@@ -22,7 +22,7 @@ export const keymap: KeyBinding[] = [
   { key: "6", action: "view.trash", context: "normal", displayKey: "6", description: "go to Trash", section: "Views" },
   { key: "]", action: "period.next", context: "normal", displayKey: "[ / ]", description: "period tab: earlier / later (Today ↔ Tomorrow ↔ …)", section: "Views" },
   { key: "[", action: "period.prev", context: "normal" },
-  { key: "h", action: "filter.hideCompleted", context: "normal", displayKey: "h", description: "hide / show completed", section: "Views" },
+  { key: "h", action: "filter.hideCompleted", context: "normal", displayKey: "h", description: "hide / show completed & won't-do", section: "Views" },
   { key: "g", action: "later.toggleLayout", context: "normal", displayKey: "g", description: "Later: group by date / project", section: "Views" },
 
   // ── navigation (normal) ───────────────────────────────────────────

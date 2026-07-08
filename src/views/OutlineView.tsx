@@ -448,9 +448,9 @@ function CompletedHiddenPill({ onShow }: { onShow: () => void }) {
       type="button"
       onClick={onShow}
       className="mono shrink-0 rounded-sm bg-surface-2 px-1.5 py-[3px] text-[10px] font-medium uppercase tracking-[0.1em] text-ink-faint transition-colors hover:text-ink"
-      title="Show completed (h)"
+      title="Show completed & won't-do (h)"
     >
-      ✓ completed hidden
+      ✓ resolved hidden
     </button>
   );
 }

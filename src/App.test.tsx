@@ -1078,10 +1078,28 @@ describe("Hide completed", () => {
 
     await waitFor(() => expect(screen.queryByText("finish me")).toBeNull());
     expect(screen.getByText("keep me")).toBeTruthy();
-    expect(screen.getByText(/completed hidden/)).toBeTruthy(); // indicator pill
+    expect(screen.getByText(/resolved hidden/)).toBeTruthy(); // indicator pill
 
     fireEvent.keyDown(document.body, { key: "h" }); // show again
     expect(await screen.findByText("finish me")).toBeTruthy();
+  });
+
+  it("h hides won't-do tasks too — both are resolved states", async () => {
+    render(<App />);
+    await addTask("keep me");
+    await addTask("skip me"); // focus = skip me
+    blurActive();
+
+    fireEvent.keyDown(document.body, { key: "Backspace" }); // → won't do
+    expect(await screen.findByLabelText(/won.t do/i)).toBeTruthy();
+    blurActive(); // leave the inline reason field
+    fireEvent.keyDown(document.body, { key: "h" });
+
+    await waitFor(() => expect(screen.queryByText("skip me")).toBeNull());
+    expect(screen.getByText("keep me")).toBeTruthy();
+
+    fireEvent.keyDown(document.body, { key: "h" }); // show again
+    expect(await screen.findByText("skip me")).toBeTruthy();
   });
 });
 
