@@ -4,7 +4,9 @@ import {
   bucketMeta,
   groupRecurrencesByRule,
   groupTasksByBucket,
+  groupTasksByDay,
   groupTasksByProject,
+  periodPredicate,
   horizonLabel,
   leftoverLeaves,
   prevVisibleSiblingId,
@@ -191,6 +193,36 @@ describe("Later buckets (fuzzy horizons)", () => {
     expect(bucketMeta("thisMonth", today)).toMatchObject({ label: "This month", sublabel: "June 2026" });
     expect(bucketMeta("nextMonth", today)).toMatchObject({ label: "Next month", sublabel: "July 2026", elapsed: null });
     expect(bucketMeta("someday", today)).toMatchObject({ sublabel: null, elapsed: null });
+  });
+
+  it("periodPredicate: dates match every window containing them; fuzz stays on its rung", () => {
+    const sunday = task("d", "work", "2026-06-21"); // Sunday of this ISO week
+    expect(periodPredicate("thisWeek", today)(sunday)).toBe(true);
+    expect(periodPredicate("thisMonth", today)(sunday)).toBe(true); // dated in June
+    expect(periodPredicate("nextWeek", today)(sunday)).toBe(false);
+    expect(periodPredicate("tomorrow", today)(task("t", "work", "2026-06-19"))).toBe(true);
+
+    const weekFuzz = horizon({ unit: "week", anchor: "2026-W25" });
+    expect(periodPredicate("thisWeek", today)(weekFuzz)).toBe(true);
+    expect(periodPredicate("thisMonth", today)(weekFuzz)).toBe(false); // week fuzz lives in week tabs
+    expect(periodPredicate("someday", today)(horizon({ unit: "someday", anchor: null }))).toBe(true);
+  });
+
+  it("groupTasksByDay: days ascend, fuzzy roots trail under Anytime", () => {
+    const sections = groupTasksByDay(
+      [
+        horizon({ unit: "week", anchor: "2026-W25" }),
+        task("later", "work", "2026-06-20"),
+        task("sooner", "work", "2026-06-18"),
+      ],
+      today,
+      "thisWeek"
+    );
+    expect(sections.map((s) => s.label)).toEqual([
+      "Thursday · Jun 18 · today",
+      "Saturday · Jun 20",
+      "Anytime this week",
+    ]);
   });
 
   it("scheduleStep maps concrete dates into ladder rungs (overdue → today)", () => {

@@ -20,6 +20,8 @@ export const keymap: KeyBinding[] = [
   { key: "4", action: "view.projects", context: "normal", displayKey: "4", description: "go to Projects", section: "Views" },
   { key: "5", action: "view.recurring", context: "normal", displayKey: "5", description: "go to Recurring", section: "Views" },
   { key: "6", action: "view.trash", context: "normal", displayKey: "6", description: "go to Trash", section: "Views" },
+  { key: "]", action: "period.next", context: "normal", displayKey: "[ / ]", description: "period tab: earlier / later (Today ↔ Tomorrow ↔ …)", section: "Views" },
+  { key: "[", action: "period.prev", context: "normal" },
   { key: "h", action: "filter.hideCompleted", context: "normal", displayKey: "h", description: "hide / show completed", section: "Views" },
   { key: "g", action: "later.toggleLayout", context: "normal", displayKey: "g", description: "Later: group by date / project", section: "Views" },
 

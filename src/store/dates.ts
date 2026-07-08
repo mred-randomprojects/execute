@@ -93,6 +93,13 @@ export function monthDayLabel(iso: ISODate): string {
   return `${MONTHS[d.getMonth()].slice(0, 3)} ${d.getDate()}`;
 }
 
+/** Day-separator header inside a period view: "Monday · Jul 13 · today". */
+export function dayHeaderLabel(iso: ISODate, today: ISODate): string {
+  const d = parseISO(iso);
+  const rel = iso === today ? " · today" : iso === addDays(today, 1) ? " · tomorrow" : "";
+  return `${WEEKDAYS[d.getDay()]} · ${monthDayLabel(iso)}${rel}`;
+}
+
 /** Ordinal, e.g. 1 → "1st", 4 → "4th", 22 → "22nd". */
 export function ordinal(n: number): string {
   const s = ["th", "st", "nd", "rd"];

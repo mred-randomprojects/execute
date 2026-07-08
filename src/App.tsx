@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type {
+  Horizon,
   OutlineId,
   ProjectId,
   RecurrenceId,
@@ -81,6 +82,9 @@ import {
   prevVisibleSiblingId,
   projectSummaries,
   reckoningCards,
+  groupTasksByDay,
+  PERIOD_LABELS,
+  PERIODS,
   recurringForToday,
   resolveZoom,
   scheduleStep,
@@ -92,6 +96,7 @@ import {
   viewTasks,
   VIEW_TITLES,
   zoomParent,
+  type Period,
   type ReckoningCard,
   type ScheduleStep,
   type ViewKind,
@@ -152,6 +157,8 @@ export function App() {
 
   // ── UI state ──────────────────────────────────────────────────────
   const [view, setView] = useState<ViewKind>("today");
+  // Which time window the home view shows (the Today / Tomorrow / … tab strip).
+  const [period, setPeriod] = useState<Period>("today");
   const [selection, setSelection] = useState<Selection>(emptySelection);
   const [editingId, setEditingId] = useState<TaskId | null>(null);
   // Task whose "won't do" reason is being typed inline (empty field). Cleared when
@@ -228,8 +235,8 @@ export function App() {
 
   // ── Derived (outline) ─────────────────────────────────────────────
   const filtered = useMemo(
-    () => viewTasks(state.tasks, view, today),
-    [state.tasks, view, today]
+    () => viewTasks(state.tasks, view, today, period),
+    [state.tasks, view, today, period]
   );
   // "Hide all completed" (toggle on `h`) prunes done tasks from the outline,
   // keeping a completed parent only when it still has a visible (incomplete)
@@ -243,14 +250,27 @@ export function App() {
   const visibleTasks = useMemo(
     () =>
       hideCompleted
-        ? filterTree(filtered, (t) => viewPredicate(view, today)(t) && !t.completed)
+        ? filterTree(filtered, (t) => viewPredicate(view, today, period)(t) && !t.completed)
         : filtered,
-    [filtered, hideCompleted, view, today]
+    [filtered, hideCompleted, view, today, period]
   );
   const projectGroups = useMemo(
     () => groupTasksByProject(visibleTasks, state.projects),
     [visibleTasks, state.projects]
   );
+  // Multi-day period tabs (weeks/months) split each project under second-order
+  // day separators; `tasks` is re-flattened in section order so the keyboard
+  // walk, counts, and render order all agree.
+  const multiDayPeriod =
+    view === "today" &&
+    (period === "thisWeek" || period === "nextWeek" || period === "thisMonth" || period === "nextMonth");
+  const displayGroups = useMemo(() => {
+    if (!multiDayPeriod) return projectGroups;
+    return projectGroups.map((g) => {
+      const sections = groupTasksByDay(g.tasks, today, period);
+      return { ...g, tasks: sections.flatMap((s) => s.tasks), sections };
+    });
+  }, [multiDayPeriod, projectGroups, today, period]);
   // "Later" (the backlog view) can group by time horizon instead of by project.
   const usingBuckets = view === "backlog" && laterLayout === "date";
   const bucketGroups = useMemo(
@@ -275,8 +295,11 @@ export function App() {
   // non-reckoning "Suggested for today" group at the foot of Today. They join the
   // outline flow so ↑/↓ reach them and `t` (accept) / `s` (reschedule) just work.
   const suggestedTasks = useMemo(
-    () => (view === "today" && zoom == null ? suggestedForToday(state.tasks, today) : []),
-    [view, zoom, state.tasks, today]
+    () =>
+      view === "today" && period === "today" && zoom == null
+        ? suggestedForToday(state.tasks, today)
+        : [],
+    [view, period, zoom, state.tasks, today]
   );
   // Recurrence definitions, grouped by pattern for the Recurring view.
   const recurrenceGroups = useMemo(
@@ -287,10 +310,10 @@ export function App() {
   // Today the user can accept (`t`) to materialize as real dated tasks.
   const recurringToday = useMemo(
     () =>
-      view === "today" && zoom == null
+      view === "today" && period === "today" && zoom == null
         ? recurringForToday(state.recurrences, state.tasks, today)
         : [],
-    [view, zoom, state.recurrences, state.tasks, today]
+    [view, period, zoom, state.recurrences, state.tasks, today]
   );
   const outlineRows = useMemo<OutlineRow[]>(() => {
     if (zoomFocus != null) {
@@ -330,7 +353,7 @@ export function App() {
         }))
       );
     }
-    const rows = projectGroups.flatMap((group) => [
+    const rows = displayGroups.flatMap((group) => [
       {
         kind: "project" as const,
         id: projectRowId(group.project.id),
@@ -354,7 +377,7 @@ export function App() {
       rows.push({ kind: "task" as const, id: rec.template.id, taskId: rec.template.id });
     }
     return rows;
-  }, [zoomFocus, view, state.projects, projectGroups, usingBuckets, bucketGroups, collapsed, collapsedProjects, suggestedTasks, recurrenceGroups, recurringToday]);
+  }, [zoomFocus, view, state.projects, displayGroups, usingBuckets, bucketGroups, collapsed, collapsedProjects, suggestedTasks, recurrenceGroups, recurringToday]);
   const flatIds = useMemo(() => outlineRows.map((r) => r.id), [outlineRows]);
   const flatKey = flatIds.join(",");
   // The task ids the view actually renders — so structural edits (reorder) act on
@@ -461,7 +484,33 @@ export function App() {
   }, [ready, state.tasks.length]);
 
   // ── Helpers ───────────────────────────────────────────────────────
-  const defaultPlannedFor = () => (view === "today" ? today : null);
+  // New tasks land in the window being viewed: the Today/Tomorrow tabs give a
+  // concrete day; the fuzzy tabs (weeks / months / someday) stamp their horizon
+  // via withPeriodSchedule right after creation. Other views: unscheduled.
+  const defaultPlannedFor = () =>
+    view !== "today" ? null : period === "today" ? today : period === "tomorrow" ? addDays(today, 1) : null;
+  const periodHorizon = (): Horizon | null => {
+    if (view !== "today") return null;
+    switch (period) {
+      case "thisWeek":
+        return { unit: "week", anchor: weekKey(today) };
+      case "nextWeek":
+        return { unit: "week", anchor: weekKeyOffset(today, 1) };
+      case "thisMonth":
+        return { unit: "month", anchor: monthKey(today) };
+      case "nextMonth":
+        return { unit: "month", anchor: monthKeyOffset(today, 1) };
+      case "someday":
+        return { unit: "someday", anchor: null };
+      default:
+        return null;
+    }
+  };
+  const withPeriodSchedule = (id: TaskId): TaskId => {
+    const h = periodHorizon();
+    if (h != null) setHorizonMany([id], h);
+    return id;
+  };
   const setFocus = (id: OutlineId | null) =>
     setSelection(
       id == null ? emptySelection : { focusedId: id, anchorId: id, selectedIds: [id] }
@@ -542,7 +591,7 @@ export function App() {
   // sibling in the current (filtered) view — never under a sibling the view is
   // hiding. So we resolve the parent from the displayed forest, not the raw tree.
   const indentInView = (id: TaskId) => {
-    const groups: { tasks: Task[] }[] = usingBuckets ? bucketGroups : projectGroups;
+    const groups: { tasks: Task[] }[] = usingBuckets ? bucketGroups : displayGroups;
     const forest =
       zoomFocus != null
         ? zoomFocus.subtree
@@ -686,6 +735,17 @@ export function App() {
     }
     for (const [step, group] of groups) applyScheduleTo(group, step);
   };
+
+  // [ / ] — the home view's period tab strip.
+  const stepPeriodTab = (dir: 1 | -1) => {
+    if (zoom != null) return; // zoom ignores date windows; tabs are hidden there
+    if (view !== "today") {
+      setView("today");
+      return;
+    }
+    const i = PERIODS.indexOf(period);
+    setPeriod(PERIODS[Math.min(Math.max(i + dir, 0), PERIODS.length - 1)]);
+  };
   // The picker's current-state dot: "today" / a horizon bucket / "inbox" (null = a specific date).
   const scheduleTag =
     focusedTask == null
@@ -744,10 +804,8 @@ export function App() {
         flatIds.indexOf(focusedId) === flatIds.length - 1
       ) {
         setProjectCollapsed(focusedProjectId, false);
-        const newId = addTaskAtProjectStart(
-          focusedProjectId,
-          "",
-          defaultPlannedFor()
+        const newId = withPeriodSchedule(
+          addTaskAtProjectStart(focusedProjectId, "", defaultPlannedFor())
         );
         setFocus(newId);
         setEditingProjectId(null);
@@ -873,15 +931,15 @@ export function App() {
         if (focusedTaskId == null) return beginEdit(createRecurrence("", defaultRule(today)).taskId);
         return beginEdit(addRecurrenceStep(focusedTaskId, focusedIsRecurrenceRoot ? "child" : "sibling"));
       }
-      if (focusedTaskId != null) return beginEdit(addTaskAfter(focusedTaskId, "", defaultPlannedFor()));
+      if (focusedTaskId != null) return beginEdit(withPeriodSchedule(addTaskAfter(focusedTaskId, "", defaultPlannedFor())));
       if (focusedProjectId != null) {
         setProjectCollapsed(focusedProjectId, false);
-        return beginEdit(addTaskAtProjectStart(focusedProjectId, "", defaultPlannedFor()));
+        return beginEdit(withPeriodSchedule(addTaskAtProjectStart(focusedProjectId, "", defaultPlannedFor())));
       }
       // Nothing focused but zoomed in: the new task belongs to the zoom root.
-      if (zoom?.kind === "task") return beginEdit(addChild(zoom.id, "", defaultPlannedFor()));
-      if (zoom?.kind === "project") return beginEdit(addTaskAtProjectStart(zoom.id, "", defaultPlannedFor()));
-      beginEdit(addTaskAfter(null, "", defaultPlannedFor()));
+      if (zoom?.kind === "task") return beginEdit(withPeriodSchedule(addChild(zoom.id, "", defaultPlannedFor())));
+      if (zoom?.kind === "project") return beginEdit(withPeriodSchedule(addTaskAtProjectStart(zoom.id, "", defaultPlannedFor())));
+      beginEdit(withPeriodSchedule(addTaskAfter(null, "", defaultPlannedFor())));
     },
     taskToggle: () => {
       if (focusedRecurringToday != null) return acceptRecurringToday();
@@ -1060,8 +1118,13 @@ export function App() {
     },
     gotoView: (v: ViewKind) => () => {
       setZoom(null); // picking a view leaves focus mode
+      if (v === "today") setPeriod("today"); // 1 = the home tab; [ / ] reach the rest
       setView(v);
     },
+    // [ / ] walk the home view's period tabs (clamped at the ends). From another
+    // view they return home first, to whatever tab was left open.
+    periodNext: () => stepPeriodTab(1),
+    periodPrev: () => stepPeriodTab(-1),
     dismiss: () => {
       if (confirm != null) setConfirm(null);
       else if (repeatTarget != null) setRepeatTarget(null);
@@ -1144,6 +1207,8 @@ export function App() {
     "task.toggle": cmd.taskToggle,
     "task.scheduleLater": cmd.scheduleLater,
     "task.scheduleEarlier": cmd.scheduleEarlier,
+    "period.next": cmd.periodNext,
+    "period.prev": cmd.periodPrev,
     "task.indent": cmd.taskIndent,
     "task.outdent": cmd.taskOutdent,
     "task.trash": cmd.taskTrash,
@@ -1380,13 +1445,13 @@ export function App() {
     }
     let id: TaskId;
     if (zoom?.kind === "task") {
-      id = addChild(zoom.id, p.text, defaultPlannedFor());
+      id = withPeriodSchedule(addChild(zoom.id, p.text, defaultPlannedFor()));
     } else if (zoom?.kind === "project") {
-      id = addTaskAtProjectStart(zoom.id, p.text, defaultPlannedFor());
+      id = withPeriodSchedule(addTaskAtProjectStart(zoom.id, p.text, defaultPlannedFor()));
     } else {
       const projectId = currentProjectId ?? DEFAULT_PROJECT_ID;
       setProjectCollapsed(projectId, false); // keep the captured task visible
-      id = addTaskAfter(null, p.text, defaultPlannedFor(), projectId);
+      id = withPeriodSchedule(addTaskAfter(null, p.text, defaultPlannedFor(), projectId));
     }
     if (p.completed) setCompleted(id, true);
     setFocus(id);
@@ -1457,8 +1522,8 @@ export function App() {
     setProjectCollapsed(projectId, false); // never add into a collapsed (hidden) project
     const id =
       afterId == null
-        ? addTaskAtProjectStart(projectId, "", defaultPlannedFor())
-        : addTaskAfter(afterId, "", defaultPlannedFor(), projectId);
+        ? withPeriodSchedule(addTaskAtProjectStart(projectId, "", defaultPlannedFor()))
+        : withPeriodSchedule(addTaskAfter(afterId, "", defaultPlannedFor(), projectId));
     setFocus(id);
     setEditingProjectId(null);
     setEditingId(id);
@@ -1510,6 +1575,19 @@ export function App() {
     { id: "sched-next-month", label: "Schedule: Next month", aliases: ["schedule"], hint: "s n", run: () => applySchedule("nextMonth") },
     { id: "sched-someday", label: "Schedule: Someday", aliases: ["schedule"], hint: "s s", run: () => applySchedule("someday") },
     { id: "sched-inbox", label: "Schedule: Inbox (untriage)", aliases: ["schedule"], hint: "s i", run: () => applySchedule("inbox") },
+    // The home view's period tabs, reachable by name. Deliberately AFTER the
+    // Schedule commands: typing "next week" must offer scheduling first.
+    ...PERIODS.filter((p) => p !== "today").map((p) => ({
+      id: `period-${p}`,
+      label: `Go to ${PERIOD_LABELS[p]} (Today tab)`,
+      aliases: ["tab", "period"],
+      hint: "[ ]",
+      run: () => {
+        setZoom(null);
+        setView("today");
+        setPeriod(p);
+      },
+    })),
     {
       id: "copy-id",
       label: "Copy task ID to clipboard",
@@ -1689,7 +1767,9 @@ export function App() {
                 <OutlineView
                   view={view}
                   today={today}
-                  groups={projectGroups}
+                  period={period}
+                  onPeriod={setPeriod}
+                  groups={displayGroups}
                   suggested={suggestedTasks}
                   recurring={recurringToday}
                   onAcceptRecurring={(recId) => acceptRecurrence(recId, today)}

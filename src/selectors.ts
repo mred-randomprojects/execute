@@ -21,6 +21,7 @@ import {
 } from "./store/tasks";
 import {
   addDays,
+  dayHeaderLabel,
   monthElapsed,
   monthEnd,
   monthKey,
@@ -57,10 +58,14 @@ export function filterTree(tasks: Task[], pred: TaskPredicate): Task[] {
   return out;
 }
 
-export function viewPredicate(view: ViewKind, today: ISODate): TaskPredicate {
+export function viewPredicate(
+  view: ViewKind,
+  today: ISODate,
+  period: Period = "today"
+): TaskPredicate {
   switch (view) {
     case "today":
-      return (t) => t.plannedFor === today;
+      return periodPredicate(period, today);
     case "backlog":
       return (t) => t.plannedFor == null && isOpen(t);
     case "all":
@@ -70,6 +75,100 @@ export function viewPredicate(view: ViewKind, today: ISODate): TaskPredicate {
     case "trash":
       return () => false; // Rendered from a dedicated array, not the task tree.
   }
+}
+
+// ─── Period tabs (the home view's Today / Tomorrow / This week / … strip) ──
+
+/** The time windows the home view can show. The ladder's rungs, minus Inbox. */
+export type Period = Exclude<ScheduleStep, "inbox">;
+export const PERIODS: readonly Period[] = [
+  "today",
+  "tomorrow",
+  "thisWeek",
+  "nextWeek",
+  "thisMonth",
+  "nextMonth",
+  "someday",
+];
+export const PERIOD_LABELS: Record<Period, string> = {
+  today: "Today",
+  tomorrow: "Tomorrow",
+  thisWeek: "This week",
+  nextWeek: "Next week",
+  thisMonth: "This month",
+  nextMonth: "Next month",
+  someday: "Someday",
+};
+
+/**
+ * What a period tab shows: every task dated inside its calendar window, plus
+ * the fuzzy-horizon tasks that live on exactly that rung. Week-horizon tasks
+ * stay in the week tabs (the month tabs show month-level fuzz only), and the
+ * week/month windows include their past days, so nothing dated slips between
+ * tabs.
+ */
+export function periodPredicate(period: Period, today: ISODate): TaskPredicate {
+  const dated =
+    (match: (p: ISODate) => boolean): TaskPredicate =>
+    (t) =>
+      t.plannedFor != null ? match(t.plannedFor) : t.horizon != null && taskBucket(t, today) === period;
+  switch (period) {
+    case "today":
+      return (t) => t.plannedFor === today;
+    case "tomorrow":
+      return (t) => t.plannedFor === addDays(today, 1);
+    case "thisWeek":
+      return dated((p) => weekKey(p) === weekKey(today));
+    case "nextWeek":
+      return dated((p) => weekKey(p) === weekKeyOffset(today, 1));
+    case "thisMonth":
+      return dated((p) => monthKey(p) === monthKey(today));
+    case "nextMonth":
+      return dated((p) => monthKey(p) === monthKeyOffset(today, 1));
+    case "someday":
+      return (t) => t.plannedFor == null && t.horizon?.unit === "someday";
+  }
+}
+
+/** Second-order separators inside a project: the period's days, then "anytime". */
+export interface DaySection {
+  /** null = the fuzzy "anytime" group (horizon tasks without a concrete day). */
+  day: ISODate | null;
+  label: string;
+  tasks: Task[];
+}
+
+const ANYTIME_LABELS: Partial<Record<Period, string>> = {
+  thisWeek: "Anytime this week",
+  nextWeek: "Anytime next week",
+  thisMonth: "Anytime this month",
+  nextMonth: "Anytime next month",
+};
+
+/**
+ * Group a project's (already filtered) roots by their concrete day, ascending,
+ * with the fuzzy remainder trailing as "anytime". Subtrees ride under their
+ * root's day. Only multi-day periods (weeks/months) use this.
+ */
+export function groupTasksByDay(tasks: Task[], today: ISODate, period: Period): DaySection[] {
+  const dated = new Map<ISODate, Task[]>();
+  const anytime: Task[] = [];
+  for (const t of tasks) {
+    if (t.plannedFor != null) {
+      dated.set(t.plannedFor, [...(dated.get(t.plannedFor) ?? []), t]);
+    } else {
+      anytime.push(t);
+    }
+  }
+  const sections: DaySection[] = [...dated.keys()].sort().map((day) => ({
+    day,
+    label: dayHeaderLabel(day, today),
+    tasks: dated.get(day) ?? [],
+  }));
+  if (anytime.length > 0) {
+    sections.push({ day: null, label: ANYTIME_LABELS[period] ?? "Anytime", tasks: anytime });
+  }
+  return sections;
 }
 
 /** A subtree still holds live today-work: an *open* leaf planned for today. */
@@ -102,12 +201,14 @@ export function todayTasks(tasks: Task[], today: ISODate, parentLive = true): Ta
 export function viewTasks(
   tasks: Task[],
   view: ViewKind,
-  today: ISODate
+  today: ISODate,
+  period: Period = "today"
 ): Task[] {
   // Today needs subtree-level reasoning (drop done-only branches), which a flat
-  // per-node predicate can't express; the other views are simple predicates.
-  if (view === "today") return todayTasks(tasks, today);
-  return filterTree(tasks, viewPredicate(view, today));
+  // per-node predicate can't express; the other views (and the other period
+  // tabs) are simple predicates.
+  if (view === "today" && period === "today") return todayTasks(tasks, today);
+  return filterTree(tasks, viewPredicate(view, today, period));
 }
 
 export interface Row {
@@ -118,6 +219,8 @@ export interface Row {
 export interface ProjectTaskGroup {
   project: Project;
   tasks: Task[];
+  /** Present in multi-day period tabs: `tasks`, split under day separators. */
+  sections?: DaySection[];
 }
 
 /**

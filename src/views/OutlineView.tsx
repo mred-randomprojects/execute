@@ -14,13 +14,25 @@ import { projectRowId } from "../types";
 import type {
   Crumb,
   LaterGroup,
+  Period,
   ProjectTaskGroup,
   TodayProgress,
   ViewKind,
   ZoomFocus,
 } from "../selectors";
-import { VIEW_TITLES } from "../selectors";
-import { formatLong } from "../store/dates";
+import { PERIOD_LABELS, PERIODS, VIEW_TITLES } from "../selectors";
+import {
+  addDays,
+  formatLong,
+  monthDayLabel,
+  monthKey,
+  monthKeyOffset,
+  monthLabel,
+  weekKey,
+  weekKeyOffset,
+  weekLabel,
+  weekStart,
+} from "../store/dates";
 import { CaptureBar } from "../components/CaptureBar";
 import { CurrentBanner } from "../components/CurrentBanner";
 import { TaskRow } from "../components/TaskRow";
@@ -39,23 +51,69 @@ const PLACEHOLDERS: Record<ViewKind, string> = {
   trash: "",
 };
 
+const PERIOD_PLACEHOLDERS: Record<Period, string> = {
+  today: "Add a task for today…",
+  tomorrow: "Add a task for tomorrow…",
+  thisWeek: "Capture for this week…",
+  nextWeek: "Capture for next week…",
+  thisMonth: "Capture for this month…",
+  nextMonth: "Capture for next month…",
+  someday: "Capture a someday intention…",
+};
+
+/** The concrete window under the period title: a date, a week range, a month. */
+function periodEyebrow(period: Period, today: ISODate): string {
+  switch (period) {
+    case "today":
+      return formatLong(today);
+    case "tomorrow":
+      return formatLong(addDays(today, 1));
+    case "thisWeek": {
+      const start = weekStart(weekKey(today));
+      return `${weekLabel(weekKey(today))} · ${monthDayLabel(start)} – ${monthDayLabel(addDays(start, 6))}`;
+    }
+    case "nextWeek": {
+      const key = weekKeyOffset(today, 1);
+      const start = weekStart(key);
+      return `${weekLabel(key)} · ${monthDayLabel(start)} – ${monthDayLabel(addDays(start, 6))}`;
+    }
+    case "thisMonth":
+      return monthLabel(monthKey(today));
+    case "nextMonth":
+      return monthLabel(monthKeyOffset(today, 1));
+    case "someday":
+      return "No date yet";
+  }
+}
+
 function Subtitle({
   view,
+  period,
   progress,
 }: {
   view: ViewKind;
+  period: Period;
   progress: TodayProgress;
 }) {
   if (view === "today") {
-    if (progress.total > 0 && progress.remaining === 0) {
-      return <span className="text-good">Inbox zero — every task done.</span>;
+    if (period === "today") {
+      if (progress.total > 0 && progress.remaining === 0) {
+        return <span className="text-good">Inbox zero — every task done.</span>;
+      }
+      return (
+        <span>
+          {progress.remaining} to go
+          {progress.total > 0 ? ` · ${progress.done}/${progress.total} done` : ""}
+        </span>
+      );
     }
-    return (
-      <span>
-        {progress.remaining} to go
-        {progress.total > 0 ? ` · ${progress.done}/${progress.total} done` : ""}
-      </span>
-    );
+    if (period === "tomorrow") {
+      return <span>Tomorrow's list — capture above lands here. [ and ] switch periods.</span>;
+    }
+    if (period === "someday") {
+      return <span>Unscheduled intentions. Press s or t to commit one to a real window.</span>;
+    }
+    return <span>Committed days first, then "anytime". Capture above joins this window.</span>;
   }
   if (view === "backlog") {
     return <span>Things for later — by week, month, someday. Press s to schedule.</span>;
@@ -66,9 +124,18 @@ function Subtitle({
   return <span>Your whole outline. Press t to plan a task for today.</span>;
 }
 
-function EmptyState({ view }: { view: ViewKind }) {
-  const msg: Record<ViewKind, string> = {
+function EmptyState({ view, period }: { view: ViewKind; period: Period }) {
+  const periodMsg: Record<Period, string> = {
     today: "Nothing planned for today. Add one above, or plan from the backlog.",
+    tomorrow: "Nothing planned for tomorrow yet — add one above, or press t on a task.",
+    thisWeek: "Nothing scheduled this week yet — capture above, or press s on a task.",
+    nextWeek: "Nothing scheduled for next week yet.",
+    thisMonth: "Nothing scheduled this month yet.",
+    nextMonth: "Nothing scheduled for next month yet.",
+    someday: "No someday intentions — capture one above.",
+  };
+  const msg: Record<ViewKind, string> = {
+    today: periodMsg[period],
     backlog: "Backlog is clear.",
     all: "No tasks yet — capture your first above.",
     projects: "No projects yet — create one above.",
@@ -78,6 +145,50 @@ function EmptyState({ view }: { view: ViewKind }) {
   return (
     <div className="px-2 py-10 text-center text-[14px] text-ink-faint">
       {msg[view]}
+    </div>
+  );
+}
+
+/** The home view's time-window tabs: Today · Tomorrow · This week · … */
+function PeriodTabs({
+  period,
+  onPeriod,
+}: {
+  period: Period;
+  onPeriod: (p: Period) => void;
+}) {
+  return (
+    <nav aria-label="Time period" className="mt-3 flex flex-wrap items-center gap-0.5">
+      {PERIODS.map((p) => (
+        <button
+          key={p}
+          type="button"
+          onClick={(e) => {
+            e.currentTarget.blur();
+            onPeriod(p);
+          }}
+          className={[
+            "mono rounded-sm px-2 py-[4px] text-[10px] font-medium uppercase tracking-[0.1em] transition-colors",
+            p === period
+              ? "bg-surface-3 text-ink"
+              : "text-ink-faint hover:bg-surface-2 hover:text-ink",
+          ].join(" ")}
+        >
+          {PERIOD_LABELS[p]}
+        </button>
+      ))}
+    </nav>
+  );
+}
+
+/** Second-order separator: a day inside a project (period tabs only). */
+function DayDivider({ label }: { label: string }) {
+  return (
+    <div className="mb-0.5 mt-3 flex items-center gap-2 pl-6 pr-1">
+      <span className="mono text-[10px] font-medium uppercase tracking-[0.12em] text-ink-faint">
+        {label}
+      </span>
+      <span className="h-px flex-1 bg-line opacity-60" />
     </div>
   );
 }
@@ -500,6 +611,8 @@ function RecurringSuggestions({
 export function OutlineView({
   view,
   today,
+  period,
+  onPeriod,
   groups,
   suggested,
   recurring,
@@ -536,6 +649,8 @@ export function OutlineView({
 }: {
   view: ViewKind;
   today: ISODate;
+  period: Period;
+  onPeriod: (p: Period) => void;
   groups: ProjectTaskGroup[];
   suggested: Task[];
   recurring: Recurrence[];
@@ -597,11 +712,11 @@ export function OutlineView({
       ) : (
         <header className="mb-5 border-b border-line pb-4">
           {view === "today" && (
-            <div className="eyebrow mb-1.5">{formatLong(today)}</div>
+            <div className="eyebrow mb-1.5">{periodEyebrow(period, today)}</div>
           )}
           <div className="flex items-center justify-between gap-3">
             <h1 className="font-serif text-[32px] font-medium leading-none tracking-tight text-ink">
-              {TITLES[view]}
+              {view === "today" ? PERIOD_LABELS[period] : TITLES[view]}
             </h1>
             <div className="flex shrink-0 items-center gap-2">
               {view === "backlog" && (
@@ -610,8 +725,9 @@ export function OutlineView({
               {hideCompleted && <CompletedHiddenPill onShow={onToggleHideCompleted} />}
             </div>
           </div>
+          {view === "today" && <PeriodTabs period={period} onPeriod={onPeriod} />}
           <p className="mt-2 text-[14px] text-ink-soft">
-            <Subtitle view={view} progress={progress} />
+            <Subtitle view={view} period={period} progress={progress} />
           </p>
         </header>
       )}
@@ -623,7 +739,13 @@ export function OutlineView({
       <div className="mb-4">
         <CaptureBar
           inputRef={captureRef}
-          placeholder={zoom != null ? `Add to ${zoom.title}…` : PLACEHOLDERS[view]}
+          placeholder={
+            zoom != null
+              ? `Add to ${zoom.title}…`
+              : view === "today"
+                ? PERIOD_PLACEHOLDERS[period]
+                : PLACEHOLDERS[view]
+          }
           onAdd={onAdd}
           onArrowDown={onCaptureArrowDown}
           onFocus={onCaptureFocus}
@@ -642,7 +764,7 @@ export function OutlineView({
         </div>
       )}
 
-      {zoom == null && view === "today" && progress.total > 0 && progress.remaining === 0 && (
+      {zoom == null && view === "today" && period === "today" && progress.total > 0 && progress.remaining === 0 && (
         <div className="mb-4">
           <InboxZero total={progress.total} />
         </div>
@@ -665,12 +787,12 @@ export function OutlineView({
           </section>
         ) : usingBuckets ? (
           buckets.length === 0 ? (
-            <EmptyState view={view} />
+            <EmptyState view={view} period={period} />
           ) : (
             buckets.map((group) => <BucketSection key={group.meta.id} group={group} />)
           )
         ) : groups.length === 0 ? (
-          <EmptyState view={view} />
+          <EmptyState view={view} period={period} />
         ) : (
           groups.map((group) => {
             const collapsed = collapsedProjectIds.has(group.project.id);
@@ -700,6 +822,16 @@ export function OutlineView({
                   >
                     Empty — press + to add the first task.
                   </button>
+                ) : group.sections != null ? (
+                  // Multi-day period tabs: second-order day separators.
+                  group.sections.map((sec) => (
+                    <div key={sec.day ?? "anytime"}>
+                      <DayDivider label={sec.label} />
+                      {sec.tasks.map((t) => (
+                        <TaskRow key={t.id} task={t} depth={0} />
+                      ))}
+                    </div>
+                  ))
                 ) : (
                   group.tasks.map((t) => <TaskRow key={t.id} task={t} depth={0} />)
                 )}

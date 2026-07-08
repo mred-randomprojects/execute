@@ -75,6 +75,8 @@ export function SchedulePicker({
     >
       <div
         ref={ref}
+        role="dialog"
+        aria-label="Schedule"
         tabIndex={-1}
         onKeyDown={(e) => {
           e.stopPropagation();

@@ -947,8 +947,8 @@ describe("Schedule picker (s)", () => {
     blurActive();
 
     fireEvent.keyDown(document.body, { key: "s" }); // open the schedule picker
-    const tomorrow = await screen.findByText("Tomorrow");
-    fireEvent.click(tomorrow);
+    const picker = await screen.findByRole("dialog", { name: "Schedule" });
+    fireEvent.click(within(picker).getByText("Tomorrow"));
 
     // Planned for tomorrow (a future date) → drops out of Today…
     await waitFor(() => expect(screen.queryByText("call the bank")).toBeNull());
@@ -1128,7 +1128,8 @@ describe("Scheduling (the s picker)", () => {
     blurActive();
 
     fireEvent.keyDown(document.body, { key: "s" }); // open the scheduler
-    fireEvent.click(await screen.findByText("This week")); // pick the bucket
+    const picker = await screen.findByRole("dialog", { name: "Schedule" });
+    fireEvent.click(within(picker).getByText("This week")); // pick the bucket
 
     // It leaves Today (now a fuzzy horizon, not a concrete date).
     await waitFor(() => expect(screen.queryByText("write spec")).toBeNull());
@@ -1181,7 +1182,8 @@ describe("Scheduling (the s picker)", () => {
     await addTask("later thing");
     blurActive();
     fireEvent.keyDown(document.body, { key: "s" });
-    fireEvent.click(await screen.findByText("Someday"));
+    const picker = await screen.findByRole("dialog", { name: "Schedule" });
+    fireEvent.click(within(picker).getByText("Someday"));
 
     blurActive();
     fireEvent.keyDown(document.body, { key: "2" }); // Later view
@@ -1208,7 +1210,8 @@ describe("Cascade a schedule change to subtasks", () => {
     await seedParentChild();
 
     fireEvent.keyDown(document.body, { key: "s" }); // the deliberate path prompts
-    fireEvent.click(await screen.findByText("This week"));
+    const picker = await screen.findByRole("dialog", { name: "Schedule" });
+    fireEvent.click(within(picker).getByText("This week"));
     await screen.findByText("Also schedule its subtask?");
     fireEvent.keyDown(document.activeElement as HTMLElement, { key: "y" });
 
@@ -1230,7 +1233,8 @@ describe("Cascade a schedule change to subtasks", () => {
     await seedParentChild();
 
     fireEvent.keyDown(document.body, { key: "s" });
-    fireEvent.click(await screen.findByText("This week"));
+    const picker = await screen.findByRole("dialog", { name: "Schedule" });
+    fireEvent.click(within(picker).getByText("This week"));
     await screen.findByText("Also schedule its subtask?");
     fireEvent.keyDown(document.activeElement as HTMLElement, { key: "Enter" });
 
@@ -1241,6 +1245,81 @@ describe("Cascade a schedule change to subtasks", () => {
     fireEvent.keyDown(document.body, { key: "2" });
     expect(await screen.findByText("big rock")).toBeTruthy();
     expect(screen.getByText("This week")).toBeTruthy();
+  });
+});
+
+describe("Period tabs (home view)", () => {
+  const heading = () => screen.getByRole("heading", { level: 1 }).textContent;
+
+  it("] and [ walk the tabs; a deferred task shows up under Tomorrow", async () => {
+    render(<App />);
+    await addTask("pack bags"); // planned today
+    blurActive();
+
+    fireEvent.keyDown(document.body, { key: "t" }); // defer → tomorrow, leaves Today
+    await waitFor(() => expect(screen.queryByText("pack bags")).toBeNull());
+
+    fireEvent.keyDown(document.body, { key: "]" }); // Today → Tomorrow tab
+    await waitFor(() => expect(heading()).toBe("Tomorrow"));
+    expect(screen.getByText("pack bags")).toBeTruthy();
+
+    fireEvent.keyDown(document.body, { key: "[" }); // back home
+    await waitFor(() => expect(heading()).toBe("Today"));
+  });
+
+  it("capturing inside the Tomorrow tab schedules the new task for tomorrow", async () => {
+    render(<App />);
+    await screen.findByPlaceholderText("Add a task for today…");
+    blurActive();
+
+    fireEvent.keyDown(document.body, { key: "]" });
+    const capture = await screen.findByPlaceholderText("Add a task for tomorrow…");
+    fireEvent.change(capture, { target: { value: "buy tickets" } });
+    fireEvent.keyDown(capture, { key: "Enter" });
+    expect(await screen.findByText("buy tickets")).toBeTruthy();
+
+    (capture as HTMLInputElement).blur();
+    fireEvent.keyDown(document.body, { key: "[" }); // Today shouldn't have it
+    await waitFor(() => expect(heading()).toBe("Today"));
+    expect(screen.queryByText("buy tickets")).toBeNull();
+  });
+
+  it("This week nests day separators inside the project, fuzzy tasks under Anytime", async () => {
+    render(<App />);
+    await screen.findByPlaceholderText("Add a task for today…");
+    act(() => setDevDateOverride("2026-06-17")); // Wednesday of ISO week 25
+    await addTask("dated one"); // planned today (Jun 17)
+    await addTask("fuzzy one");
+    blurActive();
+
+    // "fuzzy one" (focused) → soft this-week horizon, via the palette.
+    fireEvent.keyDown(document.body, { key: "k", metaKey: true });
+    const palette = await screen.findByPlaceholderText("Type a command…");
+    fireEvent.change(palette, { target: { value: "this week" } });
+    fireEvent.keyDown(palette, { key: "Enter" });
+
+    blurActive();
+    fireEvent.keyDown(document.body, { key: "]" });
+    fireEvent.keyDown(document.body, { key: "]" }); // Today → Tomorrow → This week
+    await waitFor(() => expect(heading()).toBe("This week"));
+
+    expect(screen.getByText("dated one")).toBeTruthy(); // under its day…
+    expect(screen.getByText("Wednesday · Jun 17 · today")).toBeTruthy();
+    expect(screen.getByText("fuzzy one")).toBeTruthy(); // …and the fuzz trails
+    expect(screen.getByText("Anytime this week")).toBeTruthy();
+  });
+
+  it("pressing 1 returns to the Today tab from any period", async () => {
+    render(<App />);
+    await screen.findByPlaceholderText("Add a task for today…");
+    blurActive();
+
+    fireEvent.keyDown(document.body, { key: "]" });
+    fireEvent.keyDown(document.body, { key: "]" });
+    await waitFor(() => expect(heading()).toBe("This week"));
+
+    fireEvent.keyDown(document.body, { key: "1" });
+    await waitFor(() => expect(heading()).toBe("Today"));
   });
 });
 
