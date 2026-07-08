@@ -74,6 +74,7 @@ import { parseCapture } from "./store/capture";
 import {
   backlogCount,
   filterTree,
+  filterTreeEffective,
   flattenRows,
   groupRecurrencesByRule,
   groupTasksByBucket,
@@ -250,7 +251,7 @@ export function App() {
   const visibleTasks = useMemo(
     () =>
       hideCompleted
-        ? filterTree(filtered, (t) => viewPredicate(view, today, period)(t) && isOpen(t))
+        ? filterTreeEffective(filtered, (t) => viewPredicate(view, today, period)(t) && isOpen(t))
         : filtered,
     [filtered, hideCompleted, view, today, period]
   );

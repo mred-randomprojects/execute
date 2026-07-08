@@ -2,11 +2,13 @@ import { describe, it, expect } from "vitest";
 import {
   backlogCount,
   bucketMeta,
+  filterTreeEffective,
   groupRecurrencesByRule,
   groupTasksByBucket,
   groupTasksByDay,
   groupTasksByProject,
   periodPredicate,
+  todayTasks,
   horizonLabel,
   leftoverLeaves,
   prevVisibleSiblingId,
@@ -170,6 +172,37 @@ describe("projectSummaries", () => {
     const summaries = projectSummaries([parent], projects, today);
     const work = summaries.find((s) => s.project.name === "Work");
     expect(work).toMatchObject({ open: 1, today: 1, done: 0 }); // parent not counted
+  });
+});
+
+describe("Schedule inheritance (parent due dates bound their subtrees)", () => {
+  const today = "2026-06-18"; // Thursday, ISO week 25, June 2026
+
+  it("unscheduled children ride along in the window of their scheduled ancestor", () => {
+    const parent = withChildren(task("compras", "work", "2026-06-25"), [
+      task("open child", "work"),
+      { ...task("done child", "work"), completed: true },
+    ]);
+    const forest = filterTreeEffective([parent], periodPredicate("thisMonth", today));
+    expect(forest[0]?.children.map((c) => c.text)).toEqual(["open child", "done child"]);
+    // The same subtree also lives in the week tab containing the parent's date.
+    expect(
+      filterTreeEffective([parent], periodPredicate("nextWeek", today))[0]?.children.length
+    ).toBe(2);
+  });
+
+  it("a child's own schedule blocks inheritance from above", () => {
+    const parent = withChildren(task("p", "work", "2026-06-25"), [
+      { ...task("someday child", "work"), horizon: { unit: "someday", anchor: null } },
+    ]);
+    const forest = filterTreeEffective([parent], periodPredicate("thisMonth", today));
+    expect(forest[0]?.children).toEqual([]); // it speaks for itself: someday, not June
+  });
+
+  it("todayTasks keeps an unscheduled open child under a today parent", () => {
+    const parent = withChildren(task("errands", "work", today), [task("bank", "work")]);
+    const shown = todayTasks([parent], today);
+    expect(shown[0]?.children.map((c) => c.text)).toEqual(["bank"]);
   });
 });
 

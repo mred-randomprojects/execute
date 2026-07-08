@@ -1,4 +1,5 @@
 import type {
+  Horizon,
   ISODate,
   OutlineId,
   Project,
@@ -54,6 +55,62 @@ export function filterTree(tasks: Task[], pred: TaskPredicate): Task[] {
   for (const t of tasks) {
     const kids = filterTree(t.children, pred);
     if (pred(t) || kids.length > 0) out.push({ ...t, children: kids });
+  }
+  return out;
+}
+
+// ─── Schedule inheritance (a parent's due date bounds its subtree) ──
+// A parent due X means everything underneath is needed by X at the latest, so
+// an *unscheduled* task borrows the nearest scheduled ancestor's window for
+// membership questions — which tab shows it, which counts include it. A task
+// with its own plannedFor or horizon always speaks for itself (it blocks
+// inheritance from above), and rendering reads the real fields, so no phantom
+// dates appear on rows. The Reckoning deliberately does NOT inherit yet: a
+// backlogged child would just re-inherit its parent's stale date and the gate
+// could never clear — that needs its own design (see leftoverLeaves).
+
+type ScheduleCarry = { plannedFor: ISODate | null; horizon: Horizon | null } | null;
+
+/** The task as membership math should see it: unscheduled → wearing the carry. */
+function effectiveOf(t: Task, inherited: ScheduleCarry): Task {
+  if (t.plannedFor != null || t.horizon != null || inherited == null) return t;
+  return { ...t, plannedFor: inherited.plannedFor, horizon: inherited.horizon };
+}
+
+/** What the children inherit: this task's own schedule, else the carry. */
+function carryOf(t: Task, inherited: ScheduleCarry): ScheduleCarry {
+  return t.plannedFor != null || t.horizon != null
+    ? { plannedFor: t.plannedFor, horizon: t.horizon }
+    : inherited;
+}
+
+/** filterTree, but the predicate sees each task's *effective* schedule. */
+export function filterTreeEffective(
+  tasks: Task[],
+  pred: TaskPredicate,
+  inherited: ScheduleCarry = null
+): Task[] {
+  const out: Task[] = [];
+  for (const t of tasks) {
+    const kids = filterTreeEffective(t.children, pred, carryOf(t, inherited));
+    if (pred(effectiveOf(t, inherited)) || kids.length > 0) out.push({ ...t, children: kids });
+  }
+  return out;
+}
+
+/** Leaves (original nodes) whose *effective* schedule passes the predicate. */
+export function effectiveLeavesWhere(
+  tasks: Task[],
+  pred: TaskPredicate,
+  inherited: ScheduleCarry = null
+): Task[] {
+  const out: Task[] = [];
+  for (const t of tasks) {
+    if (t.children.length === 0) {
+      if (pred(effectiveOf(t, inherited))) out.push(t);
+    } else {
+      out.push(...effectiveLeavesWhere(t.children, pred, carryOf(t, inherited)));
+    }
   }
   return out;
 }
@@ -171,10 +228,11 @@ export function groupTasksByDay(tasks: Task[], today: ISODate, period: Period): 
   return sections;
 }
 
-/** A subtree still holds live today-work: an *open* leaf planned for today. */
-export function hasOpenTodayLeaf(t: Task, today: ISODate): boolean {
-  if (t.children.length === 0) return t.plannedFor === today && isOpen(t);
-  return t.children.some((c) => hasOpenTodayLeaf(c, today));
+/** A subtree still holds live today-work: an *open* leaf effectively due today. */
+export function hasOpenTodayLeaf(t: Task, today: ISODate, inherited: ScheduleCarry = null): boolean {
+  if (t.children.length === 0) return effectiveOf(t, inherited).plannedFor === today && isOpen(t);
+  const down = carryOf(t, inherited);
+  return t.children.some((c) => hasOpenTodayLeaf(c, today, down));
 }
 
 /**
@@ -189,11 +247,20 @@ export function hasOpenTodayLeaf(t: Task, today: ISODate): boolean {
  * direct commitments; `parentLive` carries that permission down through a live
  * subtree so their finished siblings show too.
  */
-export function todayTasks(tasks: Task[], today: ISODate, parentLive = true): Task[] {
+export function todayTasks(
+  tasks: Task[],
+  today: ISODate,
+  parentLive = true,
+  inherited: ScheduleCarry = null
+): Task[] {
   const out: Task[] = [];
   for (const t of tasks) {
-    const shown = hasOpenTodayLeaf(t, today) || (t.plannedFor === today && parentLive);
-    if (shown) out.push({ ...t, children: todayTasks(t.children, today, true) });
+    const shown =
+      hasOpenTodayLeaf(t, today, inherited) ||
+      (effectiveOf(t, inherited).plannedFor === today && parentLive);
+    if (shown) {
+      out.push({ ...t, children: todayTasks(t.children, today, true, carryOf(t, inherited)) });
+    }
   }
   return out;
 }
@@ -206,9 +273,10 @@ export function viewTasks(
 ): Task[] {
   // Today needs subtree-level reasoning (drop done-only branches), which a flat
   // per-node predicate can't express; the other views (and the other period
-  // tabs) are simple predicates.
+  // tabs) are simple predicates over the *effective* schedule, so unscheduled
+  // subtrees ride along with their scheduled ancestor.
   if (view === "today" && period === "today") return todayTasks(tasks, today);
-  return filterTree(tasks, viewPredicate(view, today, period));
+  return filterTreeEffective(tasks, viewPredicate(view, today, period));
 }
 
 export interface Row {
@@ -300,17 +368,20 @@ export function prevVisibleSiblingId(forest: Task[], id: TaskId): TaskId | null 
  */
 export function todayLeaves(tasks: Task[], today: ISODate): Task[] {
   const out: Task[] = [];
-  const walk = (list: Task[], parentLive: boolean) => {
+  const walk = (list: Task[], parentLive: boolean, inherited: ScheduleCarry) => {
     for (const t of list) {
-      if (!(hasOpenTodayLeaf(t, today) || (t.plannedFor === today && parentLive))) continue;
+      const eff = effectiveOf(t, inherited);
+      if (!(hasOpenTodayLeaf(t, today, inherited) || (eff.plannedFor === today && parentLive))) {
+        continue;
+      }
       if (t.children.length === 0) {
-        if (t.plannedFor === today) out.push(t);
+        if (eff.plannedFor === today) out.push(t);
       } else {
-        walk(t.children, true);
+        walk(t.children, true, carryOf(t, inherited));
       }
     }
   };
-  walk(tasks, true);
+  walk(tasks, true, null);
   return out;
 }
 
@@ -330,10 +401,20 @@ export function todayProgress(tasks: Task[], today: ISODate): TodayProgress {
 }
 
 export function backlogCount(tasks: Task[]): number {
-  return leavesWhere(tasks, (t) => t.plannedFor == null && isOpen(t)).length;
+  // Effective schedule: a leaf under a dated parent is already triaged (it's
+  // implicitly due with the parent), so it doesn't count as backlog.
+  return effectiveLeavesWhere(tasks, (t) => t.plannedFor == null && isOpen(t)).length;
 }
 
-/** Open leaves planned strictly before today — the Reckoning's input. */
+/**
+ * Open leaves planned strictly before today — the Reckoning's input.
+ *
+ * Deliberately reads each leaf's OWN date, not the inherited one: if children
+ * inherited an overdue parent's date, "send to backlog" (plannedFor → null)
+ * would just re-inherit it and the gate could never clear. Extending the
+ * Reckoning to inherited deadlines needs resolutions that touch the parent's
+ * date — an open design question, not a filter tweak.
+ */
 export function leftoverLeaves(tasks: Task[], today: ISODate): Task[] {
   return leavesWhere(
     tasks,

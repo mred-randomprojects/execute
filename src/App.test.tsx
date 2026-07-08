@@ -1343,6 +1343,48 @@ describe("Period tabs (home view)", () => {
   });
 });
 
+describe("Schedule inheritance in the views", () => {
+  it("scheduling only the parent still shows its subtasks in that window", async () => {
+    render(<App />);
+    await addTask("compras de la semana");
+    await addTask("frutas");
+    blurActive();
+    fireEvent.keyDown(document.body, { key: "Tab" }); // frutas → subtask
+    fireEvent.keyDown(document.body, { key: "T" }); // unplan the child (own schedule: none)
+    fireEvent.keyDown(document.body, { key: "ArrowUp" }); // focus the parent
+
+    fireEvent.keyDown(document.body, { key: "s" });
+    const picker = await screen.findByRole("dialog", { name: "Schedule" });
+    fireEvent.click(within(picker).getByText("This week"));
+    await screen.findByText("Also schedule its subtask?");
+    fireEvent.keyDown(document.activeElement as HTMLElement, { key: "Enter" }); // just the parent
+
+    blurActive();
+    fireEvent.keyDown(document.body, { key: "]" });
+    fireEvent.keyDown(document.body, { key: "]" }); // → This week tab
+    expect(await screen.findByText("compras de la semana")).toBeTruthy();
+    expect(screen.getByText("frutas")).toBeTruthy(); // inherited membership
+    expect(screen.getByText("Anytime this week")).toBeTruthy();
+
+    // Hiding resolved must not prune the inherited (open) child either.
+    fireEvent.keyDown(document.body, { key: "h" });
+    expect(await screen.findByText("frutas")).toBeTruthy();
+  });
+
+  it("an unscheduled subtask stays visible under its today parent", async () => {
+    render(<App />);
+    await addTask("parent today");
+    await addTask("loose end");
+    blurActive();
+    fireEvent.keyDown(document.body, { key: "Tab" }); // nest under the parent
+    fireEvent.keyDown(document.body, { key: "T" }); // unplan the child
+
+    // It inherits the parent's today deadline, so Today still lists it.
+    expect(await screen.findByText("loose end")).toBeTruthy();
+    expect(screen.getByText("parent today")).toBeTruthy();
+  });
+});
+
 describe("Recurring tasks", () => {
   it("defines a recurrence with a step, suggests it in Today, and accepts it", async () => {
     render(<App />);
