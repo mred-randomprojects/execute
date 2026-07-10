@@ -5,3 +5,7 @@ build/
 .vite/
 *.log
 .DS_Store
+*.local
+.env
+.env.*
+!.env.example
