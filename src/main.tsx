@@ -17,8 +17,20 @@ import { App } from "./App";
 const root = document.getElementById("root");
 if (root == null) throw new Error("Root element #root not found");
 
-createRoot(root).render(
-  <StrictMode>
-    <App />
-  </StrictMode>
-);
+if (import.meta.env.VITE_VIEWER === "1") {
+  // Web viewer build: auth-gated, read-only. The dynamic import keeps Firebase
+  // (and any sign-in code) out of the Electron and `pnpm dev` bundles entirely.
+  void import("./viewer/ViewerRoot").then(({ ViewerRoot }) => {
+    createRoot(root).render(
+      <StrictMode>
+        <ViewerRoot />
+      </StrictMode>
+    );
+  });
+} else {
+  createRoot(root).render(
+    <StrictMode>
+      <App />
+    </StrictMode>
+  );
+}
