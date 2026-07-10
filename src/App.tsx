@@ -165,6 +165,10 @@ export function App() {
   // Task whose "won't do" reason is being typed inline (empty field). Cleared when
   // the reason is saved/skipped, or when the row leaves the view.
   const [reasonEditId, setReasonEditId] = useState<TaskId | null>(null);
+  // In-place preview (`p`): the row unwraps its full title and shows its notes
+  // inline — a lighter look than the side panel. Pinned to one task; moving the
+  // cursor or Esc closes it.
+  const [peekId, setPeekId] = useState<TaskId | null>(null);
   const [editingProjectId, setEditingProjectId] = useState<ProjectId | null>(null);
   const [collapsed, setCollapsed] = useState<Set<TaskId>>(new Set());
   const [collapsedProjects, setCollapsedProjects] = useState<Set<ProjectId>>(new Set());
@@ -192,6 +196,12 @@ export function App() {
   const focusedId = selection.focusedId;
   const focusedTaskId =
     focusedId != null && !isProjectRowId(focusedId) ? focusedId : null;
+
+  // Peek is ephemeral: it belongs to the row it was opened on and closes the
+  // moment the cursor leaves it.
+  useEffect(() => {
+    if (peekId != null && focusedTaskId !== peekId) setPeekId(null);
+  }, [focusedTaskId, peekId]);
 
   useEffect(() => {
     void initStore();
@@ -954,6 +964,10 @@ export function App() {
     },
     scheduleLater: () => stepFocusedSchedule(1),
     scheduleEarlier: () => stepFocusedSchedule(-1),
+    taskPeek: () => {
+      if (focusedTaskId == null) return;
+      setPeekId((p) => (p === focusedTaskId ? null : focusedTaskId));
+    },
     taskIndent: () => {
       if (focusedRecurringToday != null) return; // don't restructure a suggestion
       if (view === "recurring") {
@@ -1137,6 +1151,7 @@ export function App() {
       else if (reasonEditId != null) setReasonEditId(null);
       else if (editingProjectId != null) setEditingProjectId(null);
       else if (editingId != null) setEditingId(null);
+      else if (peekId != null) setPeekId(null);
       else if (showPanel) setShowPanel(false);
       else if (zoom != null) {
         // Climb one level out of the zoom; land focus on the node we just left.
@@ -1209,6 +1224,7 @@ export function App() {
     "task.toggle": cmd.taskToggle,
     "task.scheduleLater": cmd.scheduleLater,
     "task.scheduleEarlier": cmd.scheduleEarlier,
+    "task.peek": cmd.taskPeek,
     "period.next": cmd.periodNext,
     "period.prev": cmd.periodPrev,
     "task.indent": cmd.taskIndent,
@@ -1275,6 +1291,7 @@ export function App() {
     selectedIds: selectedTaskIds,
     editingId,
     reasonEditId,
+    peekId,
     collapsed,
     mode,
     movingId,
@@ -1283,6 +1300,10 @@ export function App() {
     reopen: clearWontDo,
     toggleCollapse: toggleCollapsedFor,
     openDetail: openDetailFor,
+    togglePeek: (id) => {
+      setFocus(id);
+      setPeekId((p) => (p === id ? null : id));
+    },
     zoomInto: (id) => zoomInto({ kind: "task", id }),
     startEdit: (id) => {
       setFocus(id);
@@ -1353,6 +1374,8 @@ export function App() {
     selectedIds: selectedTaskIds,
     editingId,
     reasonEditId: null, // recurrence templates are never "won't do"
+    peekId: null, // templates carry no notes worth peeking; the panel covers them
+    togglePeek: () => {},
     collapsed,
     mode,
     movingId,
@@ -1545,6 +1568,7 @@ export function App() {
     { id: "trash", label: "Go to Trash", hint: "6", run: cmd.gotoView("trash") },
     { id: "new", label: "New task", hint: "o", run: cmd.taskNew },
     { id: "details", label: "Open details panel", hint: "→", run: openPanel },
+    { id: "peek", label: "Peek: unwrap task in place", aliases: ["preview"], hint: "p", run: cmd.taskPeek },
     { id: "toggle", label: "Complete / uncomplete task", hint: "space", run: cmd.taskToggle },
     {
       id: "wontdo",

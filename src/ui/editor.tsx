@@ -21,6 +21,8 @@ export interface Editor {
   editingId: TaskId | null;
   /** Task whose "won't do" reason is being captured inline (empty field). */
   reasonEditId: TaskId | null;
+  /** Task peeked in place (`p`): full unwrapped title + notes under the row. */
+  peekId: TaskId | null;
   collapsed: Set<TaskId>;
   mode: AppMode;
   movingId: TaskId | null;
@@ -31,6 +33,8 @@ export interface Editor {
   reopen: (id: TaskId) => void;
   toggleCollapse: (id: TaskId) => void;
   startEdit: (id: TaskId) => void;
+  /** Toggle the in-place peek (the ¶ glyph / `p`). Selects the row too. */
+  togglePeek: (id: TaskId) => void;
   /** Begin editing the "won't do" reason inline (on an already-skipped task). */
   startReason: (id: TaskId) => void;
   openDetail: (id: TaskId) => void;

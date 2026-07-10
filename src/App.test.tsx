@@ -976,6 +976,10 @@ describe("Command palette", () => {
 
   it("schedules the focused task to a horizon via Cmd+K (leaves Today)", async () => {
     render(<App />);
+    // Pin to a Monday: later in the week, the suggested-day engine would clamp a
+    // "this week" task's suggestion to *today* and resurface it in Today.
+    await screen.findByPlaceholderText("Add a task for today…");
+    act(() => setDevDateOverride("2026-06-15"));
     await addTask("groceries"); // captured into Today (plannedFor === today)
     blurActive();
 
@@ -1142,6 +1146,10 @@ describe("Zoom / focus (hoisting)", () => {
 describe("Scheduling (the s picker)", () => {
   it("schedules 'this week' and the task lands in the by-date Later bucket", async () => {
     render(<App />);
+    // Pin to a Monday: later in the week, the suggested-day engine would clamp a
+    // "this week" task's suggestion to *today* and resurface it in Today.
+    await screen.findByPlaceholderText("Add a task for today…");
+    act(() => setDevDateOverride("2026-06-15"));
     await addTask("write spec"); // planned today by default
     blurActive();
 
@@ -1217,6 +1225,10 @@ describe("Cascade a schedule change to subtasks", () => {
   // A parent ("big rock") planned today with one subtask ("pebble"), parent focused.
   async function seedParentChild() {
     render(<App />);
+    // Pin to a Monday: later in the week, the suggested-day engine would clamp a
+    // "this week" task's suggestion to *today* and resurface it in Today.
+    await screen.findByPlaceholderText("Add a task for today…");
+    act(() => setDevDateOverride("2026-06-15"));
     await addTask("big rock");
     await addTask("pebble");
     blurActive();
@@ -1340,6 +1352,47 @@ describe("Period tabs (home view)", () => {
 
     fireEvent.keyDown(document.body, { key: "1" });
     await waitFor(() => expect(heading()).toBe("Today"));
+  });
+});
+
+describe("Peek (in-place preview, p)", () => {
+  async function addTaskWithNotes(text: string, notesText: string) {
+    render(<App />);
+    await addTask(text);
+    blurActive();
+    fireEvent.keyDown(document.body, { key: "ArrowRight" }); // panel (preview)
+    fireEvent.keyDown(document.body, { key: "Tab" }); // dive into notes
+    const notes = await screen.findByPlaceholderText(NOTES_PLACEHOLDER);
+    fireEvent.change(notes, { target: { value: notesText } });
+    fireEvent.keyDown(notes, { key: "Escape" }); // save, back to the list
+    fireEvent.keyDown(document.body, { key: "Escape" }); // close the panel
+    await waitFor(() =>
+      expect(screen.queryByPlaceholderText(NOTES_PLACEHOLDER)).toBeNull()
+    );
+  }
+
+  it("p unwraps the focused task in place, showing its notes; p again closes", async () => {
+    await addTaskWithNotes("dense task", "the deep details");
+    expect(screen.queryByText("the deep details")).toBeNull(); // panel closed
+
+    fireEvent.keyDown(document.body, { key: "p" });
+    expect(await screen.findByText("the deep details")).toBeTruthy();
+
+    fireEvent.keyDown(document.body, { key: "p" });
+    await waitFor(() => expect(screen.queryByText("the deep details")).toBeNull());
+  });
+
+  it("the peek is pinned to its row: moving the cursor closes it", async () => {
+    await addTaskWithNotes("annotated", "hidden context");
+    await addTask("plain sibling"); // focus moves here
+    blurActive();
+    fireEvent.keyDown(document.body, { key: "ArrowUp" }); // focus "annotated"
+
+    fireEvent.keyDown(document.body, { key: "p" });
+    expect(await screen.findByText("hidden context")).toBeTruthy();
+
+    fireEvent.keyDown(document.body, { key: "ArrowDown" }); // leave the row
+    await waitFor(() => expect(screen.queryByText("hidden context")).toBeNull());
   });
 });
 

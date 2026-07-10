@@ -56,6 +56,7 @@ export const keymap: KeyBinding[] = [
   { key: "Alt+ArrowDown", action: "reorder.down", context: "normal", displayKey: "⌥ ↓", description: "move task down", section: "Tasks" },
   { key: "Backspace", action: "task.trash", context: "normal", displayKey: "⌫", description: "won’t do · press again to trash", section: "Tasks", noRepeat: true },
   { key: "w", action: "task.reason", context: "normal", displayKey: "w", description: "won’t do · edit the reason (why)", section: "Tasks" },
+  { key: "p", action: "task.peek", context: "normal", displayKey: "p", description: "peek — unwrap the title + notes in place", section: "Tasks" },
   { key: "c", action: "task.current", context: "normal", displayKey: "c", description: "set / clear current (focus) task", section: "Tasks" },
   { key: "Alt+Enter", action: "zoom.in", context: "normal", displayKey: "⌥ ↵", description: "zoom in / focus (esc backs out)", section: "Tasks" },
   { key: "m", action: "move.enter", context: "normal", displayKey: "m", description: "move mode (re-parent)", section: "Tasks" },

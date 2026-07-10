@@ -5,7 +5,7 @@ import { copyText } from "../ui/clipboard";
 import { relativeLabel } from "../store/dates";
 import { horizonLabel } from "../selectors";
 import { useEditor } from "../ui/editor";
-import { renderInline } from "../ui/markdown";
+import { renderBlock, renderInline } from "../ui/markdown";
 import { NO_SPELLCHECK } from "../ui/noSpellcheck";
 
 function FocusIcon() {
@@ -173,6 +173,7 @@ export function TaskRow({ task, depth }: { task: Task; depth: number }) {
   const inSelection = ed.selectedIds.includes(task.id);
   const editing = ed.editingId === task.id;
   const reasonEditing = ed.reasonEditId === task.id;
+  const peeking = ed.peekId === task.id && !editing;
   const isMoving = ed.movingId === task.id;
   const isDropTarget = ed.mode === "move" && isFocused && !isMoving;
   const hasChildren = task.children.length > 0;
@@ -195,7 +196,8 @@ export function TaskRow({ task, depth }: { task: Task; depth: number }) {
         onClick={() => ed.select(task.id)}
         onDoubleClick={() => ed.openDetail(task.id)}
         className={[
-          "group relative flex items-center gap-2 rounded-sm py-[5px] pr-2 cursor-default select-none",
+          "group relative flex gap-2 rounded-sm py-[5px] pr-2 cursor-default select-none",
+          peeking ? "items-start" : "items-center",
           isCurrent
             ? "bg-accent-soft/40 ring-1 ring-inset ring-accent/40"
             : inSelection && !editing
@@ -268,7 +270,10 @@ export function TaskRow({ task, depth }: { task: Task; depth: number }) {
           <span
             onClick={() => isFocused && ed.startEdit(task.id)}
             className={[
-              "flex-1 truncate text-[14px]",
+              "flex-1 text-[14px]",
+              peeking
+                ? "whitespace-pre-wrap [overflow-wrap:anywhere] leading-relaxed"
+                : "truncate",
               task.completed || wontDo
                 ? "text-ink-faint line-through"
                 : dimNotToday
@@ -309,9 +314,20 @@ export function TaskRow({ task, depth }: { task: Task; depth: number }) {
         )}
 
         {!editing && task.notes.trim() !== "" && (
-          <span className="shrink-0 text-ink-faint" title="Has details" aria-hidden="true">
-            ¶
-          </span>
+          <button
+            tabIndex={-1}
+            onClick={(e) => {
+              e.stopPropagation();
+              e.currentTarget.blur();
+              ed.togglePeek(task.id);
+            }}
+            className="flex shrink-0 items-center gap-1 text-ink-faint transition hover:text-ink"
+            title="Has details — peek in place (p)"
+            aria-label="Peek details"
+          >
+            <span aria-hidden="true">¶</span>
+            {isFocused && !peeking && <span className="kbd">p</span>}
+          </button>
         )}
 
         {progress != null && progress.total > 0 && (
@@ -374,6 +390,17 @@ export function TaskRow({ task, depth }: { task: Task; depth: number }) {
           </span>
         )}
       </div>
+
+      {/* The peek body (`p`): the task's notes, rendered in place under the
+          unwrapped title. Aligned with the title text, not the checkbox. */}
+      {peeking && task.notes.trim() !== "" && (
+        <div
+          className="mb-1.5 mr-2 rounded-sm border-l-2 border-accent/40 bg-surface-2/60 px-3 py-2 text-[13px] leading-relaxed text-ink-soft"
+          style={{ marginLeft: `${depth * 22 + 55}px` }}
+        >
+          {renderBlock(task.notes)}
+        </div>
+      )}
 
       {hasChildren &&
         !isCollapsed &&
