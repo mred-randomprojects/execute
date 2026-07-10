@@ -56,13 +56,13 @@ In **Authentication > Settings > Authorized domains**, make sure these are liste
 
 - `localhost`
 - `127.0.0.1`
-- `maximilianoredigonda.github.io`
+- `mred-randomprojects.github.io`
 
 If you use another production domain later, add only the hostname, not the full
 URL path. For the current GitHub Pages setup, the viewer URL is expected to be:
 
 ```text
-https://maximilianoredigonda.github.io/execute/
+https://mred-randomprojects.github.io/execute/
 ```
 
 ## 5. Create Firestore
@@ -86,7 +86,8 @@ The important rule is:
 match /users/{userId}/data/appData {
   allow read, write: if request.auth != null &&
     request.auth.uid == userId &&
-    request.auth.token.email == "maxiredigonda@gmail.com";
+    request.auth.token.email == "maxiredigonda@gmail.com" &&
+    request.auth.token.email_verified == true;
 }
 ```
 
