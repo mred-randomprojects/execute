@@ -118,6 +118,7 @@ import { EditorProvider, type Editor } from "./ui/editor";
 import { copyText } from "./ui/clipboard";
 import { Sidebar } from "./components/Sidebar";
 import { SyncButton } from "./components/SyncButton";
+import { initAutoSync } from "./sync/desktopSync";
 import { OutlineView } from "./views/OutlineView";
 import { ProjectsView } from "./views/ProjectsView";
 import { RecurringView } from "./views/RecurringView";
@@ -207,6 +208,9 @@ export function App() {
   useEffect(() => {
     void initStore();
   }, []);
+  // Auto cloud-sync (desktop only; no-op elsewhere). Rides the store's persist
+  // hook, so every change syncs without per-action wiring.
+  useEffect(() => initAutoSync(), []);
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", state.theme);
   }, [state.theme]);

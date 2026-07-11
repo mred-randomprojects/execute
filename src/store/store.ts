@@ -55,10 +55,20 @@ function notify() {
   for (const l of listeners) l();
 }
 
+// Optional hook fired right after each local persist. Cloud sync registers here
+// (see src/sync/desktopSync) so it mirrors EVERY change without any per-mutation
+// wiring — because it rides the single save choke point that update()/undo() all
+// funnel through, no mutation can silently skip a sync.
+let onPersist: (() => void) | null = null;
+export function setCloudSync(fn: (() => void) | null): void {
+  onPersist = fn;
+}
+
 function scheduleSave() {
   if (saveTimer != null) clearTimeout(saveTimer);
   saveTimer = setTimeout(() => {
     void saveRaw(state);
+    onPersist?.();
   }, 200);
 }
 
@@ -102,6 +112,12 @@ export async function initStore(): Promise<void> {
 
 export function getState(): AppState {
   return state;
+}
+
+/** True once the local store has finished loading — cloud sync gates on this so
+ * it can never push the empty pre-load state over good cloud data. */
+export function getReady(): boolean {
+  return ready;
 }
 
 export function useStore(): { state: AppState; ready: boolean } {

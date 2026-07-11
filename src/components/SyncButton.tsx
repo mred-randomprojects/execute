@@ -1,57 +1,66 @@
-import { useState } from "react";
-import { pushNow, syncAvailable } from "../sync/desktopSync";
-
-type Status = "idle" | "syncing" | "done" | "error";
+import { useState, useSyncExternalStore } from "react";
+import { getStatus, signIn, subscribeStatus, syncNow } from "../sync/desktopSync";
 
 /**
- * Desktop-only "Sync to cloud" control (sidebar footer). Hidden entirely unless
- * the loopback OAuth client is configured. On demand: signs in (system browser)
- * if needed, then pushes the whole store up. Read-only web viewer reflects it.
+ * Desktop-only cloud-sync status (sidebar footer). Sync itself is automatic —
+ * every change pushes on its own (see desktopSync). This just surfaces state
+ * and offers the one-time interactive sign-in / a retry.
  */
 export function SyncButton() {
-  const [status, setStatus] = useState<Status>("idle");
-  const [msg, setMsg] = useState<string | null>(null);
+  const status = useSyncExternalStore(subscribeStatus, getStatus);
+  const [signingIn, setSigningIn] = useState(false);
 
-  if (!syncAvailable()) return null;
+  if (status.kind === "off") return null;
 
-  async function run() {
-    setStatus("syncing");
-    setMsg(null);
+  async function handleSignIn() {
+    setSigningIn(true);
     try {
-      const { email } = await pushNow();
-      setStatus("done");
-      setMsg(email != null ? `Synced · ${email}` : "Synced");
-    } catch (e: unknown) {
-      setStatus("error");
-      setMsg(e instanceof Error ? e.message : "Sync failed");
+      await signIn();
+    } catch {
+      /* status surfaces the error */
+    } finally {
+      setSigningIn(false);
     }
   }
 
   const dot =
-    status === "done"
+    status.kind === "idle"
       ? "bg-good"
-      : status === "error"
+      : status.kind === "error"
         ? "bg-bad"
-        : status === "syncing"
+        : status.kind === "syncing"
           ? "bg-mid"
           : "bg-line-strong";
 
+  const label =
+    status.kind === "signedOut"
+      ? signingIn
+        ? "Signing in…"
+        : "Sign in to sync"
+      : status.kind === "syncing"
+        ? "Syncing…"
+        : status.kind === "error"
+          ? "Sync error — retry"
+          : "Synced to cloud";
+
+  const onClick =
+    status.kind === "signedOut" ? () => void handleSignIn() : () => syncNow();
+
   return (
-    <div className="flex flex-col gap-1">
+    <div className="flex flex-col gap-0.5">
       <button
-        onClick={() => void run()}
-        disabled={status === "syncing"}
+        onClick={onClick}
+        disabled={status.kind === "syncing" || signingIn}
         className="flex items-center justify-between rounded-sm px-2.5 py-1.5 text-[13px] text-ink-soft hover:bg-surface-2/60 hover:text-ink disabled:opacity-60"
       >
-        <span>{status === "syncing" ? "Syncing…" : "Sync to cloud"}</span>
+        <span>{label}</span>
         <span className={`h-[9px] w-[9px] rounded-full ${dot}`} />
       </button>
-      {msg != null && (
-        <span
-          className={`px-2.5 text-[11px] ${status === "error" ? "text-bad" : "text-ink-faint"}`}
-        >
-          {msg}
-        </span>
+      {status.kind === "error" && (
+        <span className="px-2.5 text-[11px] text-bad">{status.message}</span>
+      )}
+      {status.kind === "idle" && status.email != null && (
+        <span className="px-2.5 text-[11px] text-ink-faint">{status.email}</span>
       )}
     </div>
   );
