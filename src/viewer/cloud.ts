@@ -1,4 +1,4 @@
-import { doc, getDoc, runTransaction, setDoc } from "firebase/firestore";
+import { doc, getDoc, onSnapshot, runTransaction, setDoc, type Unsubscribe } from "firebase/firestore";
 import { db } from "../firebase";
 import type { AppState } from "../types";
 import { coerceState } from "../store/persistence";
@@ -18,6 +18,24 @@ export async function loadAppState(uid: string): Promise<AppState | null> {
   const snap = await getDoc(appDataRef(uid));
   if (!snap.exists()) return null;
   return coerceState(snap.data());
+}
+
+/**
+ * Live subscription to the cloud document. Fires immediately with the current
+ * value (from cache, then server) and again on every change — so the viewer
+ * reflects desktop edits in near-real-time and its own writes converge. `null`
+ * means the document doesn't exist yet. Returns the unsubscribe fn.
+ */
+export function subscribeAppState(
+  uid: string,
+  onData: (state: AppState | null) => void,
+  onError: (e: unknown) => void,
+): Unsubscribe {
+  return onSnapshot(
+    appDataRef(uid),
+    (snap) => onData(snap.exists() ? coerceState(snap.data()) : null),
+    onError,
+  );
 }
 
 /**

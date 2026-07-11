@@ -2,10 +2,26 @@ import { useEffect, useState } from "react";
 import type { User } from "firebase/auth";
 import { AuthProvider, useAuth } from "../auth";
 import { LoginPage } from "../components/LoginPage";
-import type { AppState } from "../types";
-import { loadAppState } from "./cloud";
+import type { AppState, Task, TaskId } from "../types";
+import { mapById } from "../store/tasks";
+import { mergeAndSave, subscribeAppState } from "./cloud";
 import { ReadOnlyApp } from "./ReadOnlyApp";
 import { SeedPanel } from "./SeedPanel";
+
+/** Flip completion on one task (pure), stamping updatedAt so the LWW merge
+ * treats this edit as the newest for that task. */
+function toggleCompleted(tasks: Task[], id: TaskId): Task[] {
+  return mapById(tasks, id, (t) => {
+    const completed = !t.completed;
+    return {
+      ...t,
+      completed,
+      completedAt: completed ? Date.now() : null,
+      wontDo: completed ? null : t.wontDo,
+      updatedAt: Date.now(),
+    };
+  });
+}
 
 // UX-level gate only. The REAL enforcement is the Firestore security rules,
 // which reject any read whose auth token isn't this verified email — the client
@@ -56,41 +72,36 @@ function Gate() {
   return <AuthedViewer user={user} onSignOut={() => void signOut()} />;
 }
 
-type LoadState =
-  | { kind: "loading" }
-  | { kind: "empty" }
-  | { kind: "ready"; state: AppState }
-  | { kind: "error"; message: string };
-
 function AuthedViewer({ user, onSignOut }: { user: User; onSignOut: () => void }) {
   // ?seed → the one-time upload flow instead of the reader.
   const seedMode =
     typeof window !== "undefined" &&
     new URLSearchParams(window.location.search).has("seed");
 
-  const [load, setLoad] = useState<LoadState>({ kind: "loading" });
+  const [state, setState] = useState<AppState | null>(null);
+  const [phase, setPhase] = useState<"loading" | "ready" | "error">("loading");
+  const [errorMsg, setErrorMsg] = useState("");
 
   useEffect(() => {
     if (seedMode) return;
-    let cancelled = false;
-    loadAppState(user.uid)
-      .then((state) => {
-        if (cancelled) return;
-        setLoad(state == null ? { kind: "empty" } : { kind: "ready", state });
-      })
-      .catch((e: unknown) => {
-        if (cancelled) return;
-        const message = e instanceof Error ? e.message : "Failed to load your data.";
-        setLoad({ kind: "error", message });
-      });
-    return () => {
-      cancelled = true;
-    };
+    // Live subscription: reflects desktop edits and our own writes as they land.
+    const unsub = subscribeAppState(
+      user.uid,
+      (s) => {
+        setState(s);
+        setPhase("ready");
+      },
+      (e) => {
+        setErrorMsg(e instanceof Error ? e.message : "Failed to load your data.");
+        setPhase("error");
+      },
+    );
+    return unsub;
   }, [user.uid, seedMode]);
 
   if (seedMode) return <SeedPanel user={user} onSignOut={onSignOut} />;
 
-  if (load.kind === "loading") {
+  if (phase === "loading") {
     return (
       <Centered>
         <p className="text-sm text-ink-faint">Loading your tasks…</p>
@@ -98,11 +109,11 @@ function AuthedViewer({ user, onSignOut }: { user: User; onSignOut: () => void }
     );
   }
 
-  if (load.kind === "error") {
+  if (phase === "error") {
     return (
       <Centered>
         <h1 className="font-serif text-2xl font-medium">Couldn't load</h1>
-        <p className="max-w-sm text-sm text-ink-soft">{load.message}</p>
+        <p className="max-w-sm text-sm text-ink-soft">{errorMsg}</p>
         <p className="max-w-sm text-[12px] text-ink-faint">
           If this says permission denied, re-publish the Firestore rules.
         </p>
@@ -116,7 +127,7 @@ function AuthedViewer({ user, onSignOut }: { user: User; onSignOut: () => void }
     );
   }
 
-  if (load.kind === "empty") {
+  if (state == null) {
     return (
       <Centered>
         <h1 className="font-serif text-2xl font-medium">No data yet</h1>
@@ -134,7 +145,19 @@ function AuthedViewer({ user, onSignOut }: { user: User; onSignOut: () => void }
     );
   }
 
-  return <ReadOnlyApp state={load.state} user={user} onSignOut={onSignOut} />;
+  // Checking a task off: apply optimistically, then push through the merge
+  // (per-task LWW) so a concurrent desktop edit can't clobber it. onSnapshot
+  // then reconciles to the server truth (which includes this change).
+  const onToggle = (taskId: TaskId) => {
+    const next: AppState = { ...state, tasks: toggleCompleted(state.tasks, taskId) };
+    setState(next);
+    void mergeAndSave(user.uid, next).catch((e: unknown) => {
+      // eslint-disable-next-line no-console
+      console.error("cloud sync failed", e);
+    });
+  };
+
+  return <ReadOnlyApp state={state} user={user} onSignOut={onSignOut} onToggle={onToggle} />;
 }
 
 export function ViewerRoot() {

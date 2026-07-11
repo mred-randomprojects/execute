@@ -70,10 +70,12 @@ export function ReadOnlyApp({
   state,
   user,
   onSignOut,
+  onToggle,
 }: {
   state: AppState;
   user: User;
   onSignOut: () => void;
+  onToggle: (id: TaskId) => void;
 }) {
   const today = todayISO(state.devDateOverride);
   const [view, setView] = useState<ViewKind>("today");
@@ -126,7 +128,8 @@ export function ReadOnlyApp({
       setCursorId(id);
       setPeekId((p) => (p === id ? null : id));
     },
-    toggle: noop,
+    // Completion is the one write the viewer allows — check tasks off anywhere.
+    toggle: onToggle,
     reopen: noop,
     startEdit: noop,
     startReason: noop,
@@ -157,7 +160,7 @@ export function ReadOnlyApp({
         <div className="flex items-center gap-3">
           <span className="font-serif text-lg font-medium">execute</span>
           <span className="mono rounded-sm bg-surface-2 px-1.5 py-[2px] text-[10px] uppercase tracking-[0.12em] text-ink-faint">
-            read-only
+            live
           </span>
         </div>
         <div className="flex items-center gap-3">
