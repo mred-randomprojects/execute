@@ -34,6 +34,7 @@ function task(id: string, children: Task[] = [], overrides: Partial<Task> = {}):
     wontDo: null,
     children,
     createdAt: 0,
+    updatedAt: 0,
     priority: 4,
     plannedFor: null,
     horizon: null,

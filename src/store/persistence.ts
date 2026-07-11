@@ -169,6 +169,9 @@ function coerceTask(raw: unknown): Task {
     wontDo,
     children,
     createdAt: num(o.createdAt, Date.now()),
+    // Pre-sync data has no updatedAt → baseline from createdAt so LWW has a sane
+    // starting point (a task never edited since creation "changed" at creation).
+    updatedAt: num(o.updatedAt, num(o.createdAt, Date.now())),
     priority: coercePriority(o.priority),
     plannedFor,
     horizon,

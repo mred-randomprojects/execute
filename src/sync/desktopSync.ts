@@ -5,7 +5,7 @@ import {
 } from "firebase/auth";
 import { auth } from "../firebase";
 import { getReady, getState, setCloudSync } from "../store/store";
-import { saveAppState } from "../viewer/cloud";
+import { mergeAndSave } from "../viewer/cloud";
 
 const clientId = import.meta.env.VITE_GOOGLE_DESKTOP_CLIENT_ID;
 const clientSecret = import.meta.env.VITE_GOOGLE_DESKTOP_CLIENT_SECRET;
@@ -68,7 +68,7 @@ async function doPush() {
   pushing = true;
   setStatus({ kind: "syncing", email: user.email });
   try {
-    await saveAppState(user.uid, getState());
+    await mergeAndSave(user.uid, getState());
     setStatus({ kind: "idle", email: user.email });
   } catch (e: unknown) {
     setStatus({

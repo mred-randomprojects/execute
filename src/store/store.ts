@@ -87,9 +87,73 @@ function getSnapshot(): AppState {
  * Apply a transform. `track` (default true) pushes an undo snapshot first;
  * pass false for incidental changes (theme, dev date, rollover bookkeeping).
  */
+// ─── Automatic per-task updatedAt stamping ──────────────────────────
+//
+// Cloud sync merges per task by updatedAt (see src/sync/merge). Rather than
+// bump the stamp at each of the dozens of mutation sites (easy to forget), we
+// diff the whole tree once at the single update() choke point: any task whose
+// *own* fields changed gets stamped `now`. Structural sharing is preserved, so
+// untouched subtrees keep their identity (and don't re-render).
+
+function horizonEq(a: Task["horizon"], b: Task["horizon"]): boolean {
+  if (a == null || b == null) return a === b;
+  return a.unit === b.unit && a.anchor === b.anchor;
+}
+function wontDoEq(a: Task["wontDo"], b: Task["wontDo"]): boolean {
+  if (a == null || b == null) return a === b;
+  return a.reason === b.reason && a.at === b.at;
+}
+function labelsEq(a: string[], b: string[]): boolean {
+  return a.length === b.length && a.every((x, i) => x === b[i]);
+}
+function sameOwnFields(a: Task, b: Task): boolean {
+  return (
+    a.text === b.text &&
+    a.notes === b.notes &&
+    a.completed === b.completed &&
+    a.completedAt === b.completedAt &&
+    a.projectId === b.projectId &&
+    a.priority === b.priority &&
+    a.plannedFor === b.plannedFor &&
+    a.estimatedMinutes === b.estimatedMinutes &&
+    a.carriedCount === b.carriedCount &&
+    a.recurrenceId === b.recurrenceId &&
+    a.occurrenceDate === b.occurrenceDate &&
+    horizonEq(a.horizon, b.horizon) &&
+    wontDoEq(a.wontDo, b.wontDo) &&
+    labelsEq(a.labels, b.labels)
+  );
+}
+function indexById(tasks: Task[], into: Map<TaskId, Task>): void {
+  for (const t of tasks) {
+    into.set(t.id, t);
+    indexById(t.children, into);
+  }
+}
+function stampNode(node: Task, prevById: Map<TaskId, Task>, now: number): Task {
+  let children = node.children;
+  if (children.length > 0) {
+    const mapped = children.map((c) => stampNode(c, prevById, now));
+    if (mapped.some((c, i) => c !== children[i])) children = mapped;
+  }
+  const before = prevById.get(node.id);
+  const ownChanged = before == null || !sameOwnFields(before, node);
+  const updatedAt = ownChanged ? now : node.updatedAt;
+  if (children === node.children && updatedAt === node.updatedAt) return node;
+  return { ...node, children, updatedAt };
+}
+function stampTasks(prev: AppState, next: AppState): AppState {
+  if (next.tasks === prev.tasks) return next; // no structural task change
+  const prevById = new Map<TaskId, Task>();
+  indexById(prev.tasks, prevById);
+  const now = Date.now();
+  return { ...next, tasks: next.tasks.map((t) => stampNode(t, prevById, now)) };
+}
+
 function update(fn: (s: AppState) => AppState, track = true): void {
   if (track) undoStack = [state, ...undoStack].slice(0, MAX_UNDO);
-  state = fn(state);
+  const prev = state;
+  state = stampTasks(prev, fn(prev));
   notify();
   scheduleSave();
 }

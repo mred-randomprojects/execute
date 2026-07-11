@@ -97,6 +97,12 @@ export interface Task {
   wontDo: WontDo | null;
   children: Task[];
   createdAt: number;
+  /**
+   * Wall-clock ms of the last change to this task's *own* fields (not its
+   * children). Stamped automatically at the store's mutation choke point and
+   * used by cloud sync for per-task last-write-wins merging. See src/sync/merge.
+   */
+  updatedAt: number;
   priority: TaskPriority;
   /**
    * The day this task is committed to. `null` = no concrete date.

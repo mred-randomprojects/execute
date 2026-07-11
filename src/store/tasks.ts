@@ -18,6 +18,7 @@ export function makeTask(
     wontDo: null,
     children: [],
     createdAt: Date.now(),
+    updatedAt: Date.now(),
     priority: 4,
     plannedFor: null,
     horizon: null,
@@ -34,6 +35,7 @@ export function cloneWithNewIds(task: Task): Task {
   return {
     ...task,
     id: nanoid() as TaskId,
+    updatedAt: Date.now(),
     children: task.children.map(cloneWithNewIds),
   };
 }

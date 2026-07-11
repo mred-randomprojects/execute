@@ -1,7 +1,8 @@
-import { doc, getDoc, setDoc } from "firebase/firestore";
+import { doc, getDoc, runTransaction, setDoc } from "firebase/firestore";
 import { db } from "../firebase";
 import type { AppState } from "../types";
 import { coerceState } from "../store/persistence";
+import { mergeStates } from "../sync/merge";
 
 function appDataRef(uid: string) {
   return doc(db, "users", uid, "data", "appData");
@@ -27,4 +28,21 @@ export async function loadAppState(uid: string): Promise<AppState | null> {
  */
 export async function saveAppState(uid: string, state: AppState): Promise<void> {
   await setDoc(appDataRef(uid), { ...state, updatedAt: Date.now() });
+}
+
+/**
+ * Two-way-safe push: inside a transaction, read the current cloud doc, merge the
+ * local state into it (per-task LWW — see src/sync/merge), and write the result.
+ * With a single writer this is equivalent to an overwrite; once a second device
+ * can write, it's what stops the two from clobbering each other. Returns the
+ * merged state so the caller can adopt it locally (keeping local ≡ cloud).
+ */
+export async function mergeAndSave(uid: string, local: AppState): Promise<AppState> {
+  const ref = appDataRef(uid);
+  return runTransaction(db, async (tx) => {
+    const snap = await tx.get(ref);
+    const merged = snap.exists() ? mergeStates(local, coerceState(snap.data())) : local;
+    tx.set(ref, { ...merged, updatedAt: Date.now() });
+    return merged;
+  });
 }
