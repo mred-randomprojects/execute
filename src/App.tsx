@@ -71,6 +71,7 @@ import { findById, findParentId, isOpen, walk } from "./store/tasks";
 import { addDays, monthKey, monthKeyOffset, todayISO, weekKey, weekKeyOffset } from "./store/dates";
 import { defaultRule } from "./store/recurrence";
 import { parseCapture } from "./store/capture";
+import { taskToMarkdown } from "./store/taskMarkdown";
 import {
   backlogCount,
   filterTree,
@@ -1625,6 +1626,22 @@ export function App() {
       aliases: ["id", "copy id", "task id"],
       run: () => {
         if (focusedTaskId != null) void copyText(focusedTaskId);
+      },
+    },
+    {
+      id: "copy-md",
+      label: "Copy task data (markdown, with notes)",
+      aliases: ["copy", "markdown", "export", "copy task", "task data"],
+      run: () => {
+        if (focusedTask != null) void copyText(taskToMarkdown(focusedTask, { includeNotes: true }));
+      },
+    },
+    {
+      id: "copy-md-titles",
+      label: "Copy task data (markdown, titles only)",
+      aliases: ["copy", "markdown", "export", "task data"],
+      run: () => {
+        if (focusedTask != null) void copyText(taskToMarkdown(focusedTask, { includeNotes: false }));
       },
     },
     { id: "move", label: "Move task (re-parent)", hint: "m", run: cmd.moveEnter },
