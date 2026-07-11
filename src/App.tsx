@@ -117,6 +117,7 @@ import type { AppMode, ContextState } from "./keyboard/types";
 import { EditorProvider, type Editor } from "./ui/editor";
 import { copyText } from "./ui/clipboard";
 import { Sidebar } from "./components/Sidebar";
+import { SyncButton } from "./components/SyncButton";
 import { OutlineView } from "./views/OutlineView";
 import { ProjectsView } from "./views/ProjectsView";
 import { RecurringView } from "./views/RecurringView";
@@ -1702,6 +1703,7 @@ export function App() {
         {import.meta.env.DEV && (
           <DevControls today={today} override={state.devDateOverride} onSet={setDevDateOverride} />
         )}
+        <SyncButton />
       </Sidebar>
 
       <main className="flex flex-1 flex-col overflow-hidden">

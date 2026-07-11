@@ -35,6 +35,12 @@ interface ExecuteBridge {
   isElectron: boolean;
   loadStore: () => Promise<unknown>;
   saveStore: (data: AppState) => Promise<boolean>;
+  // Present only in builds with cloud sync wired: loopback Google OAuth run in
+  // the Electron main process, resolving with a Google id_token.
+  signInWithGoogle?: (
+    clientId: string,
+    clientSecret: string,
+  ) => Promise<{ idToken: string }>;
 }
 
 declare global {

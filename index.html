@@ -7,12 +7,15 @@
       Local-first desktop app: it only ever loads its own bundled assets (prod)
       or the fixed-port Vite dev server (dev). 'unsafe-inline' on script is
       required for Vite/React fast-refresh's inline preamble in dev; the
-      ws/http localhost entries are the dev HMR socket. Primary security posture
-      is Electron contextIsolation + sandbox + no remote content (see main.cjs).
+      ws/http localhost entries are the dev HMR socket. The googleapis
+      connect-src entries are for optional cloud sync (Firebase Auth token
+      exchange + Firestore writes); the OAuth consent itself runs in the system
+      browser, never in-app, so no script/frame origins are opened. Primary
+      security posture is Electron contextIsolation + sandbox (see main.cjs).
     -->
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self' ws://localhost:5173 http://localhost:5173"
+      content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self' ws://localhost:5173 http://localhost:5173 https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://firestore.googleapis.com https://www.googleapis.com"
     />
     <title>Execute</title>
   </head>
