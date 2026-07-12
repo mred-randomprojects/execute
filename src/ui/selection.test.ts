@@ -4,8 +4,10 @@ import {
   emptySelection,
   moveSelection,
   nearestSurvivor,
+  rangeTo,
   selectAfterRemoving,
   selectOne,
+  toggleSelected,
 } from "./selection";
 
 const ids = (...xs: string[]) => xs as TaskId[];
@@ -87,5 +89,37 @@ describe("selectAfterRemoving", () => {
     expect(selectAfterRemoving(selectOne(id("a"), visible), visible, new Set(visible))).toEqual(
       emptySelection
     );
+  });
+});
+
+describe("toggleSelected (⌘-click)", () => {
+  it("adds a non-adjacent row for a discontiguous selection", () => {
+    const s = toggleSelected(selectOne(id("a"), visible), id("c"), visible);
+    expect(s.selectedIds).toEqual(ids("a", "c"));
+    expect(s.focusedId).toBe("c");
+  });
+  it("removes a row that is already selected", () => {
+    const start = toggleSelected(selectOne(id("a"), visible), id("c"), visible); // [a, c]
+    const s = toggleSelected(start, id("a"), visible);
+    expect(s.selectedIds).toEqual(ids("c"));
+  });
+  it("empties when the last selected row is toggled off", () => {
+    expect(toggleSelected(selectOne(id("b"), visible), id("b"), visible)).toEqual(emptySelection);
+  });
+  it("keeps the selection in visible order regardless of click order", () => {
+    const s = toggleSelected(selectOne(id("d"), visible), id("b"), visible);
+    expect(s.selectedIds).toEqual(ids("b", "d"));
+  });
+});
+
+describe("rangeTo (⇧-click)", () => {
+  it("selects the contiguous range from the anchor forward", () => {
+    const s = rangeTo(selectOne(id("b"), visible), id("d"), visible);
+    expect(s.selectedIds).toEqual(ids("b", "c", "d"));
+    expect(s.focusedId).toBe("d");
+  });
+  it("selects backwards too", () => {
+    const s = rangeTo(selectOne(id("c"), visible), id("a"), visible);
+    expect(s.selectedIds).toEqual(ids("a", "b", "c"));
   });
 });

@@ -108,8 +108,10 @@ import {
   emptySelection,
   moveSelection,
   nearestSurvivor,
+  rangeTo,
   selectAfterRemoving,
   selectOne,
+  toggleSelected,
   type Selection,
 } from "./ui/selection";
 import { keymap } from "./keyboard/keymap";
@@ -1302,6 +1304,8 @@ export function App() {
     mode,
     movingId,
     select: setFocus,
+    toggleSelect: (id) => setSelection((s) => toggleSelected(s, id, flatIds)),
+    rangeSelect: (id) => setSelection((s) => rangeTo(s, id, flatIds)),
     toggle: toggleComplete,
     reopen: clearWontDo,
     toggleCollapse: toggleCollapsedFor,
@@ -1386,6 +1390,8 @@ export function App() {
     mode,
     movingId,
     select: setFocus,
+    toggleSelect: setFocus, // recurrence view navigates one template at a time
+    rangeSelect: setFocus,
     toggle: () => {},
     reopen: () => {},
     toggleCollapse: toggleCollapsedFor,

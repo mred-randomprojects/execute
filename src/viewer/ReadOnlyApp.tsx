@@ -117,6 +117,8 @@ export function ReadOnlyApp({
     movingId: null,
     // Navigation is allowed (it's local); everything that mutates is inert.
     select: setCursorId,
+    toggleSelect: setCursorId, // no multi-select in the viewer — just focus
+    rangeSelect: setCursorId,
     toggleCollapse: (id) =>
       setCollapsed((prev) => {
         const next = new Set(prev);

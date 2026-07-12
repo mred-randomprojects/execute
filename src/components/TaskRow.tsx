@@ -193,7 +193,11 @@ export function TaskRow({ task, depth }: { task: Task; depth: number }) {
     <>
       <div
         ref={rowRef}
-        onClick={() => ed.select(task.id)}
+        onClick={(e) => {
+          if (e.metaKey || e.ctrlKey) ed.toggleSelect(task.id); // ⌘-click: discontiguous
+          else if (e.shiftKey) ed.rangeSelect(task.id); // ⇧-click: range
+          else ed.select(task.id);
+        }}
         onDoubleClick={() => ed.openDetail(task.id)}
         className={[
           "group relative flex gap-2 rounded-sm py-[5px] pr-2 cursor-default select-none",
@@ -268,7 +272,12 @@ export function TaskRow({ task, depth }: { task: Task; depth: number }) {
           <RowInput task={task} />
         ) : (
           <span
-            onClick={() => isFocused && ed.startEdit(task.id)}
+            onClick={(e) => {
+              // A modified click is a selection gesture (handled by the row) —
+              // don't drop into title editing.
+              if (e.metaKey || e.ctrlKey || e.shiftKey) return;
+              if (isFocused) ed.startEdit(task.id);
+            }}
             className={[
               "flex-1 text-[14px]",
               peeking

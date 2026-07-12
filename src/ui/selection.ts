@@ -66,6 +66,51 @@ export function selectOne(id: OutlineId | null, visible: readonly OutlineId[]): 
 }
 
 /**
+ * Cmd/Ctrl-click: toggle one row in/out of the selection (discontiguous multi-
+ * select). Adding focuses the clicked row; removing the focused row moves focus
+ * to the last remaining selected row; removing the last one clears the selection.
+ */
+export function toggleSelected(
+  sel: Selection,
+  id: OutlineId,
+  visible: readonly OutlineId[]
+): Selection {
+  if (!visible.includes(id)) return sel;
+  if (sel.selectedIds.includes(id)) {
+    const selectedIds = uniqueVisible(
+      sel.selectedIds.filter((x) => x !== id),
+      visible
+    );
+    if (selectedIds.length === 0) return emptySelection;
+    const focusedId =
+      sel.focusedId === id ? selectedIds[selectedIds.length - 1] : sel.focusedId;
+    return { focusedId, anchorId: id, selectedIds };
+  }
+  return {
+    focusedId: id,
+    anchorId: id,
+    selectedIds: uniqueVisible([...sel.selectedIds, id], visible),
+  };
+}
+
+/** Shift-click: select the contiguous range from the anchor to the clicked row. */
+export function rangeTo(
+  sel: Selection,
+  id: OutlineId,
+  visible: readonly OutlineId[]
+): Selection {
+  if (!visible.includes(id)) return sel;
+  const anchor = sel.anchorId ?? sel.focusedId ?? id;
+  const a = visible.indexOf(anchor);
+  if (a < 0) return selectOne(id, visible);
+  return {
+    focusedId: id,
+    anchorId: anchor,
+    selectedIds: rangeIds(visible, a, visible.indexOf(id)),
+  };
+}
+
+/**
  * When the focused row leaves the visible set (planned away, completed+hidden,
  * rescheduled…), pick where the cursor lands: the nearest row that survived,
  * preferring the one *above* the lost row — so a following ↓ lands on whatever

@@ -28,6 +28,10 @@ export interface Editor {
   movingId: TaskId | null;
 
   select: (id: TaskId) => void;
+  /** Cmd/Ctrl-click: toggle this row in/out of a discontiguous multi-selection. */
+  toggleSelect: (id: TaskId) => void;
+  /** Shift-click: extend the selection as a range from the anchor to this row. */
+  rangeSelect: (id: TaskId) => void;
   toggle: (id: TaskId) => void;
   /** Clear a "won't do" back to open (clicking the ✕ checkbox). */
   reopen: (id: TaskId) => void;
