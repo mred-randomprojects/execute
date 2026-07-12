@@ -9,6 +9,9 @@ import type { ViewKind } from "../selectors";
  * rows and the keyboard action map both drive it through these handlers, so
  * mouse and keyboard always agree.
  */
+/** Where a dragged row lands relative to the row it's dropped on. */
+export type DropPos = "before" | "after" | "child";
+
 export interface Editor {
   view: ViewKind;
   today: ISODate;
@@ -32,6 +35,19 @@ export interface Editor {
   toggleSelect: (id: TaskId) => void;
   /** Shift-click: extend the selection as a range from the anchor to this row. */
   rangeSelect: (id: TaskId) => void;
+
+  // ── Drag & drop (mouse move). Guarded against dropping a task into its own
+  //    subtree; every drop is a single undoable move. `canDrag` gates the whole
+  //    affordance (off in the read-only viewer and the recurring view).
+  canDrag: boolean;
+  /** The row currently being dragged (for dimming), or null. */
+  dragId: TaskId | null;
+  beginDrag: (id: TaskId) => void;
+  endDrag: () => void;
+  /** True only for a target that can legally receive the current drag. */
+  dropAllowed: (targetId: TaskId) => boolean;
+  dropOn: (targetId: TaskId, pos: DropPos) => void;
+
   toggle: (id: TaskId) => void;
   /** Clear a "won't do" back to open (clicking the ✕ checkbox). */
   reopen: (id: TaskId) => void;

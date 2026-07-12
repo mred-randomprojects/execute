@@ -210,6 +210,38 @@ export function relocateTask(
   });
 }
 
+/** Move `taskId` to sit immediately *after* `afterId` (same parent as it). */
+export function relocateAfter(
+  tasks: Task[],
+  taskId: TaskId,
+  afterId: TaskId
+): Task[] {
+  if (taskId === afterId) return tasks;
+
+  const taskNode = findById(tasks, taskId);
+  if (taskNode == null) return tasks;
+  if (findById(taskNode.children, afterId) != null) return tasks; // own subtree
+
+  const withoutTask = removeById(tasks, taskId);
+  const targetParentId = findParentId(withoutTask, afterId);
+
+  if (targetParentId == null) {
+    const targetIdx = withoutTask.findIndex((t) => t.id === afterId);
+    if (targetIdx === -1) return tasks; // target vanished → leave the tree untouched
+    const result = [...withoutTask];
+    result.splice(targetIdx + 1, 0, taskNode);
+    return result;
+  }
+
+  return mapById(withoutTask, targetParentId, (parent) => {
+    const targetIdx = parent.children.findIndex((c) => c.id === afterId);
+    if (targetIdx === -1) return parent;
+    const newChildren = [...parent.children];
+    newChildren.splice(targetIdx + 1, 0, taskNode);
+    return { ...parent, children: newChildren };
+  });
+}
+
 /** Make `taskId` the first child of `newParentId`. */
 export function relocateAsChild(
   tasks: Task[],

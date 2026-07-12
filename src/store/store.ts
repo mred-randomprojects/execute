@@ -29,6 +29,7 @@ import {
   moveSibling,
   normalizeChildProjects,
   outdentTask,
+  relocateAfter,
   relocateAsChild,
   relocateTask,
   removeById,
@@ -723,6 +724,15 @@ export function moveBefore(taskId: TaskId, beforeId: TaskId): void {
   updateTasks((tasks) =>
     normalizeChildProjects(
       setProjectForIds(relocateTask(tasks, taskId, beforeId), new Set([taskId]), targetProjectId)
+    )
+  );
+}
+
+export function moveAfter(taskId: TaskId, afterId: TaskId): void {
+  const targetProjectId = findById(state.tasks, afterId)?.projectId ?? DEFAULT_PROJECT_ID;
+  updateTasks((tasks) =>
+    normalizeChildProjects(
+      setProjectForIds(relocateAfter(tasks, taskId, afterId), new Set([taskId]), targetProjectId)
     )
   );
 }

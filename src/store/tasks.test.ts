@@ -10,6 +10,7 @@ import {
   countAll,
   flattenVisible,
   relocateTask,
+  relocateAfter,
   relocateAsChild,
   indentTask,
   indentUnder,
@@ -313,5 +314,25 @@ describe("leavesWhere", () => {
     ];
     const today = leavesWhere(tree, (t) => t.plannedFor === "2026-06-17");
     expect(today.map((t) => t.id)).toEqual(["a1", "b"]);
+  });
+});
+
+describe("relocateAfter (drag-drop 'after')", () => {
+  const tree = () => [task("a"), task("b", [task("b1"), task("b2")]), task("c")];
+
+  it("moves a task to sit right after a root sibling", () => {
+    const r = relocateAfter(tree(), id("a"), id("c"));
+    expect(r.map((t) => t.id)).toEqual(["b", "c", "a"]);
+  });
+
+  it("moves a task in after a nested sibling (into that parent)", () => {
+    const r = relocateAfter(tree(), id("a"), id("b1"));
+    expect(r.map((t) => t.id)).toEqual(["b", "c"]);
+    expect(findById(r, id("b"))?.children.map((t) => t.id)).toEqual(["b1", "a", "b2"]);
+  });
+
+  it("refuses to move a task after a node in its own subtree (no cycle, no loss)", () => {
+    const t = tree();
+    expect(relocateAfter(t, id("b"), id("b1"))).toBe(t);
   });
 });

@@ -4,7 +4,7 @@ import { countAll, isOpen } from "../store/tasks";
 import { copyText } from "../ui/clipboard";
 import { relativeLabel } from "../store/dates";
 import { horizonLabel } from "../selectors";
-import { useEditor } from "../ui/editor";
+import { useEditor, type DropPos } from "../ui/editor";
 import { renderBlock, renderInline } from "../ui/markdown";
 import { NO_SPELLCHECK } from "../ui/noSpellcheck";
 
@@ -178,6 +178,8 @@ export function TaskRow({ task, depth }: { task: Task; depth: number }) {
   const isDropTarget = ed.mode === "move" && isFocused && !isMoving;
   const hasChildren = task.children.length > 0;
   const isCollapsed = ed.collapsed.has(task.id);
+  const isDragging = ed.dragId === task.id;
+  const [dropPos, setDropPos] = useState<DropPos | null>(null);
   const plannedToday = task.plannedFor === ed.today;
   const progress = hasChildren ? countAll(task) : null;
   // In Today, a task that isn't itself planned for today only shows because a
@@ -193,12 +195,45 @@ export function TaskRow({ task, depth }: { task: Task; depth: number }) {
     <>
       <div
         ref={rowRef}
+        draggable={ed.canDrag && !editing}
         onClick={(e) => {
           if (e.metaKey || e.ctrlKey) ed.toggleSelect(task.id); // ⌘-click: discontiguous
           else if (e.shiftKey) ed.rangeSelect(task.id); // ⇧-click: range
           else ed.select(task.id);
         }}
         onDoubleClick={() => ed.openDetail(task.id)}
+        onDragStart={(e) => {
+          if (!ed.canDrag) return;
+          e.dataTransfer.effectAllowed = "move";
+          e.dataTransfer.setData("text/plain", task.id);
+          ed.beginDrag(task.id);
+        }}
+        onDragEnd={() => {
+          ed.endDrag();
+          setDropPos(null);
+        }}
+        onDragOver={(e) => {
+          // Only a legal target opts into the drop (preventDefault); otherwise the
+          // browser shows a "no-drop" cursor — so you can't drop into own subtree.
+          if (!ed.dropAllowed(task.id)) return;
+          e.preventDefault();
+          e.dataTransfer.dropEffect = "move";
+          const rect = rowRef.current?.getBoundingClientRect();
+          if (rect == null) return;
+          const frac = (e.clientY - rect.top) / rect.height;
+          const pos: DropPos = frac < 0.28 ? "before" : frac > 0.72 ? "after" : "child";
+          setDropPos((p) => (p === pos ? p : pos));
+        }}
+        onDragLeave={(e) => {
+          if (!rowRef.current?.contains(e.relatedTarget as Node | null)) setDropPos(null);
+        }}
+        onDrop={(e) => {
+          if (ed.dropAllowed(task.id) && dropPos != null) {
+            e.preventDefault();
+            ed.dropOn(task.id, dropPos);
+          }
+          setDropPos(null);
+        }}
         className={[
           "group relative flex gap-2 rounded-sm py-[5px] pr-2 cursor-default select-none",
           peeking ? "items-start" : "items-center",
@@ -208,6 +243,8 @@ export function TaskRow({ task, depth }: { task: Task; depth: number }) {
               ? "bg-surface-2"
               : "hover:bg-surface-2/60",
           isMoving ? "opacity-50" : "",
+          isDragging ? "opacity-40" : "",
+          dropPos === "child" ? "ring-1 ring-inset ring-accent/70 bg-accent-soft/40" : "",
         ].join(" ")}
         style={{ paddingLeft: `${depth * 22 + 6}px` }}
       >
@@ -216,6 +253,12 @@ export function TaskRow({ task, depth }: { task: Task; depth: number }) {
         )}
         {isDropTarget && (
           <span className="absolute -top-[1px] left-0 right-0 h-[2px] bg-accent" />
+        )}
+        {dropPos === "before" && (
+          <span className="pointer-events-none absolute -top-[1px] left-0 right-0 h-[2px] bg-accent" />
+        )}
+        {dropPos === "after" && (
+          <span className="pointer-events-none absolute -bottom-[1px] left-0 right-0 h-[2px] bg-accent" />
         )}
 
         <button

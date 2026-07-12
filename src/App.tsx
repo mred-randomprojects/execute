@@ -34,6 +34,7 @@ import {
   markOpened,
   markWontDo,
   markWontDoMany,
+  moveAfter,
   moveAsChild,
   moveBefore,
   clearWontDo,
@@ -181,6 +182,8 @@ export function App() {
   const [hideCompleted, setHideCompleted] = useState(false);
   const [mode, setMode] = useState<AppMode>("normal");
   const [movingId, setMovingId] = useState<TaskId | null>(null);
+  // The task currently being dragged (mouse DnD), or null.
+  const [dragId, setDragId] = useState<TaskId | null>(null);
   const [showHelp, setShowHelp] = useState(false);
   const [showPalette, setShowPalette] = useState(false);
   const [showSchedule, setShowSchedule] = useState(false);
@@ -1306,6 +1309,28 @@ export function App() {
     select: setFocus,
     toggleSelect: (id) => setSelection((s) => toggleSelected(s, id, flatIds)),
     rangeSelect: (id) => setSelection((s) => rangeTo(s, id, flatIds)),
+    canDrag: true,
+    dragId,
+    beginDrag: (id) => setDragId(id),
+    endDrag: () => setDragId(null),
+    // A target is legal only when a drag is active, it isn't the dragged row,
+    // and it isn't inside the dragged row's own subtree (no cycles).
+    dropAllowed: (targetId) => {
+      if (dragId == null || targetId === dragId) return false;
+      const dragged = findById(state.tasks, dragId);
+      return dragged == null || findById(dragged.children, targetId) == null;
+    },
+    dropOn: (targetId, pos) => {
+      const id = dragId;
+      setDragId(null);
+      if (id == null || id === targetId) return;
+      const dragged = findById(state.tasks, id);
+      // Defensive re-check (the store ops also guard): never move into own subtree.
+      if (dragged == null || findById(dragged.children, targetId) != null) return;
+      if (pos === "child") moveAsChild(id, targetId);
+      else if (pos === "before") moveBefore(id, targetId);
+      else moveAfter(id, targetId);
+    },
     toggle: toggleComplete,
     reopen: clearWontDo,
     toggleCollapse: toggleCollapsedFor,
@@ -1392,6 +1417,12 @@ export function App() {
     select: setFocus,
     toggleSelect: setFocus, // recurrence view navigates one template at a time
     rangeSelect: setFocus,
+    canDrag: false,
+    dragId: null,
+    beginDrag: () => {},
+    endDrag: () => {},
+    dropAllowed: () => false,
+    dropOn: () => {},
     toggle: () => {},
     reopen: () => {},
     toggleCollapse: toggleCollapsedFor,

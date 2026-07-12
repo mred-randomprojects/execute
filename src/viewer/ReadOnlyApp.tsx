@@ -119,6 +119,12 @@ export function ReadOnlyApp({
     select: setCursorId,
     toggleSelect: setCursorId, // no multi-select in the viewer — just focus
     rangeSelect: setCursorId,
+    canDrag: false, // no drag-to-move in the read-only viewer
+    dragId: null,
+    beginDrag: noop,
+    endDrag: noop,
+    dropAllowed: () => false,
+    dropOn: noop,
     toggleCollapse: (id) =>
       setCollapsed((prev) => {
         const next = new Set(prev);
