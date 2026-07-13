@@ -14,11 +14,11 @@ import type { AppState, LogEntry, Project, Recurrence, Task, TaskId, TrashedTask
 //   • Deletes: `trash` entries are tombstones. A delete wins iff its deletedAt is
 //     ≥ the newest live copy's updatedAt (edit-after-delete resurrects; ties →
 //     deleted, which keeps the merge idempotent). No zombie resurrection.
-//   • Structure (tree shape / sibling order): taken from LOCAL (the writer). With
-//     real-time sync the writer already holds the other side's latest, so this is
-//     rarely lossy; remote-only *top-level* subtrees are still carried over as a
-//     safety net. (Nested remote-only adds rely on the pull keeping the writer
-//     current — a documented v1 limitation, not silent loss of content fields.)
+//   • Structure (tree shape / sibling order): taken from LOCAL (the writer) for
+//     tasks both sides know about. Remote-only tasks (adds from the other device)
+//     are grafted back in at ANY depth — under their remote parent when it
+//     survived locally, else at top level — so no add is ever dropped, whether it
+//     was made at the root or nested under an existing task.
 
 function flatten(tasks: Task[]): Map<TaskId, Task> {
   const m = new Map<TaskId, Task>();
@@ -73,15 +73,6 @@ function mergeOwnFields(base: Task, other: Task | undefined): Task {
   };
 }
 
-function stripDeleted(task: Task, deleted: Set<TaskId>): Task {
-  return {
-    ...task,
-    children: task.children
-      .filter((c) => !deleted.has(c.id))
-      .map((c) => stripDeleted(c, deleted)),
-  };
-}
-
 function unionById<T>(a: T[], b: T[], id: (x: T) => string): T[] {
   const out = [...a];
   const seen = new Set(a.map(id));
@@ -129,12 +120,65 @@ export function mergeStates(local: AppState, remote: AppState): AppState {
   };
   const tasks = rebuild(local.tasks);
 
-  // Safety net: remote-only top-level subtrees (added on the other device).
-  for (const rt of remote.tasks) {
-    if (!liveL.has(rt.id) && !deleted.has(rt.id)) {
-      tasks.push(stripDeleted(rt, deleted));
+  // ── Graft remote-only adds back in (at any depth) ──────────────────
+  // Every task that exists on the remote but not in the rebuilt local tree (and
+  // isn't deleted) is an add from the other device. We re-attach it under its
+  // remote parent when that parent survived here, otherwise at top level — so a
+  // task created as a *child* of an existing task is never lost.
+  const placed = new Set<TaskId>();
+  const indexPlaced = (list: Task[]): void => {
+    for (const t of list) {
+      placed.add(t.id);
+      indexPlaced(t.children);
     }
+  };
+  indexPlaced(tasks);
+
+  const remoteParent = new Map<TaskId, TaskId | null>();
+  const indexParents = (list: Task[], parent: TaskId | null): void => {
+    for (const t of list) {
+      remoteParent.set(t.id, parent);
+      indexParents(t.children, t.id);
+    }
+  };
+  indexParents(remote.tasks, null);
+
+  // A remote subtree stripped of deleted nodes and of nodes that already live in
+  // the merged tree (local structure wins → never duplicate an id).
+  const stripForGraft = (t: Task): Task | null => {
+    if (deleted.has(t.id) || placed.has(t.id)) return null;
+    const children: Task[] = [];
+    for (const c of t.children) {
+      const kept = stripForGraft(c);
+      if (kept != null) children.push(kept);
+    }
+    return { ...t, children };
+  };
+
+  // Collect graft roots grouped by the surviving parent they hang off (null =
+  // top level). We only graft at the boundary between the shared tree and a
+  // remote-only region; deeper remote-only nodes ride along inside their root.
+  const graftsByParent = new Map<TaskId | null, Task[]>();
+  for (const rt of liveR.values()) {
+    if (placed.has(rt.id) || deleted.has(rt.id)) continue;
+    const parent = remoteParent.get(rt.id) ?? null;
+    if (parent !== null && !placed.has(parent)) continue; // rides inside its root
+    const sub = stripForGraft(rt);
+    if (sub == null) continue;
+    const siblings = graftsByParent.get(parent) ?? [];
+    siblings.push(sub);
+    graftsByParent.set(parent, siblings);
   }
+
+  const hasNested = [...graftsByParent.keys()].some((k) => k !== null);
+  const attach = (nodes: Task[]): Task[] =>
+    nodes.map((n) => {
+      const kids = attach(n.children);
+      const extra = graftsByParent.get(n.id);
+      return { ...n, children: extra != null ? [...kids, ...extra] : kids };
+    });
+  const rooted = hasNested ? attach(tasks) : tasks;
+  const withGrafts = [...rooted, ...(graftsByParent.get(null) ?? [])];
 
   const trash: TrashedTask[] = [];
   for (const [id, tomb] of tombs) if (deleted.has(id)) trash.push(tomb);
@@ -142,7 +186,7 @@ export function mergeStates(local: AppState, remote: AppState): AppState {
   return {
     schemaVersion: Math.max(local.schemaVersion, remote.schemaVersion),
     projects: unionById<Project>(local.projects, remote.projects, (p) => p.id),
-    tasks,
+    tasks: withGrafts,
     recurrences: unionById<Recurrence>(local.recurrences, remote.recurrences, (r) => r.id),
     trash,
     log: mergeLog(local.log, remote.log),
@@ -151,4 +195,36 @@ export function mergeStates(local: AppState, remote: AppState): AppState {
     lastOpenedDate: maxDate(local.lastOpenedDate, remote.lastOpenedDate),
     devDateOverride: local.devDateOverride,
   };
+}
+
+/**
+ * Deep structural equality for JSON-safe values. AppState is fully JSON
+ * (primitives, plain objects, arrays, null — no Dates/functions), so this is a
+ * sound equality for it. The pull loop uses it to detect a no-op merge: an
+ * unchanged result means "the remote added nothing new" → don't re-render, and
+ * a result equal to the remote means "the cloud is already current" → don't echo
+ * a pointless push. Both together are what keep pull↔push from looping.
+ */
+export function jsonEqual(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (typeof a !== "object" || a === null) return false;
+  if (typeof b !== "object" || b === null) return false;
+  const aArr = Array.isArray(a);
+  if (aArr !== Array.isArray(b)) return false;
+  if (aArr) {
+    const ar = a as unknown[];
+    const br = b as unknown[];
+    if (ar.length !== br.length) return false;
+    for (let i = 0; i < ar.length; i++) if (!jsonEqual(ar[i], br[i])) return false;
+    return true;
+  }
+  const ao = a as Record<string, unknown>;
+  const bo = b as Record<string, unknown>;
+  const keys = Object.keys(ao);
+  if (keys.length !== Object.keys(bo).length) return false;
+  for (const k of keys) {
+    if (!Object.prototype.hasOwnProperty.call(bo, k)) return false;
+    if (!jsonEqual(ao[k], bo[k])) return false;
+  }
+  return true;
 }
