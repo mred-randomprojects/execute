@@ -65,6 +65,34 @@ export function setCloudSync(fn: (() => void) | null): void {
   onPersist = fn;
 }
 
+// Fired once the local store has finished loading. Cloud PULL gates on this so
+// it never merges remote data into — or races ahead of — the empty pre-load
+// state (which initStore would then clobber on disk read).
+const readyListeners = new Set<() => void>();
+export function subscribeReady(cb: () => void): () => void {
+  readyListeners.add(cb);
+  if (ready) cb();
+  return () => {
+    readyListeners.delete(cb);
+  };
+}
+
+/**
+ * Adopt whole state pulled from the cloud (the PULL half of two-way sync).
+ * Deliberately does NOT go through update()/scheduleSave's `onPersist` hook, so
+ * adopting a remote snapshot never schedules a push back — that would echo
+ * forever. We still persist to local disk (durability) and notify subscribers.
+ * Undo history is left intact: it holds the user's own edit steps, which a
+ * remote change from another device doesn't invalidate. Callers must only pass
+ * a state that already reflects local edits (i.e. a merge, not a raw remote),
+ * so this can't drop unsynced local work.
+ */
+export function adoptRemote(next: AppState): void {
+  state = next;
+  notify();
+  void saveRaw(state);
+}
+
 function scheduleSave() {
   if (saveTimer != null) clearTimeout(saveTimer);
   saveTimer = setTimeout(() => {
@@ -173,6 +201,7 @@ export async function initStore(): Promise<void> {
   state = coerceState(await loadRaw());
   ready = true;
   notify();
+  for (const l of readyListeners) l();
 }
 
 export function getState(): AppState {

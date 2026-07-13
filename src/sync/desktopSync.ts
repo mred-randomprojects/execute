@@ -4,8 +4,9 @@ import {
   signInWithCredential,
 } from "firebase/auth";
 import { auth } from "../firebase";
-import { getReady, getState, setCloudSync } from "../store/store";
-import { mergeAndSave } from "../viewer/cloud";
+import { adoptRemote, getReady, getState, setCloudSync, subscribeReady } from "../store/store";
+import { mergeAndSave, subscribeAppState } from "../viewer/cloud";
+import { jsonEqual, mergeStates } from "./merge";
 
 const clientId = import.meta.env.VITE_GOOGLE_DESKTOP_CLIENT_ID;
 const clientSecret = import.meta.env.VITE_GOOGLE_DESKTOP_CLIENT_SECRET;
@@ -92,6 +93,62 @@ function schedulePush() {
   pushTimer = setTimeout(() => void doPush(), PUSH_DEBOUNCE_MS);
 }
 
+// ── The pull loop ────────────────────────────────────────────────────
+// The other half of two-way sync: a live subscription to the cloud doc that
+// merges every remote change (a website edit, another device) into the local
+// store in near-real-time. Without this the desktop was push-only — it never
+// saw edits made anywhere else.
+let unsubDoc: (() => void) | null = null;
+let subscribedUid: string | null = null;
+
+function stopPull() {
+  if (unsubDoc != null) unsubDoc();
+  unsubDoc = null;
+  subscribedUid = null;
+}
+
+function startPull(uid: string) {
+  if (subscribedUid === uid && unsubDoc != null) return; // already live for this user
+  stopPull();
+  subscribedUid = uid;
+  unsubDoc = subscribeAppState(
+    uid,
+    (remote) => {
+      // Nothing seeded yet, or the store hasn't loaded — never merge into the
+      // empty pre-load state (initStore would then clobber it from disk).
+      if (remote == null || !getReady()) return;
+      const local = getState();
+      // Merge with the CURRENT local state (never a blind overwrite), so a local
+      // edit made mid-sync — or a local-only task not yet in the cloud — survives.
+      const merged = mergeStates(local, remote);
+      // Adopt only a real change: an echo of our own write merges to the same
+      // state, so this no-ops (no re-render, no loop).
+      if (!jsonEqual(merged, local)) adoptRemote(merged);
+      // If the merge carries anything the cloud lacks (offline/local-only edits),
+      // push once to converge the cloud too. Guarded, so a settled state never
+      // schedules an endless push↔pull.
+      if (!jsonEqual(merged, remote)) schedulePush();
+    },
+    (e: unknown) => {
+      setStatus({
+        kind: "error",
+        email: auth.currentUser?.email ?? null,
+        message: e instanceof Error ? e.message : "Sync read failed",
+      });
+    },
+  );
+}
+
+/** Start pulling when signed in AND the store has loaded; stop otherwise. */
+function reconcilePull() {
+  const user = auth.currentUser;
+  if (user == null || !getReady()) {
+    stopPull();
+    return;
+  }
+  startPull(user.uid);
+}
+
 /**
  * Wire auto-sync once, at app startup. Registers the store persist hook (so
  * every change schedules a push) and watches auth state (a restored session
@@ -112,11 +169,17 @@ export function initAutoSync(): () => void {
     } else {
       setStatus({ kind: "signedOut" });
     }
+    reconcilePull(); // (re)subscribe on sign-in, tear down on sign-out
   });
+  // Also (re)subscribe the moment the store finishes loading — auth may restore
+  // before the local load completes, and the pull must wait for readiness.
+  const unsubReady = subscribeReady(reconcilePull);
   setCloudSync(() => schedulePush());
 
   return () => {
     unsubAuth();
+    unsubReady();
+    stopPull();
     setCloudSync(null);
     if (pushTimer != null) clearTimeout(pushTimer);
   };
