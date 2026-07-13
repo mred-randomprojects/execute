@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { User } from "firebase/auth";
 import type { AppState, ProjectId, TaskId } from "../types";
 import { todayISO } from "../store/dates";
+import { CaptureBar } from "../components/CaptureBar";
 import {
   groupTasksByProject,
   todayProgress,
@@ -71,12 +72,15 @@ export function ReadOnlyApp({
   user,
   onSignOut,
   onToggle,
+  onAdd,
 }: {
   state: AppState;
   user: User;
   onSignOut: () => void;
   onToggle: (id: TaskId) => void;
+  onAdd: (text: string, today: boolean) => void;
 }) {
+  const captureRef = useRef<HTMLInputElement>(null);
   const today = todayISO(state.devDateOverride);
   const [view, setView] = useState<ViewKind>("today");
   const period: Period = "today";
@@ -217,6 +221,15 @@ export function ReadOnlyApp({
               )}
             </p>
           )}
+        </div>
+
+        <div className="mb-4">
+          <CaptureBar
+            inputRef={captureRef}
+            placeholder={view === "today" ? "Add a task for today…" : "Capture a task…"}
+            onAdd={(raw) => onAdd(raw, view === "today")}
+            onArrowDown={() => {}}
+          />
         </div>
 
         <EditorProvider value={editor}>

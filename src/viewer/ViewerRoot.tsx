@@ -3,7 +3,9 @@ import type { User } from "firebase/auth";
 import { AuthProvider, useAuth } from "../auth";
 import { LoginPage } from "../components/LoginPage";
 import type { AppState, Task, TaskId } from "../types";
-import { mapById } from "../store/tasks";
+import { makeTask, mapById } from "../store/tasks";
+import { parseCapture } from "../store/capture";
+import { todayISO } from "../store/dates";
 import { mergeAndSave, subscribeAppState } from "./cloud";
 import { ReadOnlyApp } from "./ReadOnlyApp";
 import { SeedPanel } from "./SeedPanel";
@@ -148,8 +150,7 @@ function AuthedViewer({ user, onSignOut }: { user: User; onSignOut: () => void }
   // Checking a task off: apply optimistically, then push through the merge
   // (per-task LWW) so a concurrent desktop edit can't clobber it. onSnapshot
   // then reconciles to the server truth (which includes this change).
-  const onToggle = (taskId: TaskId) => {
-    const next: AppState = { ...state, tasks: toggleCompleted(state.tasks, taskId) };
+  const push = (next: AppState) => {
     setState(next);
     void mergeAndSave(user.uid, next).catch((e: unknown) => {
       // eslint-disable-next-line no-console
@@ -157,7 +158,34 @@ function AuthedViewer({ user, onSignOut }: { user: User; onSignOut: () => void }
     });
   };
 
-  return <ReadOnlyApp state={state} user={user} onSignOut={onSignOut} onToggle={onToggle} />;
+  const onToggle = (taskId: TaskId) => {
+    push({ ...state, tasks: toggleCompleted(state.tasks, taskId) });
+  };
+
+  // Capture from the phone. Reuses the shared parser + makeTask (no viewer-only
+  // logic); a new task lands in the Inbox project, planned for today when the
+  // Today tab is active, otherwise undated.
+  const onAdd = (text: string, today: boolean) => {
+    const parsed = parseCapture(text);
+    if (parsed.text.trim() === "") return;
+    const task: Task = {
+      ...makeTask(parsed.text),
+      completed: parsed.completed,
+      completedAt: parsed.completed ? Date.now() : null,
+      plannedFor: today ? todayISO(state.devDateOverride) : null,
+    };
+    push({ ...state, tasks: [...state.tasks, task] });
+  };
+
+  return (
+    <ReadOnlyApp
+      state={state}
+      user={user}
+      onSignOut={onSignOut}
+      onToggle={onToggle}
+      onAdd={onAdd}
+    />
+  );
 }
 
 export function ViewerRoot() {
