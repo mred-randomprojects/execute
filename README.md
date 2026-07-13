@@ -84,11 +84,16 @@ pnpm make     # → out/make/**/Execute.dmg  (+ .zip)
 - **Shell**: a thin Electron main process — dev loads the Vite server, prod loads
   the built bundle. A `contextBridge` preload is the only path to disk.
 - **Persistence**: one local JSON document in the OS app-data dir, written
-  atomically (temp file + rename), debounced, schema-versioned. No cloud, no CDN
-  (fonts are bundled).
+  atomically (temp file + rename), debounced, schema-versioned. Local-first; no
+  CDN (fonts are bundled). Optional cloud sync (Firebase) mirrors the store to a
+  read-mostly **web companion** — see [FIREBASE_SETUP.md](./FIREBASE_SETUP.md).
 - **Keyboard**: a declarative, Zed-inspired engine — bindings are data, contexts
   decide when they fire, actions decide what they do. The `?` overlay is
   generated from the keymap, so it can never drift.
+- **One core, two shells**: the desktop app and the web companion share a single
+  platform-agnostic core; only persistence and a few capability flags differ.
+  Read [docs/architecture.md](./docs/architecture.md) before adding features that
+  touch both — it's the doctrine that keeps them from forking.
 
 ### Layout
 
