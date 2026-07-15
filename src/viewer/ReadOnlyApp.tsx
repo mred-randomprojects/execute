@@ -119,8 +119,14 @@ export function ReadOnlyApp({
     collapsed,
     mode: "normal",
     movingId: null,
-    // Navigation is allowed (it's local); everything that mutates is inert.
-    select: setCursorId,
+    scrollTick: 0, // no keyboard reorder in the viewer
+    // Tapping a task expands it in place (peek): the full title unwraps and any
+    // notes render below. On mobile, truncated titles were otherwise unreadable
+    // and there was no way to see a task's details.
+    select: (id) => {
+      setCursorId(id);
+      setPeekId((p) => (p === id ? null : id));
+    },
     toggleSelect: setCursorId, // no multi-select in the viewer — just focus
     rangeSelect: setCursorId,
     canDrag: false, // no drag-to-move in the read-only viewer
