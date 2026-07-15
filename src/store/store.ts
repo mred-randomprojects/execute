@@ -45,6 +45,9 @@ import { coerceState, loadRaw, saveRaw } from "./persistence";
 
 let state: AppState = emptyState();
 let ready = false;
+// Set when the initial load ultimately fails, so the UI can show a retry prompt
+// instead of hanging on the blank loading screen forever.
+let loadError: string | null = null;
 const listeners = new Set<() => void>();
 
 const MAX_UNDO = 100;
@@ -197,8 +200,60 @@ function topLevelIdFor(tasks: Task[], id: TaskId): TaskId {
 
 // ─── Lifecycle ──────────────────────────────────────────────────────
 
-export async function initStore(): Promise<void> {
-  state = coerceState(await loadRaw());
+const delay = (ms: number): Promise<void> =>
+  new Promise((resolve) => setTimeout(resolve, ms));
+
+/** Reject if `p` hasn't settled within `ms`. A cold-start load that never comes
+ * back (e.g. an IPC reply that never arrives) would otherwise hang `initStore`
+ * forever — and with it the whole app on the loading screen. With a timeout it
+ * fails instead, so the retry/error path can take over. */
+function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(
+      () => reject(new Error("Loading your tasks timed out.")),
+      ms,
+    );
+    p.then(
+      (v) => {
+        clearTimeout(timer);
+        resolve(v);
+      },
+      (e) => {
+        clearTimeout(timer);
+        reject(e instanceof Error ? e : new Error(String(e)));
+      },
+    );
+  });
+}
+
+export async function initStore(loadTimeoutMs = 4000): Promise<void> {
+  // Load the local store, retrying a couple of times so a transient read/IPC
+  // hiccup on a cold start recovers on its own, and bounding each attempt so a
+  // stuck load can't hang. CRITICAL: this must ALWAYS reach `ready = true`.
+  // Previously any rejection (or a load that never resolved) left the app stuck
+  // forever on the blank loading screen (`ready` never flipped); this makes that
+  // impossible — a real failure now surfaces a retry prompt instead of hanging.
+  let lastErr: unknown = null;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      state = coerceState(await withTimeout(loadRaw(), loadTimeoutMs));
+      lastErr = null;
+      break;
+    } catch (e) {
+      lastErr = e;
+      if (attempt < 2) await delay(150);
+    }
+  }
+  loadError =
+    lastErr == null
+      ? null
+      : lastErr instanceof Error
+        ? lastErr.message
+        : "Failed to load your saved tasks.";
+  if (lastErr != null) {
+    // eslint-disable-next-line no-console
+    console.error("initStore: could not load the local store", lastErr);
+  }
   ready = true;
   notify();
   for (const l of readyListeners) l();
@@ -214,9 +269,15 @@ export function getReady(): boolean {
   return ready;
 }
 
-export function useStore(): { state: AppState; ready: boolean } {
+/** Non-null when the initial load failed (after retries) — the UI shows a retry
+ * prompt rather than leaving the user on a blank/hung loading screen. */
+export function getLoadError(): string | null {
+  return loadError;
+}
+
+export function useStore(): { state: AppState; ready: boolean; loadError: string | null } {
   const s = useSyncExternalStore(subscribe, getSnapshot);
-  return { state: s, ready };
+  return { state: s, ready, loadError };
 }
 
 // ─── App-level settings ─────────────────────────────────────────────

@@ -154,7 +154,7 @@ interface OutlineTaskRow {
 type OutlineRow = OutlineProjectRow | OutlineTaskRow;
 
 export function App() {
-  const { state, ready } = useStore();
+  const { state, ready, loadError } = useStore();
   const [, setTick] = useState(0);
   useEffect(() => {
     const id = setInterval(() => setTick((t) => t + 1), 60_000);
@@ -1736,7 +1736,30 @@ export function App() {
   ];
 
   if (!ready) {
-    return <div className="grid h-full place-items-center bg-bg text-ink-faint" />;
+    return (
+      <div className="grid h-full place-items-center bg-bg text-ink-faint">
+        <span className="text-sm">Loading…</span>
+      </div>
+    );
+  }
+  if (loadError != null) {
+    return (
+      <div className="grid h-full place-items-center bg-bg text-ink">
+        <div className="max-w-sm space-y-3 px-6 text-center">
+          <h1 className="font-serif text-2xl font-medium">Couldn't load your tasks</h1>
+          <p className="text-sm text-ink-soft">{loadError}</p>
+          <p className="text-[12px] text-ink-faint">
+            Your data on disk is untouched — this was only a read that failed.
+          </p>
+          <button
+            onClick={() => void initStore()}
+            className="rounded border border-line bg-surface px-4 py-2 text-sm font-medium hover:bg-surface-2"
+          >
+            Try again
+          </button>
+        </div>
+      </div>
+    );
   }
 
   const panelTaskLog =
