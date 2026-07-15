@@ -182,6 +182,9 @@ export function App() {
   const [hideCompleted, setHideCompleted] = useState(false);
   const [mode, setMode] = useState<AppMode>("normal");
   const [movingId, setMovingId] = useState<TaskId | null>(null);
+  // Bumped on a keyboard reorder so the focused row scrolls back into view.
+  const [scrollTick, setScrollTick] = useState(0);
+  const bumpScroll = () => setScrollTick((n) => n + 1);
   // The task currently being dragged (mouse DnD), or null.
   const [dragId, setDragId] = useState<TaskId | null>(null);
   const [showHelp, setShowHelp] = useState(false);
@@ -855,8 +858,14 @@ export function App() {
     },
     selectDown: () => setSelection((s) => moveSelection(s, flatIds, "down", true)),
     selectUp: () => setSelection((s) => moveSelection(s, flatIds, "up", true)),
-    reorderUp: () => reorderAcrossProjects(actionTargets(), "up", visibleTaskIds),
-    reorderDown: () => reorderAcrossProjects(actionTargets(), "down", visibleTaskIds),
+    reorderUp: () => {
+      reorderAcrossProjects(actionTargets(), "up", visibleTaskIds);
+      bumpScroll();
+    },
+    reorderDown: () => {
+      reorderAcrossProjects(actionTargets(), "down", visibleTaskIds);
+      bumpScroll();
+    },
     // → expands a collapsed project/task first (outliner convention), then
     // descends; only opens the details panel when there's nothing to expand.
     panelOpen: () => {
@@ -1306,6 +1315,7 @@ export function App() {
     collapsed,
     mode,
     movingId,
+    scrollTick,
     select: setFocus,
     toggleSelect: (id) => setSelection((s) => toggleSelected(s, id, flatIds)),
     rangeSelect: (id) => setSelection((s) => rangeTo(s, id, flatIds)),
@@ -1414,6 +1424,7 @@ export function App() {
     collapsed,
     mode,
     movingId,
+    scrollTick,
     select: setFocus,
     toggleSelect: setFocus, // recurrence view navigates one template at a time
     rangeSelect: setFocus,

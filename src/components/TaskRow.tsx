@@ -188,8 +188,10 @@ export function TaskRow({ task, depth }: { task: Task; depth: number }) {
 
   const rowRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
+    // Re-runs on reorder too (ed.scrollTick), so the focused row follows itself
+    // back into view even though its id — and thus isFocused — didn't change.
     if (isFocused) rowRef.current?.scrollIntoView?.({ block: "nearest" });
-  }, [isFocused]);
+  }, [isFocused, ed.scrollTick]);
 
   return (
     <>

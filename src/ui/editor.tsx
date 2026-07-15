@@ -29,6 +29,10 @@ export interface Editor {
   collapsed: Set<TaskId>;
   mode: AppMode;
   movingId: TaskId | null;
+  /** Bumped whenever the focused task is moved by a keyboard reorder. Rows watch
+   *  it so the focused row scrolls back into view — its id (hence `isFocused`)
+   *  doesn't change on a reorder, so the plain focus effect wouldn't re-fire. */
+  scrollTick: number;
 
   select: (id: TaskId) => void;
   /** Cmd/Ctrl-click: toggle this row in/out of a discontiguous multi-selection. */
