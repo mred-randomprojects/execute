@@ -33,7 +33,14 @@ export function subscribeAppState(
 ): Unsubscribe {
   return onSnapshot(
     appDataRef(uid),
-    (snap) => onData(snap.exists() ? coerceState(snap.data()) : null),
+    (snap) => {
+      // On a first-ever load the doc isn't cached yet; Firestore can emit an
+      // empty "fromCache" event before the server replies. Ignore it so we
+      // don't flash "No data yet" (or paint null) before the real data lands —
+      // wait for either a cached doc or the server's answer.
+      if (snap.metadata.fromCache && !snap.exists()) return;
+      onData(snap.exists() ? coerceState(snap.data()) : null);
+    },
     onError,
   );
 }

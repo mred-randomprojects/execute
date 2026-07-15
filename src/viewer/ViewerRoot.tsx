@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { User } from "firebase/auth";
 import { AuthProvider, useAuth } from "../auth";
 import { LoginPage } from "../components/LoginPage";
@@ -6,7 +6,7 @@ import type { AppState, Task, TaskId } from "../types";
 import { makeTask, mapById } from "../store/tasks";
 import { parseCapture } from "../store/capture";
 import { todayISO } from "../store/dates";
-import { mergeAndSave, subscribeAppState } from "./cloud";
+import { loadAppState, mergeAndSave, subscribeAppState } from "./cloud";
 import { ReadOnlyApp } from "./ReadOnlyApp";
 import { SeedPanel } from "./SeedPanel";
 
@@ -83,23 +83,57 @@ function AuthedViewer({ user, onSignOut }: { user: User; onSignOut: () => void }
   const [state, setState] = useState<AppState | null>(null);
   const [phase, setPhase] = useState<"loading" | "ready" | "error">("loading");
   const [errorMsg, setErrorMsg] = useState("");
+  const [reloadKey, setReloadKey] = useState(0);
+  const paintedRef = useRef(false);
 
   useEffect(() => {
     if (seedMode) return;
+    paintedRef.current = false;
+    setPhase("loading");
+    setErrorMsg("");
+    let cancelled = false;
+
+    // First paint from whichever wins. Also keeps updating on every live change.
+    const paint = (s: AppState | null) => {
+      if (cancelled) return;
+      paintedRef.current = true;
+      setState(s);
+      setPhase("ready");
+    };
+    // Only a hard error if we never painted — a live-stream hiccup after we've
+    // already shown data shouldn't blow the screen away.
+    const fail = (msg: string) => {
+      if (cancelled || paintedRef.current) return;
+      setErrorMsg(msg);
+      setPhase("error");
+    };
+
+    // Fast, hang-proof first paint: a one-shot REST read that returns even on
+    // the mobile networks where the live streaming channel can't establish
+    // (see firebase.ts). This is what stops the indefinite "Loading…" hang.
+    loadAppState(user.uid)
+      .then(paint)
+      .catch(() => {
+        /* the live sub or the timeout backstop will surface any real failure */
+      });
+
     // Live subscription: reflects desktop edits and our own writes as they land.
-    const unsub = subscribeAppState(
-      user.uid,
-      (s) => {
-        setState(s);
-        setPhase("ready");
-      },
-      (e) => {
-        setErrorMsg(e instanceof Error ? e.message : "Failed to load your data.");
-        setPhase("error");
-      },
+    const unsub = subscribeAppState(user.uid, paint, (e) =>
+      fail(e instanceof Error ? e.message : "Failed to load your data."),
     );
-    return unsub;
-  }, [user.uid, seedMode]);
+
+    // Backstop: never spin forever. If nothing has painted, offer a retry.
+    const timer = setTimeout(
+      () => fail("This is taking longer than usual — check your connection and try again."),
+      8000,
+    );
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+      unsub();
+    };
+  }, [user.uid, seedMode, reloadKey]);
 
   if (seedMode) return <SeedPanel user={user} onSignOut={onSignOut} />;
 
@@ -119,12 +153,20 @@ function AuthedViewer({ user, onSignOut }: { user: User; onSignOut: () => void }
         <p className="max-w-sm text-[12px] text-ink-faint">
           If this says permission denied, re-publish the Firestore rules.
         </p>
-        <button
-          onClick={onSignOut}
-          className="rounded border border-line bg-surface px-4 py-2 text-sm font-medium hover:bg-surface-2"
-        >
-          Sign out
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setReloadKey((k) => k + 1)}
+            className="rounded border border-line bg-ink px-4 py-2 text-sm font-medium text-bg hover:opacity-90"
+          >
+            Try again
+          </button>
+          <button
+            onClick={onSignOut}
+            className="rounded border border-line bg-surface px-4 py-2 text-sm font-medium hover:bg-surface-2"
+          >
+            Sign out
+          </button>
+        </div>
       </Centered>
     );
   }
