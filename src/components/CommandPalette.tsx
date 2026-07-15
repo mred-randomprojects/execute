@@ -27,9 +27,22 @@ export function CommandPalette({
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (q === "") return commands;
+    const tokens = q.split(/\s+/).filter(Boolean);
     return commands.filter((c) => {
-      if (c.label.toLowerCase().includes(q)) return true;
-      return c.aliases?.some((alias) => q.startsWith(alias.toLowerCase())) ?? false;
+      // Alias shortcut: the query starts with a command alias (unchanged).
+      if (c.aliases?.some((alias) => q.startsWith(alias.toLowerCase()))) return true;
+      // Every whitespace-separated token must appear in the label, in order — so
+      // "sche tod" matches "Schedule: Today" even though it isn't a contiguous
+      // substring. A single token reduces to the old substring match, and we
+      // don't re-sort, so the deliberate command ordering is preserved.
+      const label = c.label.toLowerCase();
+      let from = 0;
+      for (const token of tokens) {
+        const at = label.indexOf(token, from);
+        if (at === -1) return false;
+        from = at + token.length;
+      }
+      return true;
     });
   }, [commands, query]);
 
