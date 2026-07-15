@@ -714,7 +714,10 @@ export function App() {
     const subtree: TaskId[] = [];
     for (const id of ids) {
       const t = findById(state.tasks, id);
-      if (t != null) walk(t.children, (x) => subtree.push(x.id));
+      // Only cascade the schedule onto still-open subtasks. Including completed
+      // or won't-do ones would stamp them with today's date and resurface them
+      // in Today as if they were just done — see isOpen (excludes both).
+      if (t != null) walk(t.children, (x) => { if (isOpen(x)) subtree.push(x.id); });
     }
     if (subtree.length === 0) return applyScheduleTo(ids, choice);
     setConfirm({
