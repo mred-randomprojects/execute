@@ -194,6 +194,8 @@ export function mergeStates(local: AppState, remote: AppState): AppState {
     currentTaskId: local.currentTaskId, // writer's "right now"
     lastOpenedDate: maxDate(local.lastOpenedDate, remote.lastOpenedDate),
     devDateOverride: local.devDateOverride,
+    dailyCapacityBlocks: local.dailyCapacityBlocks, // writer wins (a per-device setting)
+    boardPreferred: local.boardPreferred, // writer wins (a per-device preference)
   };
 }
 

@@ -36,10 +36,15 @@ export function getActiveContext(state: ContextState): KeyContext {
   // The schedule picker owns the keyboard while open (it has no app bindings),
   // so normal/editing shortcuts stay dormant beneath it.
   if (state.showSchedule) return "schedule";
+  // Likewise the estimate picker.
+  if (state.showEstimate) return "estimate";
   // Likewise the repeat picker.
   if (state.showRepeat) return "repeat";
   if (isInteractiveElementFocused()) return "editing";
-  if (state.reckoningActive) return "reckoning";
+  // The reckoning gate owns the keyboard while any leftover remains. Its two
+  // presentations share the gate but bind keys differently: the spatial board
+  // has its own context ("board"), the card review the classic one.
+  if (state.reckoningActive) return state.boardMode ? "board" : "reckoning";
   if (state.mode === "move") return "move";
   return "normal";
 }

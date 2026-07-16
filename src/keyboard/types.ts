@@ -11,9 +11,11 @@ export type KeyContext =
   | "help"
   | "palette"
   | "schedule"
+  | "estimate"
   | "repeat"
   | "confirm"
   | "reckoning"
+  | "board"
   | "editing"
   | "move"
   | "normal";
@@ -25,9 +27,12 @@ export interface ContextState {
   showHelp: boolean;
   showPalette: boolean;
   showSchedule: boolean;
+  showEstimate: boolean;
   showRepeat: boolean;
   showConfirm: boolean;
   reckoningActive: boolean;
+  /** During a reckoning, render the two-panel planning board instead of cards. */
+  boardMode: boolean;
   mode: AppMode;
 }
 

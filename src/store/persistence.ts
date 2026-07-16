@@ -21,6 +21,7 @@ import type {
 } from "../types";
 import { normalizeRule } from "./recurrence";
 import {
+  DEFAULT_CAPACITY_BLOCKS,
   DEFAULT_PROJECT_ID,
   PROJECT_COLORS,
   SCHEMA_VERSION,
@@ -293,5 +294,9 @@ export function coerceState(raw: unknown): AppState {
     currentTaskId: strOrNull(raw.currentTaskId) as TaskId | null,
     lastOpenedDate: strOrNull(raw.lastOpenedDate),
     devDateOverride: strOrNull(raw.devDateOverride),
+    // v8: soft daily-capacity budget. Pre-v8 data has none → the default.
+    dailyCapacityBlocks: Math.max(1, Math.trunc(num(raw.dailyCapacityBlocks, DEFAULT_CAPACITY_BLOCKS))),
+    // v8: planning-board preference. Pre-v8 → classic card review.
+    boardPreferred: bool(raw.boardPreferred, false),
   };
 }

@@ -39,6 +39,8 @@ function state(over: Partial<AppState> = {}): AppState {
     currentTaskId: null,
     lastOpenedDate: null,
     devDateOverride: null,
+    dailyCapacityBlocks: 12,
+    boardPreferred: false,
     ...over,
   };
 }

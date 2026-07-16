@@ -82,14 +82,25 @@ describe("getActiveContext", () => {
     showHelp: false,
     showPalette: false,
     showSchedule: false,
+    showEstimate: false,
     showRepeat: false,
     showConfirm: false,
     reckoningActive: false,
+    boardMode: false,
     mode: "normal" as const,
   };
 
   it("defaults to normal", () => {
     expect(getActiveContext(base)).toBe("normal");
+  });
+  it("reckoning shows the board when boardMode is on", () => {
+    expect(getActiveContext({ ...base, reckoningActive: true, boardMode: true })).toBe("board");
+  });
+  it("reckoning shows cards when boardMode is off", () => {
+    expect(getActiveContext({ ...base, reckoningActive: true, boardMode: false })).toBe("reckoning");
+  });
+  it("estimate picker owns the keyboard", () => {
+    expect(getActiveContext({ ...base, showEstimate: true })).toBe("estimate");
   });
   it("confirm wins over everything", () => {
     expect(
@@ -121,9 +132,11 @@ describe("getActiveContext — focus zones", () => {
     showHelp: false,
     showPalette: false,
     showSchedule: false,
+    showEstimate: false,
     showRepeat: false,
     showConfirm: false,
     reckoningActive: false,
+    boardMode: false,
     mode: "normal" as const,
   };
 

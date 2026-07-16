@@ -47,10 +47,13 @@ import {
   renameProject,
   reorderAcrossProjects,
   restoreFromTrash,
+  setBoardPreferred,
   setCompleted,
   setCompletedMany,
   setCurrentTask,
+  setDailyCapacityBlocks,
   setDevDateOverride,
+  setEstimatedMinutesMany,
   setHorizonMany,
   setNotes,
   setPlannedForMany,
@@ -94,6 +97,8 @@ import {
   stepSchedule,
   suggestedForToday,
   taskBucket,
+  todayCapacity,
+  todayLeaves,
   todayProgress,
   viewPredicate,
   viewTasks,
@@ -105,6 +110,7 @@ import {
   type ViewKind,
   type ZoomTarget,
 } from "./selectors";
+import { minutesFromBlocks } from "./store/estimate";
 import {
   emptySelection,
   moveSelection,
@@ -127,6 +133,7 @@ import { OutlineView } from "./views/OutlineView";
 import { ProjectsView } from "./views/ProjectsView";
 import { RecurringView } from "./views/RecurringView";
 import { ReckoningView } from "./views/ReckoningView";
+import { ReckoningBoard, type BoardLeftover } from "./views/ReckoningBoard";
 import { TrashView } from "./views/TrashView";
 import { RepeatPicker } from "./components/RepeatPicker";
 import { DetailPanel, type DetailHandlers } from "./components/DetailPanel";
@@ -135,6 +142,7 @@ import { DevControls } from "./components/DevControls";
 import { StatusBar } from "./components/StatusBar";
 import { CommandPalette, type Command } from "./components/CommandPalette";
 import { SchedulePicker, type ScheduleChoice } from "./components/SchedulePicker";
+import { EstimatePicker } from "./components/EstimatePicker";
 import { ConfirmModal, type ConfirmRequest } from "./components/ConfirmModal";
 
 const THEMES: ThemeName[] = ["slate", "ivory", "carbon", "bordeaux"];
@@ -190,6 +198,13 @@ export function App() {
   const [showHelp, setShowHelp] = useState(false);
   const [showPalette, setShowPalette] = useState(false);
   const [showSchedule, setShowSchedule] = useState(false);
+  const [showEstimate, setShowEstimate] = useState(false);
+  // The reckoning gate's two-panel skin (leftovers ↔ today + capacity). Opt-in
+  // and persisted (state.boardPreferred); `v` toggles it and the card review.
+  const boardMode = state.boardPreferred;
+  // When the board's "push to later" opens the schedule picker, the leftover it
+  // targets (the picker otherwise reads the outline selection, stale mid-gate).
+  const [boardScheduleId, setBoardScheduleId] = useState<TaskId | null>(null);
   const [repeatTarget, setRepeatTarget] = useState<{ recId: RecurrenceId; taskId: TaskId } | null>(
     null
   );
@@ -241,6 +256,29 @@ export function App() {
   const breakdownTask =
     breakingDownId != null ? findById(state.tasks, breakingDownId) ?? null : null;
   const leftoverKey = leftovers.map((t) => t.id).join(",");
+
+  // ── Planning board (the reckoning's opt-in board skin) ────────────
+  const capacity = useMemo(
+    () => todayCapacity(state.tasks, today, state.dailyCapacityBlocks),
+    [state.tasks, today, state.dailyCapacityBlocks]
+  );
+  // Open work already committed to today — the board's right column.
+  const todayOpenLeaves = useMemo(
+    () => todayLeaves(state.tasks, today).filter(isOpen),
+    [state.tasks, today]
+  );
+  // The leftovers as board rows, each tagged with its nearest ancestor's text
+  // for context. Ordered to match `leftovers` so the cursor lines up 1:1.
+  const boardLeftovers = useMemo<BoardLeftover[]>(() => {
+    const parentText = new Map<TaskId, string | null>();
+    for (const card of reckCards) {
+      for (const leaf of card.leaves) {
+        const nearest = leaf.parents[leaf.parents.length - 1] ?? (card.root.id !== leaf.task.id ? card.root : null);
+        parentText.set(leaf.task.id, nearest?.text ?? null);
+      }
+    }
+    return leftovers.map((task) => ({ task, parentText: parentText.get(task.id) ?? null }));
+  }, [leftovers, reckCards]);
 
   useEffect(() => {
     if (!reckoningActive) {
@@ -786,6 +824,14 @@ export function App() {
           : focusedTask.plannedFor != null
             ? null
             : taskBucket(focusedTask, today);
+  // Who the schedule picker acts on: a board leftover when pushing from the
+  // board, otherwise the normal outline selection/cursor.
+  const scheduleTargetIds =
+    boardScheduleId != null
+      ? findById(state.tasks, boardScheduleId) != null
+        ? [boardScheduleId]
+        : []
+      : actionTargets();
 
   // ── Commands ──────────────────────────────────────────────────────
   const moveReckCursor = (dir: "up" | "down") => {
@@ -1169,7 +1215,10 @@ export function App() {
       else if (repeatTarget != null) setRepeatTarget(null);
       else if (showHelp) setShowHelp(false);
       else if (showPalette) setShowPalette(false);
-      else if (showSchedule) setShowSchedule(false);
+      else if (showSchedule) {
+        setShowSchedule(false);
+        setBoardScheduleId(null);
+      } else if (showEstimate) setShowEstimate(false);
       else if (mode === "move") exitMove();
       else if (reasonEditId != null) setReasonEditId(null);
       else if (editingProjectId != null) setEditingProjectId(null);
@@ -1221,14 +1270,31 @@ export function App() {
     },
   };
 
+  // ── Planning board (the reckoning's board skin) ───────────────────
+  // Pulling reuses "keep for today"; pushing hands the leftover to the schedule
+  // picker (targeting it explicitly). Done/drop/breakdown reuse the card actions.
+  const pushLeftoverToLater = () => {
+    if (reckCursorId == null) return;
+    setBoardScheduleId(reckCursorId);
+    setShowSchedule(true);
+  };
+  const setCursorEstimateBlocks = (blocks: number) => {
+    if (reckCursorId != null) setEstimatedMinutesMany([reckCursorId], minutesFromBlocks(blocks));
+  };
+  const openEstimatePicker = () => {
+    if (actionTargets().length > 0) setShowEstimate(true);
+  };
+
   // ── Keyboard wiring ───────────────────────────────────────────────
   const dispatchState: ContextState = {
     showHelp,
     showPalette,
     showSchedule,
+    showEstimate,
     showRepeat: repeatTarget != null,
     showConfirm: confirm != null,
     reckoningActive,
+    boardMode,
     mode,
   };
   const actionMap: Record<string, () => void> = {
@@ -1267,6 +1333,7 @@ export function App() {
     "help.toggle": cmd.helpToggle,
     "palette.open": cmd.paletteOpen,
     "schedule.open": cmd.scheduleOpen,
+    "estimate.open": openEstimatePicker,
     "recurrence.repeat": cmd.repeatOpen,
     "later.toggleLayout": cmd.toggleLaterLayout,
     "view.today": cmd.gotoView("today"),
@@ -1293,6 +1360,22 @@ export function App() {
       const c = currentReckCard();
       if (c != null) cmd.reckDropAll(c);
     },
+    // Planning board (context "board").
+    "board.toggle": () => setBoardPreferred(!boardMode),
+    "board.pull": () => cmd.reckKeep(),
+    "board.push": pushLeftoverToLater,
+    "board.complete": () => cmd.reckComplete(),
+    "board.breakdown": () => cmd.reckBreakdown(),
+    "board.drop": () => cmd.reckDrop(),
+    "board.estimate1": () => setCursorEstimateBlocks(1),
+    "board.estimate2": () => setCursorEstimateBlocks(2),
+    "board.estimate3": () => setCursorEstimateBlocks(3),
+    "board.estimate4": () => setCursorEstimateBlocks(4),
+    "board.estimate5": () => setCursorEstimateBlocks(5),
+    "board.estimate6": () => setCursorEstimateBlocks(6),
+    "board.estimate7": () => setCursorEstimateBlocks(7),
+    "board.estimate8": () => setCursorEstimateBlocks(8),
+    "board.estimateClear": () => setCursorEstimateBlocks(0),
   };
   useKeyboard(keymap, actionMap, dispatchState);
 
@@ -1658,6 +1741,9 @@ export function App() {
     { id: "sched-next-month", label: "Schedule: Next month", aliases: ["schedule"], hint: "s n", run: () => applySchedule("nextMonth") },
     { id: "sched-someday", label: "Schedule: Someday", aliases: ["schedule"], hint: "s s", run: () => applySchedule("someday") },
     { id: "sched-inbox", label: "Schedule: Inbox (untriage)", aliases: ["schedule"], hint: "s i", run: () => applySchedule("inbox") },
+    { id: "estimate", label: "Estimate effort (blocks of ~20m)…", aliases: ["estimate", "effort", "blocks", "time", "size"], hint: "e", run: openEstimatePicker },
+    { id: "capacity-up", label: `Daily capacity: raise (${state.dailyCapacityBlocks} → ${state.dailyCapacityBlocks + 1} blocks)`, aliases: ["capacity", "budget"], run: () => setDailyCapacityBlocks(state.dailyCapacityBlocks + 1) },
+    { id: "capacity-down", label: `Daily capacity: lower (${state.dailyCapacityBlocks} → ${Math.max(1, state.dailyCapacityBlocks - 1)} blocks)`, aliases: ["capacity", "budget"], run: () => setDailyCapacityBlocks(state.dailyCapacityBlocks - 1) },
     // The home view's period tabs, reachable by name. Deliberately AFTER the
     // Schedule commands: typing "next week" must offer scheduling first.
     ...PERIODS.filter((p) => p !== "today").map((p) => ({
@@ -1805,6 +1891,37 @@ export function App() {
         <div className="flex flex-1 overflow-hidden">
           <div className="flex-1 overflow-hidden">
             {reckoningActive ? (
+              boardMode && breakdownTask == null ? (
+                <ReckoningBoard
+                  leftovers={boardLeftovers}
+                  todayOpen={todayOpenLeaves}
+                  capacity={capacity}
+                  cursorId={reckCursorId}
+                  today={today}
+                  projects={state.projects}
+                  onSelect={setReckCursorId}
+                  onPull={(id) => cmd.reckKeep(id)}
+                  onPush={(id) => {
+                    setReckCursorId(id);
+                    setBoardScheduleId(id);
+                    setShowSchedule(true);
+                  }}
+                  onComplete={(id) => cmd.reckComplete(id)}
+                  onDrop={(id) => cmd.reckDrop(id)}
+                  onSetEstimate={(id, blocks) =>
+                    setEstimatedMinutesMany([id], minutesFromBlocks(blocks))
+                  }
+                  onCapacityDelta={(d) => setDailyCapacityBlocks(state.dailyCapacityBlocks + d)}
+                  onSwitchToCards={() => setBoardPreferred(false)}
+                  captureRef={captureRef}
+                  onCapture={onReckCapture}
+                  onCaptureArrowDown={() => {
+                    if (reckCursorId == null && leftovers[0] != null) {
+                      setReckCursorId(leftovers[0].id);
+                    }
+                  }}
+                />
+              ) : (
               <ReckoningView
                 cards={reckCards}
                 cursorId={reckCursorId}
@@ -1828,6 +1945,7 @@ export function App() {
                   if (breakingDownId != null) logBreakdown(breakingDownId);
                   setBreakingDownId(null);
                 }}
+                onSwitchToBoard={() => setBoardPreferred(true)}
                 captureRef={captureRef}
                 onCapture={onReckCapture}
                 onCaptureArrowDown={() => {
@@ -1836,6 +1954,7 @@ export function App() {
                   }
                 }}
               />
+              )
             ) : view === "trash" ? (
               <TrashView
                 trash={state.trash}
@@ -1952,13 +2071,34 @@ export function App() {
       {showPalette && (
         <CommandPalette commands={commands} onClose={() => setShowPalette(false)} />
       )}
-      {showSchedule && actionTargets().length > 0 && (
+      {showSchedule && scheduleTargetIds.length > 0 && (
         <SchedulePicker
           today={today}
+          count={scheduleTargetIds.length}
+          current={boardScheduleId != null ? null : scheduleTag}
+          onPick={(choice) => {
+            if (boardScheduleId != null) {
+              // Board "push to later": act on the targeted leftover, then move the
+              // cursor forward so the triage keeps flowing.
+              applyScheduleTo([boardScheduleId], choice);
+              advanceReckCursorPast(boardScheduleId);
+              setBoardScheduleId(null);
+            } else {
+              applySchedule(choice);
+            }
+          }}
+          onClose={() => {
+            setShowSchedule(false);
+            setBoardScheduleId(null);
+          }}
+        />
+      )}
+      {showEstimate && actionTargets().length > 0 && (
+        <EstimatePicker
           count={actionTargets().length}
-          current={scheduleTag}
-          onPick={applySchedule}
-          onClose={() => setShowSchedule(false)}
+          current={focusedTask?.estimatedMinutes ?? null}
+          onPick={(minutes) => setEstimatedMinutesMany(actionTargets(), minutes)}
+          onClose={() => setShowEstimate(false)}
         />
       )}
       {repeatTarget != null && (

@@ -23,6 +23,7 @@ import {
   suppressedRecurrenceIds,
   taskBucket,
   todayProgress,
+  todayCapacity,
   viewPredicate,
   viewTasks,
   zoomParent,
@@ -555,6 +556,55 @@ describe("won't do (intentionally skipped) drops out of counts", () => {
     ];
     const sum = projectSummaries(tasks, projects, today).find((s) => s.project.id === "work");
     expect(sum).toMatchObject({ open: 1, today: 1, done: 1 });
+  });
+});
+
+describe("todayCapacity (the planning board's soft meter)", () => {
+  const today = "2026-07-06";
+  const withEstimate = (t: Task, estimatedMinutes: number | null): Task => ({ ...t, estimatedMinutes });
+  const complete = (t: Task): Task => ({ ...t, completed: true });
+
+  it("sums estimates over open today-work and flags the unestimated", () => {
+    const tasks = [
+      withEstimate(task("a", "work", today), 60), // 3 blocks
+      withEstimate(task("b", "work", today), 40), // 2 blocks
+      task("c", "work", today), // unestimated
+    ];
+    const load = todayCapacity(tasks, today, 12);
+    expect(load.usedMinutes).toBe(100);
+    expect(load.usedBlocks).toBe(5);
+    expect(load.unestimated).toBe(1);
+    expect(load.capacityBlocks).toBe(12);
+    expect(load.overBlocks).toBe(0);
+  });
+
+  it("ignores completed today-work — it's a load you no longer carry", () => {
+    const tasks = [
+      complete(withEstimate(task("done", "work", today), 60)),
+      withEstimate(task("open", "work", today), 40),
+    ];
+    const load = todayCapacity(tasks, today, 12);
+    expect(load.usedMinutes).toBe(40);
+    expect(load.usedBlocks).toBe(2);
+    expect(load.unestimated).toBe(0);
+  });
+
+  it("reports how far today is over budget", () => {
+    const tasks = [
+      withEstimate(task("big", "work", today), 200), // 10 blocks
+      withEstimate(task("more", "work", today), 120), // 6 blocks
+    ];
+    const load = todayCapacity(tasks, today, 12);
+    expect(load.usedBlocks).toBe(16);
+    expect(load.overBlocks).toBe(4);
+  });
+
+  it("does not count work planned for other days", () => {
+    const tasks = [
+      withEstimate(task("today", "work", today), 60),
+      withEstimate(task("tomorrow", "work", addDays(today, 1)), 60),
+    ];
+    expect(todayCapacity(tasks, today, 12).usedBlocks).toBe(3);
   });
 });
 

@@ -4,6 +4,7 @@ import { countAll, isOpen } from "../store/tasks";
 import { copyText } from "../ui/clipboard";
 import { relativeLabel } from "../store/dates";
 import { horizonLabel } from "../selectors";
+import { BlockPips } from "./BlockPips";
 import { useEditor, type DropPos } from "../ui/editor";
 import { renderBlock, renderInline } from "../ui/markdown";
 import { NO_SPELLCHECK } from "../ui/noSpellcheck";
@@ -388,6 +389,10 @@ export function TaskRow({ task, depth }: { task: Task; depth: number }) {
           <span className="mono shrink-0 text-[11px] text-ink-faint">
             {progress.done}/{progress.total}
           </span>
+        )}
+
+        {task.estimatedMinutes != null && isOpen(task) && !editing && (
+          <BlockPips minutes={task.estimatedMinutes} className="opacity-80" />
         )}
 
         {!editing && (

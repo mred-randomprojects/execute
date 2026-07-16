@@ -1558,3 +1558,46 @@ describe("Current (focus) task", () => {
     await waitFor(() => expect(screen.queryByText("Right now")).toBeNull());
   });
 });
+
+describe("Estimates & the planning board", () => {
+  it("sets an effort estimate on a task via the `e` picker", async () => {
+    render(<App />);
+    await addTask("estimate me");
+    blurActive();
+
+    fireEvent.keyDown(document.body, { key: "e" }); // open the estimate picker
+    const dialog = await screen.findByRole("dialog", { name: "Estimate" });
+    fireEvent.keyDown(dialog, { key: "3" }); // 3 blocks = 1h
+
+    // The row shows the estimate (BlockPips carries the spelled-out label).
+    await waitFor(() =>
+      expect(screen.getByLabelText("3 blocks · 1h")).toBeTruthy()
+    );
+  });
+
+  it("switches the reckoning to the board and pulls leftovers into today", async () => {
+    render(<App />);
+    await addTask("overdue one");
+    await addTask("overdue two");
+    blurActive();
+
+    // Roll the day forward → both become leftovers → the reckoning gate opens.
+    act(() => setDevDateOverride(addDays(todayISO(null), 1)));
+    expect(await screen.findByText("Unfinished from before today")).toBeTruthy();
+
+    // Flip to the board skin (persisted preference), then pull both in.
+    fireEvent.keyDown(document.body, { key: "v" });
+    expect(await screen.findByText("Pull what you can into today")).toBeTruthy();
+    expect(screen.getByText("Today's load")).toBeTruthy();
+
+    fireEvent.keyDown(document.body, { key: "ArrowRight" }); // pull the first
+    fireEvent.keyDown(document.body, { key: "ArrowRight" }); // pull the second
+
+    // Both triaged → the gate clears and we're back in the normal Today view.
+    await waitFor(() =>
+      expect(screen.queryByText("Pull what you can into today")).toBeNull()
+    );
+    expect(screen.getByText("overdue one")).toBeTruthy();
+    expect(screen.getByText("overdue two")).toBeTruthy();
+  });
+});

@@ -11,6 +11,7 @@ import type {
 } from "./types";
 import { DEFAULT_PROJECT_ID, projectRowId } from "./types";
 import { ruleFiresOn, ruleLabel, ruleSortKey } from "./store/recurrence";
+import { blocksFromMinutes } from "./store/estimate";
 import {
   findById,
   findParentId,
@@ -398,6 +399,49 @@ export function todayProgress(tasks: Task[], today: ISODate): TodayProgress {
   const leaves = todayLeaves(tasks, today).filter((t) => t.wontDo == null);
   const done = leaves.filter((t) => t.completed).length;
   return { done, total: leaves.length, remaining: leaves.length - done };
+}
+
+// ─── Daily capacity (the planning board's soft meter) ───────────────
+
+export interface CapacityLoad {
+  /** Sum of estimates over the open work planned for today, in minutes. */
+  usedMinutes: number;
+  /** …the same, rounded to whole blocks (what the meter tallies). */
+  usedBlocks: number;
+  /** The user's chosen daily budget, in blocks. */
+  capacityBlocks: number;
+  /** Open today-tasks with no estimate — the meter undercounts by these. */
+  unestimated: number;
+  /** Blocks over the budget (0 when within it). */
+  overBlocks: number;
+}
+
+/**
+ * What today's committed load looks like against the daily budget. Reads only
+ * the *open* today-leaves (done/won't-do work isn't a load you still carry);
+ * an unestimated leaf adds nothing to the sum but is surfaced separately so the
+ * meter's blind spot stays honest. Purely derived — never mutates.
+ */
+export function todayCapacity(
+  tasks: Task[],
+  today: ISODate,
+  capacityBlocks: number
+): CapacityLoad {
+  const open = todayLeaves(tasks, today).filter(isOpen);
+  let usedMinutes = 0;
+  let unestimated = 0;
+  for (const t of open) {
+    if (t.estimatedMinutes != null && t.estimatedMinutes > 0) usedMinutes += t.estimatedMinutes;
+    else unestimated++;
+  }
+  const usedBlocks = blocksFromMinutes(usedMinutes);
+  return {
+    usedMinutes,
+    usedBlocks,
+    capacityBlocks,
+    unestimated,
+    overBlocks: Math.max(0, usedBlocks - capacityBlocks),
+  };
 }
 
 export function backlogCount(tasks: Task[]): number {

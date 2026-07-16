@@ -216,6 +216,7 @@ export function ReckoningView({
   onNextCard,
   onAddStep,
   onFinishBreakdown,
+  onSwitchToBoard,
   captureRef,
   onCapture,
   onCaptureArrowDown,
@@ -239,6 +240,7 @@ export function ReckoningView({
   onNextCard: () => void;
   onAddStep: (parentId: TaskId, text: string) => void;
   onFinishBreakdown: () => void;
+  onSwitchToBoard: () => void;
   captureRef: RefObject<HTMLInputElement>;
   onCapture: (raw: string) => void;
   onCaptureArrowDown: () => void;
@@ -342,17 +344,27 @@ export function ReckoningView({
         />
       </div>
 
-      <header className="mb-6 border-b border-line pb-5">
-        <div className="eyebrow mb-1.5 text-bad">The Reckoning</div>
-        <h1 className="font-serif text-[32px] font-medium leading-none tracking-tight text-ink">
-          Unfinished from before today
-        </h1>
-        <p className="mt-2 max-w-xl text-[14px] text-ink-soft">
-          {totalLeftovers} task{totalLeftovers === 1 ? "" : "s"} you committed to
-          didn't get done{cards.length > 1 ? `, across ${cards.length} groups` : ""}.
-          Finish each, keep it for today, break it into something smaller, send it
-          to the backlog, or drop it. Today starts once this is clear.
-        </p>
+      <header className="mb-6 flex items-start justify-between gap-4 border-b border-line pb-5">
+        <div>
+          <div className="eyebrow mb-1.5 text-bad">The Reckoning</div>
+          <h1 className="font-serif text-[32px] font-medium leading-none tracking-tight text-ink">
+            Unfinished from before today
+          </h1>
+          <p className="mt-2 max-w-xl text-[14px] text-ink-soft">
+            {totalLeftovers} task{totalLeftovers === 1 ? "" : "s"} you committed to
+            didn't get done{cards.length > 1 ? `, across ${cards.length} groups` : ""}.
+            Finish each, keep it for today, break it into something smaller, send it
+            to the backlog, or drop it. Today starts once this is clear.
+          </p>
+        </div>
+        <button
+          tabIndex={-1}
+          onClick={onSwitchToBoard}
+          className="kbd shrink-0"
+          aria-label="Switch to the planning board"
+        >
+          v · board
+        </button>
       </header>
 
       {/* One card at a time: a top-level commitment and its stranded subtasks. */}

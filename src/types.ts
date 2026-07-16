@@ -136,6 +136,16 @@ export interface Task {
 
 export type ThemeName = "slate" | "ivory" | "carbon" | "bordeaux";
 
+/**
+ * The atom of the effort estimate: a task's `estimatedMinutes` is presented and
+ * edited in whole "blocks" of this many minutes (one block ≈ a short focused
+ * sitting). 1 block = 20m, 3 blocks = 1h — a deliberately shallow scale.
+ */
+export const BLOCK_MINUTES = 20;
+
+/** Default daily capacity, in blocks (~4h of estimated task-work). Editable. */
+export const DEFAULT_CAPACITY_BLOCKS = 12;
+
 /** A task removed from the tree, retained in the Trash so deletes are reversible. */
 export interface TrashedTask {
   task: Task;
@@ -178,9 +188,21 @@ export interface AppState {
   lastOpenedDate: ISODate | null;
   /** Dev-only: pretend "today" is this date, to exercise the rollover ritual. */
   devDateOverride: ISODate | null;
+  /**
+   * How many 20-minute {@link BLOCK_MINUTES} blocks the user reckons they can
+   * take on in a day. Drives the soft capacity meter on the planning board — a
+   * gauge, never a hard cap. A per-user setting (writer-wins on cloud merge).
+   */
+  dailyCapacityBlocks: number;
+  /**
+   * Whether the reckoning renders as the two-panel planning board (true) or the
+   * classic card review (false). A per-user preference, toggled with `v`;
+   * persisted so a multi-day experiment sticks. Writer-wins on cloud merge.
+   */
+  boardPreferred: boolean;
 }
 
-export const SCHEMA_VERSION = 7;
+export const SCHEMA_VERSION = 8;
 export const DEFAULT_PROJECT_ID = "project-inbox" as ProjectId;
 export const PROJECT_ROW_PREFIX = "project:";
 
@@ -228,5 +250,7 @@ export function emptyState(): AppState {
     currentTaskId: null,
     lastOpenedDate: null,
     devDateOverride: null,
+    dailyCapacityBlocks: DEFAULT_CAPACITY_BLOCKS,
+    boardPreferred: false,
   };
 }

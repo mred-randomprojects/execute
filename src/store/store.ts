@@ -294,6 +294,17 @@ export function markOpened(date: ISODate): void {
   update((s) => ({ ...s, lastOpenedDate: date }), false);
 }
 
+/** Set the daily capacity budget, in blocks (clamped to ≥ 1). Not undoable. */
+export function setDailyCapacityBlocks(blocks: number): void {
+  const clamped = Math.max(1, Math.round(blocks));
+  update((s) => ({ ...s, dailyCapacityBlocks: clamped }), false);
+}
+
+/** Choose how the reckoning renders (board vs. card review). Not undoable. */
+export function setBoardPreferred(preferred: boolean): void {
+  update((s) => ({ ...s, boardPreferred: preferred }), false);
+}
+
 /** Set (or clear, with null) the "right now" task. A focus pointer, not undoable. */
 export function setCurrentTask(id: TaskId | null): void {
   update((s) => ({ ...s, currentTaskId: id }), false);
@@ -775,6 +786,16 @@ export function setHorizonMany(ids: TaskId[], horizon: Horizon | null): void {
 
 export function setPriority(id: TaskId, priority: TaskPriority): void {
   updateTasks((tasks) => mapById(tasks, id, (t) => ({ ...t, priority })));
+}
+
+/** Set (or clear, with null) the effort estimate on a batch — one undo step. */
+export function setEstimatedMinutesMany(ids: TaskId[], minutes: number | null): void {
+  const value = minutes == null || minutes <= 0 ? null : Math.round(minutes);
+  updateTasks((tasks) => {
+    let next = tasks;
+    for (const id of ids) next = mapById(next, id, (t) => ({ ...t, estimatedMinutes: value }));
+    return next;
+  });
 }
 
 export function setPlannedFor(id: TaskId, plannedFor: ISODate | null): void {
