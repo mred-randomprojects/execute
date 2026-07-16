@@ -61,12 +61,25 @@ export function toCombo(e: KeyboardEvent): string {
   if (e.metaKey) parts.push("Meta");
   if (e.ctrlKey) parts.push("Ctrl");
   if (e.altKey) parts.push("Alt");
+
+  // Caps Lock flips the case of an alphabetic e.key independently of Shift, so
+  // pressing "n" with Caps Lock on arrives as "N" and misses its lowercase
+  // binding. This keymap uses letter case purely as a proxy for Shift (t vs. T
+  // = schedule later vs. earlier), so derive the case from the real Shift state
+  // rather than the raw key. That fixes Caps Lock while keeping the Shift pairs
+  // distinct. Non-letters ("?", "[", numbers…) are untouched — their shifted
+  // forms are different characters, not a case swap.
+  let key = e.key;
+  if (key.length === 1 && ((key >= "a" && key <= "z") || (key >= "A" && key <= "Z"))) {
+    key = e.shiftKey ? key.toUpperCase() : key.toLowerCase();
+  }
+
   // Shift only matters for non-printable keys (Tab, Enter, Arrows…). For a
   // printable single char the character itself already reflects shift
   // (e.g. "?" from shift+/, "!" from shift+1), so adding "Shift+" would make
   // the combo unmatchable against a "?" binding.
-  if (e.shiftKey && e.key.length > 1) parts.push("Shift");
-  parts.push(e.key);
+  if (e.shiftKey && key.length > 1) parts.push("Shift");
+  parts.push(key);
   return parts.join("+");
 }
 

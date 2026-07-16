@@ -22,11 +22,24 @@ describe("toCombo", () => {
     expect(toCombo(fakeEvent({ key: "Enter", metaKey: true }))).toBe("Meta+Enter");
     expect(toCombo(fakeEvent({ key: "Tab", shiftKey: true }))).toBe("Shift+Tab");
   });
+  it("ignores Caps Lock for letters (case follows Shift, not the raw key)", () => {
+    // Caps Lock on: "n" arrives as "N" with shiftKey false → still matches "n".
+    expect(toCombo(fakeEvent({ key: "N" }))).toBe("n");
+    // Caps Lock + Shift: "n" arrives lowercase with shiftKey true → "N".
+    expect(toCombo(fakeEvent({ key: "n", shiftKey: true }))).toBe("N");
+    // The Shift pair stays distinct: plain t vs. Shift+t.
+    expect(toCombo(fakeEvent({ key: "t" }))).toBe("t");
+    expect(toCombo(fakeEvent({ key: "T", shiftKey: true }))).toBe("T");
+    // Caps Lock must not masquerade as Shift: Caps+t is "t", not "T".
+    expect(toCombo(fakeEvent({ key: "T" }))).toBe("t");
+  });
   it("keeps Shift only for non-printable keys", () => {
     // shift+/ → "?" (printable): Shift dropped so it matches a "?" binding.
     expect(toCombo(fakeEvent({ key: "?", shiftKey: true }))).toBe("?");
-    // shift+letter: Shift dropped (the char already differs).
-    expect(toCombo(fakeEvent({ key: "k", metaKey: true, shiftKey: true }))).toBe("Meta+k");
+    // shift+letter: Shift dropped, the case encodes it (a real browser delivers
+    // Shift+k as "K"). Plain ⌘k below stays lowercase and reaches the palette.
+    expect(toCombo(fakeEvent({ key: "K", metaKey: true, shiftKey: true }))).toBe("Meta+K");
+    expect(toCombo(fakeEvent({ key: "k", metaKey: true }))).toBe("Meta+k");
     // Shift kept for arrows (multi-select) and Tab (outdent).
     expect(toCombo(fakeEvent({ key: "ArrowUp", shiftKey: true }))).toBe("Shift+ArrowUp");
     expect(toCombo(fakeEvent({ key: "ArrowDown", metaKey: true }))).toBe("Meta+ArrowDown");

@@ -1193,13 +1193,13 @@ describe("Scheduling (the s picker)", () => {
     fireEvent.keyDown(document.body, { key: "t" }); // tomorrow → this week (fuzzy)
     await waitFor(() => expect(screen.queryByText("tomorrow")).toBeNull());
 
-    fireEvent.keyDown(document.body, { key: "T" }); // this week → back to tomorrow
+    fireEvent.keyDown(document.body, { key: "T", shiftKey: true }); // this week → back to tomorrow
     expect(await screen.findByText("tomorrow")).toBeTruthy();
 
-    fireEvent.keyDown(document.body, { key: "T" }); // tomorrow → today
+    fireEvent.keyDown(document.body, { key: "T", shiftKey: true }); // tomorrow → today
     expect(await screen.findByText("today")).toBeTruthy();
 
-    fireEvent.keyDown(document.body, { key: "T" }); // today → inbox (wrap = unplan)
+    fireEvent.keyDown(document.body, { key: "T", shiftKey: true }); // today → inbox (wrap = unplan)
     await waitFor(() => expect(screen.queryByText("today")).toBeNull());
   });
 
@@ -1403,7 +1403,7 @@ describe("Schedule inheritance in the views", () => {
     await addTask("frutas");
     blurActive();
     fireEvent.keyDown(document.body, { key: "Tab" }); // frutas → subtask
-    fireEvent.keyDown(document.body, { key: "T" }); // unplan the child (own schedule: none)
+    fireEvent.keyDown(document.body, { key: "T", shiftKey: true }); // unplan the child (own schedule: none)
     fireEvent.keyDown(document.body, { key: "ArrowUp" }); // focus the parent
 
     fireEvent.keyDown(document.body, { key: "s" });
@@ -1430,7 +1430,7 @@ describe("Schedule inheritance in the views", () => {
     await addTask("loose end");
     blurActive();
     fireEvent.keyDown(document.body, { key: "Tab" }); // nest under the parent
-    fireEvent.keyDown(document.body, { key: "T" }); // unplan the child
+    fireEvent.keyDown(document.body, { key: "T", shiftKey: true }); // unplan the child
 
     // It inherits the parent's today deadline, so Today still lists it.
     expect(await screen.findByText("loose end")).toBeTruthy();

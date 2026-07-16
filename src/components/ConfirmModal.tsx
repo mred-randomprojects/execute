@@ -66,13 +66,15 @@ export function ConfirmModal({
         tabIndex={-1}
         onKeyDown={(e) => {
           e.stopPropagation();
+          // Lowercase the letter keys so Caps Lock doesn't break y/n.
+          const k = e.key.toLowerCase();
           if (e.key === "Enter") {
             e.preventDefault();
             (enterAction === "confirm" ? onConfirm : onCancel)();
-          } else if (e.key === "Escape" || e.key === "n") {
+          } else if (e.key === "Escape" || k === "n") {
             e.preventDefault();
             onCancel();
-          } else if (e.key === "y") {
+          } else if (k === "y") {
             e.preventDefault();
             onConfirm();
           }
