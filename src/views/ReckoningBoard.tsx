@@ -181,11 +181,15 @@ export function ReckoningBoard({
   leftovers,
   todayOpen,
   capacity,
+  column,
   cursorId,
+  todayCursorId,
   today,
   projects,
   onSelect,
+  onSelectToday,
   onPull,
+  onSendBack,
   onPush,
   onComplete,
   onDrop,
@@ -199,11 +203,16 @@ export function ReckoningBoard({
   leftovers: BoardLeftover[];
   todayOpen: Task[];
   capacity: CapacityLoad;
+  /** Which column the cursor is in — only that column shows a focused row. */
+  column: "left" | "right";
   cursorId: TaskId | null;
+  todayCursorId: TaskId | null;
   today: ISODate;
   projects: Project[];
   onSelect: (id: TaskId) => void;
+  onSelectToday: (id: TaskId) => void;
   onPull: (id: TaskId) => void;
+  onSendBack: (id: TaskId) => void;
   onPush: (id: TaskId) => void;
   onComplete: (id: TaskId) => void;
   onDrop: (id: TaskId) => void;
@@ -217,6 +226,30 @@ export function ReckoningBoard({
   const projectOf = (t: Task): Project | null =>
     projects.find((p) => p.id === t.projectId) ?? null;
   const totalLeft = leftovers.length;
+
+  // The action bar shown under a focused row. `transfer` is the one asymmetric
+  // verb: "Today →" in the leftovers column, "Back ←" in the today column.
+  const FocusedActions = ({ task, side }: { task: Task; side: "left" | "right" }) => (
+    <div className="mt-2 flex flex-wrap items-center gap-1.5">
+      {side === "left" ? (
+        <ActionChip label="Today" hint="→" tone="accent" onClick={() => onPull(task.id)} />
+      ) : (
+        <ActionChip label="Back" hint="←" tone="accent" onClick={() => onSendBack(task.id)} />
+      )}
+      <ActionChip label="Later" hint="s" tone="soft" onClick={() => onPush(task.id)} />
+      <ActionChip label="Done" hint="e" tone="good" onClick={() => onComplete(task.id)} />
+      <ActionChip label="Drop" hint="d" tone="bad" onClick={() => onDrop(task.id)} />
+      <span className="mx-1 h-4 w-px bg-line" />
+      <EstimateSetter minutes={task.estimatedMinutes} onSet={(blocks) => onSetEstimate(task.id, blocks)} />
+    </div>
+  );
+
+  const ColumnHead = ({ label, count, active }: { label: string; count: number; active: boolean }) => (
+    <div className="mb-2 flex items-baseline justify-between">
+      <span className={`eyebrow ${active ? "text-accent" : ""}`}>{label}</span>
+      <span className="mono text-[11px] text-ink-faint">{count}</span>
+    </div>
+  );
 
   return (
     <div className="mx-auto flex h-full w-full max-w-5xl flex-col px-8 py-8">
@@ -237,8 +270,9 @@ export function ReckoningBoard({
           </h1>
           <p className="mt-2 max-w-xl text-[13px] text-ink-soft">
             Left is everything overdue. Pull the ones you'll really do into today
-            (→), push the rest to later (s), and watch the capacity meter so today
-            stays realistic. Today starts once the left is clear.
+            (→); if you over-commit, <span className="text-ink">Tab</span> to Today
+            and send some back (←). Push the rest to later (s), and watch the
+            capacity meter. Today starts once the left is clear.
           </p>
         </div>
         <button
@@ -254,10 +288,7 @@ export function ReckoningBoard({
       <div className="grid min-h-0 flex-1 grid-cols-2 gap-5 overflow-hidden">
         {/* ── Left: leftovers to triage ── */}
         <section className="flex min-h-0 flex-col">
-          <div className="mb-2 flex items-baseline justify-between">
-            <span className="eyebrow">Before today</span>
-            <span className="mono text-[11px] text-ink-faint">{totalLeft}</span>
-          </div>
+          <ColumnHead label="Before today" count={totalLeft} active={column === "left"} />
           <div className="flex-1 overflow-auto pr-1">
             {totalLeft === 0 ? (
               <div className="rounded-lg border border-dashed border-line px-4 py-10 text-center text-[13px] text-ink-faint">
@@ -266,7 +297,7 @@ export function ReckoningBoard({
             ) : (
               <div className="flex flex-col gap-1">
                 {leftovers.map(({ task, parentText }) => {
-                  const focused = task.id === cursorId;
+                  const focused = column === "left" && task.id === cursorId;
                   return (
                     <div
                       key={task.id}
@@ -297,20 +328,7 @@ export function ReckoningBoard({
                         {!focused && <BlockPips minutes={task.estimatedMinutes} />}
                         <CarriedBadge count={task.carriedCount} />
                       </div>
-
-                      {focused && (
-                        <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                          <ActionChip label="Today" hint="→" tone="accent" onClick={() => onPull(task.id)} />
-                          <ActionChip label="Later" hint="s" tone="soft" onClick={() => onPush(task.id)} />
-                          <ActionChip label="Done" hint="e" tone="good" onClick={() => onComplete(task.id)} />
-                          <ActionChip label="Drop" hint="d" tone="bad" onClick={() => onDrop(task.id)} />
-                          <span className="mx-1 h-4 w-px bg-line" />
-                          <EstimateSetter
-                            minutes={task.estimatedMinutes}
-                            onSet={(blocks) => onSetEstimate(task.id, blocks)}
-                          />
-                        </div>
-                      )}
+                      {focused && <FocusedActions task={task} side="left" />}
                     </div>
                   );
                 })}
@@ -321,10 +339,7 @@ export function ReckoningBoard({
 
         {/* ── Right: today + capacity ── */}
         <section className="flex min-h-0 flex-col">
-          <div className="mb-2 flex items-baseline justify-between">
-            <span className="eyebrow">Today</span>
-            <span className="mono text-[11px] text-ink-faint">{todayOpen.length}</span>
-          </div>
+          <ColumnHead label="Today" count={todayOpen.length} active={column === "right"} />
           <CapacityMeter capacity={capacity} onDelta={onCapacityDelta} />
           <div className="mt-3 flex-1 overflow-auto pr-1">
             {todayOpen.length === 0 ? (
@@ -333,20 +348,35 @@ export function ReckoningBoard({
               </div>
             ) : (
               <div className="flex flex-col gap-1">
-                {todayOpen.map((task) => (
-                  <div
-                    key={task.id}
-                    className="flex items-center gap-2 rounded-md px-3 py-2 hover:bg-surface-2/50"
-                  >
-                    <span className="h-[6px] w-[6px] shrink-0 rounded-full bg-accent" />
-                    <ProjectDot project={projectOf(task)} />
-                    <span className="min-w-0 flex-1 truncate text-[14px] text-ink">
-                      {task.text === "" ? "Untitled" : task.text}
-                    </span>
-                    <BlockPips minutes={task.estimatedMinutes} />
-                    <CarriedBadge count={task.carriedCount} />
-                  </div>
-                ))}
+                {todayOpen.map((task) => {
+                  const focused = column === "right" && task.id === todayCursorId;
+                  return (
+                    <div
+                      key={task.id}
+                      onClick={() => onSelectToday(task.id)}
+                      className={[
+                        "relative rounded-md px-3 py-2",
+                        focused
+                          ? "bg-surface-2 ring-1 ring-inset ring-accent/30"
+                          : "cursor-pointer hover:bg-surface-2/60",
+                      ].join(" ")}
+                    >
+                      {focused && (
+                        <span className="absolute left-0 top-2 bottom-2 w-[2px] rounded-full bg-accent" />
+                      )}
+                      <div className="flex items-center gap-2">
+                        <span className="h-[6px] w-[6px] shrink-0 rounded-full bg-accent" />
+                        <ProjectDot project={projectOf(task)} />
+                        <span className="min-w-0 flex-1 truncate text-[14px] text-ink">
+                          {task.text === "" ? "Untitled" : task.text}
+                        </span>
+                        {!focused && <BlockPips minutes={task.estimatedMinutes} />}
+                        <CarriedBadge count={task.carriedCount} />
+                      </div>
+                      {focused && <FocusedActions task={task} side="right" />}
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>
@@ -355,12 +385,13 @@ export function ReckoningBoard({
 
       <footer className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-line pt-3 text-[11px] text-ink-faint">
         {[
-          ["→ / ↵", "pull to today"],
-          ["s", "push to later"],
+          ["→", "to today"],
+          ["←", "back to leftovers"],
+          ["tab", "switch column"],
+          ["s", "later"],
           ["e", "done"],
           ["d", "drop"],
           ["1 – 8", "estimate"],
-          ["0", "clear"],
           ["v", "cards"],
         ].map(([keys, label]) => (
           <span key={label} className="flex items-center gap-1.5">

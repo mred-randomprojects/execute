@@ -202,9 +202,13 @@ export function App() {
   // The reckoning gate's two-panel skin (leftovers ↔ today + capacity). Opt-in
   // and persisted (state.boardPreferred); `v` toggles it and the card review.
   const boardMode = state.boardPreferred;
-  // When the board's "push to later" opens the schedule picker, the leftover it
+  // When the board's "push to later" opens the schedule picker, the task it
   // targets (the picker otherwise reads the outline selection, stale mid-gate).
   const [boardScheduleId, setBoardScheduleId] = useState<TaskId | null>(null);
+  // Which board column the cursor is in, and the cursor within the Today column
+  // (the leftovers column reuses reckCursorId). Lets → pull and ← send back.
+  const [boardColumn, setBoardColumn] = useState<"left" | "right">("left");
+  const [todayCursorId, setTodayCursorId] = useState<TaskId | null>(null);
   const [repeatTarget, setRepeatTarget] = useState<{ recId: RecurrenceId; taskId: TaskId } | null>(
     null
   );
@@ -279,6 +283,20 @@ export function App() {
     }
     return leftovers.map((task) => ({ task, parentText: parentText.get(task.id) ?? null }));
   }, [leftovers, reckCards]);
+
+  // Keep the Today-column cursor pointing at a real row; when Today empties, fall
+  // back to the leftovers column so the cursor never strands on nothing.
+  useEffect(() => {
+    const ids = todayOpenLeaves.map((t) => t.id);
+    if (todayCursorId != null && !ids.includes(todayCursorId)) {
+      setTodayCursorId(ids[0] ?? null);
+    } else if (todayCursorId == null && boardColumn === "right" && ids[0] != null) {
+      setTodayCursorId(ids[0]);
+    }
+  }, [todayOpenLeaves, todayCursorId, boardColumn]);
+  useEffect(() => {
+    if (boardColumn === "right" && todayOpenLeaves.length === 0) setBoardColumn("left");
+  }, [boardColumn, todayOpenLeaves.length]);
 
   useEffect(() => {
     if (!reckoningActive) {
@@ -1271,15 +1289,74 @@ export function App() {
   };
 
   // ── Planning board (the reckoning's board skin) ───────────────────
-  // Pulling reuses "keep for today"; pushing hands the leftover to the schedule
-  // picker (targeting it explicitly). Done/drop/breakdown reuse the card actions.
-  const pushLeftoverToLater = () => {
-    if (reckCursorId == null) return;
-    setBoardScheduleId(reckCursorId);
+  // The board is a two-way triage: `→` pulls a leftover into today, `←` sends a
+  // today task back to the leftovers, and `Tab` switches columns. The shared
+  // verbs (later / done / drop / estimate) act on whichever column is active.
+  const boardActiveId = (): TaskId | null =>
+    boardColumn === "left" ? reckCursorId : todayCursorId;
+  // Move the cursor forward past a just-resolved task, in whichever column it sat.
+  const advanceBoardCursorPast = (id: TaskId) => {
+    if (leftovers.some((t) => t.id === id)) {
+      advanceReckCursorPast(id);
+    } else {
+      const ids = todayOpenLeaves.map((t) => t.id);
+      const i = ids.indexOf(id);
+      setTodayCursorId(ids[i + 1] ?? ids[i - 1] ?? null);
+    }
+  };
+  const boardPull = (id: TaskId) => {
+    advanceBoardCursorPast(id);
+    keepForToday(id, reckReason || null); // leftover → today (bumps carried, logs "kept")
+  };
+  const boardSendBack = (id: TaskId) => {
+    advanceBoardCursorPast(id);
+    // Back to the leftovers pile: a day overdue is enough to make it a leftover
+    // again (its exact past date is already water under the bridge).
+    setPlannedForMany([id], addDays(today, -1));
+  };
+  const boardComplete = (id: TaskId) => {
+    advanceBoardCursorPast(id);
+    setCompleted(id, true, reckReason || null);
+  };
+  const boardDrop = (id: TaskId) => {
+    advanceBoardCursorPast(id);
+    trashTask(id, { reason: reckReason || null, log: true });
+  };
+  const boardPushToLater = (id: TaskId) => {
+    setBoardScheduleId(id);
     setShowSchedule(true);
   };
+  const boardSetEstimate = (id: TaskId, blocks: number) =>
+    setEstimatedMinutesMany([id], minutesFromBlocks(blocks));
+
+  const moveBoardCursor = (dir: "up" | "down") => {
+    if (boardColumn === "left") return moveReckCursor(dir);
+    const ids = todayOpenLeaves.map((t) => t.id);
+    if (ids.length === 0) return;
+    const i = todayCursorId == null ? -1 : ids.indexOf(todayCursorId);
+    const next = i < 0 ? 0 : Math.min(Math.max(i + (dir === "down" ? 1 : -1), 0), ids.length - 1);
+    setTodayCursorId(ids[next]);
+  };
+  const switchBoardColumn = () => {
+    if (boardColumn === "left") {
+      if (todayOpenLeaves.length === 0) return; // nothing to switch to
+      if (todayCursorId == null || !todayOpenLeaves.some((t) => t.id === todayCursorId)) {
+        setTodayCursorId(todayOpenLeaves[0].id);
+      }
+      setBoardColumn("right");
+    } else {
+      if (leftovers.length === 0) return;
+      setBoardColumn("left");
+    }
+  };
+  // Keyboard verbs act on the active column's cursor (mouse chips pass a row id).
+  const boardKey = (fn: (id: TaskId) => void) => () => {
+    const id = boardActiveId();
+    if (id != null) fn(id);
+  };
   const setCursorEstimateBlocks = (blocks: number) => {
-    if (reckCursorId != null) setEstimatedMinutesMany([reckCursorId], minutesFromBlocks(blocks));
+    const id = boardActiveId();
+    if (id != null) boardSetEstimate(id, blocks);
   };
   const openEstimatePicker = () => {
     if (actionTargets().length > 0) setShowEstimate(true);
@@ -1362,11 +1439,21 @@ export function App() {
     },
     // Planning board (context "board").
     "board.toggle": () => setBoardPreferred(!boardMode),
-    "board.pull": () => cmd.reckKeep(),
-    "board.push": pushLeftoverToLater,
-    "board.complete": () => cmd.reckComplete(),
-    "board.breakdown": () => cmd.reckBreakdown(),
-    "board.drop": () => cmd.reckDrop(),
+    "board.cursorDown": () => moveBoardCursor("down"),
+    "board.cursorUp": () => moveBoardCursor("up"),
+    "board.switchColumn": switchBoardColumn,
+    "board.pull": () => {
+      if (boardColumn === "left" && reckCursorId != null) boardPull(reckCursorId);
+    },
+    "board.sendBack": () => {
+      if (boardColumn === "right" && todayCursorId != null) boardSendBack(todayCursorId);
+    },
+    "board.push": boardKey(boardPushToLater),
+    "board.complete": boardKey(boardComplete),
+    "board.breakdown": () => {
+      if (boardColumn === "left") cmd.reckBreakdown(); // breakdown is a leftovers action
+    },
+    "board.drop": boardKey(boardDrop),
     "board.estimate1": () => setCursorEstimateBlocks(1),
     "board.estimate2": () => setCursorEstimateBlocks(2),
     "board.estimate3": () => setCursorEstimateBlocks(3),
@@ -1896,21 +1983,25 @@ export function App() {
                   leftovers={boardLeftovers}
                   todayOpen={todayOpenLeaves}
                   capacity={capacity}
+                  column={boardColumn}
                   cursorId={reckCursorId}
+                  todayCursorId={todayCursorId}
                   today={today}
                   projects={state.projects}
-                  onSelect={setReckCursorId}
-                  onPull={(id) => cmd.reckKeep(id)}
-                  onPush={(id) => {
+                  onSelect={(id) => {
+                    setBoardColumn("left");
                     setReckCursorId(id);
-                    setBoardScheduleId(id);
-                    setShowSchedule(true);
                   }}
-                  onComplete={(id) => cmd.reckComplete(id)}
-                  onDrop={(id) => cmd.reckDrop(id)}
-                  onSetEstimate={(id, blocks) =>
-                    setEstimatedMinutesMany([id], minutesFromBlocks(blocks))
-                  }
+                  onSelectToday={(id) => {
+                    setBoardColumn("right");
+                    setTodayCursorId(id);
+                  }}
+                  onPull={boardPull}
+                  onSendBack={boardSendBack}
+                  onPush={boardPushToLater}
+                  onComplete={boardComplete}
+                  onDrop={boardDrop}
+                  onSetEstimate={boardSetEstimate}
                   onCapacityDelta={(d) => setDailyCapacityBlocks(state.dailyCapacityBlocks + d)}
                   onSwitchToCards={() => setBoardPreferred(false)}
                   captureRef={captureRef}
@@ -2078,10 +2169,10 @@ export function App() {
           current={boardScheduleId != null ? null : scheduleTag}
           onPick={(choice) => {
             if (boardScheduleId != null) {
-              // Board "push to later": act on the targeted leftover, then move the
-              // cursor forward so the triage keeps flowing.
+              // Board "push to later": act on the targeted task, then move the
+              // cursor forward (in its column) so the triage keeps flowing.
+              advanceBoardCursorPast(boardScheduleId);
               applyScheduleTo([boardScheduleId], choice);
-              advanceReckCursorPast(boardScheduleId);
               setBoardScheduleId(null);
             } else {
               applySchedule(choice);

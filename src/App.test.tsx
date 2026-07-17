@@ -1600,4 +1600,31 @@ describe("Estimates & the planning board", () => {
     expect(screen.getByText("overdue one")).toBeTruthy();
     expect(screen.getByText("overdue two")).toBeTruthy();
   });
+
+  it("sends an over-pulled task back off today (Tab to Today, then ←)", async () => {
+    render(<App />);
+    await addTask("alpha");
+    await addTask("bravo");
+    blurActive();
+
+    act(() => setDevDateOverride(addDays(todayISO(null), 1)));
+    await screen.findByText("Unfinished from before today");
+    fireEvent.keyDown(document.body, { key: "v" });
+    await screen.findByText("Pull what you can into today");
+
+    // Today starts empty (both are overdue leftovers).
+    expect(screen.getByText(/Nothing committed yet/)).toBeTruthy();
+
+    // Pull the first leftover into today → the empty-state goes away.
+    fireEvent.keyDown(document.body, { key: "ArrowRight" });
+    await waitFor(() => expect(screen.queryByText(/Nothing committed yet/)).toBeNull());
+
+    // Tab into the Today column, then ← to send it back off today.
+    fireEvent.keyDown(document.body, { key: "Tab" });
+    fireEvent.keyDown(document.body, { key: "ArrowLeft" });
+
+    // Today is empty again, and the gate is still open (bravo remains).
+    await waitFor(() => expect(screen.getByText(/Nothing committed yet/)).toBeTruthy());
+    expect(screen.getByText("Pull what you can into today")).toBeTruthy();
+  });
 });
