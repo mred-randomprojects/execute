@@ -1,4 +1,5 @@
-import type { RefObject } from "react";
+import { useEffect, useRef } from "react";
+import type { ReactNode, RefObject } from "react";
 import type { ISODate, Project, Task, TaskId } from "../types";
 import { BLOCK_MINUTES } from "../types";
 import type { CapacityLoad } from "../selectors";
@@ -6,11 +7,58 @@ import { relativeLabel } from "../store/dates";
 import { blocksFromMinutes, formatMinutes, MAX_ESTIMATE_BLOCKS } from "../store/estimate";
 import { BlockPips } from "../components/BlockPips";
 import { CaptureBar } from "../components/CaptureBar";
+import { renderBlock } from "../ui/markdown";
 
 /** One leftover to triage, with the nearest ancestor's text for context. */
 export interface BoardLeftover {
   task: Task;
   parentText: string | null;
+}
+
+/**
+ * A selectable board row. CRITICAL: when it becomes the focused row it scrolls
+ * itself into view, so keyboard navigation (j/k) never walks the cursor off the
+ * visible area of a scrolling column. Mirrors the same guarantee in TaskRow —
+ * any keyboard-navigable list in this app MUST keep the focused item on screen.
+ */
+function BoardRow({
+  focused,
+  onClick,
+  children,
+}: {
+  focused: boolean;
+  onClick: () => void;
+  children: ReactNode;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (focused) ref.current?.scrollIntoView?.({ block: "nearest" });
+  }, [focused]);
+  return (
+    <div
+      ref={ref}
+      onClick={onClick}
+      className={[
+        "relative rounded-md px-3 py-2",
+        focused
+          ? "bg-surface-2 ring-1 ring-inset ring-accent/30"
+          : "cursor-pointer hover:bg-surface-2/60",
+      ].join(" ")}
+    >
+      {focused && <span className="absolute left-0 top-2 bottom-2 w-[2px] rounded-full bg-accent" />}
+      {children}
+    </div>
+  );
+}
+
+/** The focused row's notes, rendered in place so the full task is visible. */
+function TaskNotes({ task }: { task: Task }) {
+  if (task.notes.trim() === "") return null;
+  return (
+    <div className="mt-2 rounded-sm border-l-2 border-accent/40 bg-surface-2/60 px-3 py-2 text-[13px] leading-relaxed text-ink-soft">
+      {renderBlock(task.notes)}
+    </div>
+  );
 }
 
 function ProjectDot({ project }: { project: Project | null }) {
@@ -299,37 +347,31 @@ export function ReckoningBoard({
                 {leftovers.map(({ task, parentText }) => {
                   const focused = column === "left" && task.id === cursorId;
                   return (
-                    <div
-                      key={task.id}
-                      onClick={() => onSelect(task.id)}
-                      className={[
-                        "relative rounded-md px-3 py-2",
-                        focused
-                          ? "bg-surface-2 ring-1 ring-inset ring-accent/30"
-                          : "cursor-pointer hover:bg-surface-2/60",
-                      ].join(" ")}
-                    >
-                      {focused && (
-                        <span className="absolute left-0 top-2 bottom-2 w-[2px] rounded-full bg-accent" />
-                      )}
-                      <div className="flex items-center gap-2">
-                        <span className="mono shrink-0 text-[11px] text-bad">
+                    <BoardRow key={task.id} focused={focused} onClick={() => onSelect(task.id)}>
+                      <div className={`flex gap-2 ${focused ? "items-start" : "items-center"}`}>
+                        <span className={`mono shrink-0 text-[11px] text-bad ${focused ? "mt-[2px]" : ""}`}>
                           {relativeLabel(task.plannedFor ?? today, today)}
                         </span>
-                        <ProjectDot project={projectOf(task)} />
-                        <span className="min-w-0 flex-1 truncate text-[14px] text-ink">
+                        <span className={focused ? "mt-[5px]" : ""}>
+                          <ProjectDot project={projectOf(task)} />
+                        </span>
+                        <span
+                          className={[
+                            "min-w-0 flex-1 text-[14px] text-ink",
+                            focused ? "whitespace-pre-wrap [overflow-wrap:anywhere]" : "truncate",
+                          ].join(" ")}
+                        >
                           {parentText != null && parentText.trim() !== "" && (
-                            <span className="text-ink-faint">
-                              {parentText} ▸{" "}
-                            </span>
+                            <span className="text-ink-faint">{parentText} ▸ </span>
                           )}
                           {task.text === "" ? "Untitled" : task.text}
                         </span>
                         {!focused && <BlockPips minutes={task.estimatedMinutes} />}
                         <CarriedBadge count={task.carriedCount} />
                       </div>
+                      {focused && <TaskNotes task={task} />}
                       {focused && <FocusedActions task={task} side="left" />}
-                    </div>
+                    </BoardRow>
                   );
                 })}
               </div>
@@ -351,30 +393,26 @@ export function ReckoningBoard({
                 {todayOpen.map((task) => {
                   const focused = column === "right" && task.id === todayCursorId;
                   return (
-                    <div
-                      key={task.id}
-                      onClick={() => onSelectToday(task.id)}
-                      className={[
-                        "relative rounded-md px-3 py-2",
-                        focused
-                          ? "bg-surface-2 ring-1 ring-inset ring-accent/30"
-                          : "cursor-pointer hover:bg-surface-2/60",
-                      ].join(" ")}
-                    >
-                      {focused && (
-                        <span className="absolute left-0 top-2 bottom-2 w-[2px] rounded-full bg-accent" />
-                      )}
-                      <div className="flex items-center gap-2">
-                        <span className="h-[6px] w-[6px] shrink-0 rounded-full bg-accent" />
-                        <ProjectDot project={projectOf(task)} />
-                        <span className="min-w-0 flex-1 truncate text-[14px] text-ink">
+                    <BoardRow key={task.id} focused={focused} onClick={() => onSelectToday(task.id)}>
+                      <div className={`flex gap-2 ${focused ? "items-start" : "items-center"}`}>
+                        <span className={`h-[6px] w-[6px] shrink-0 rounded-full bg-accent ${focused ? "mt-[7px]" : ""}`} />
+                        <span className={focused ? "mt-[5px]" : ""}>
+                          <ProjectDot project={projectOf(task)} />
+                        </span>
+                        <span
+                          className={[
+                            "min-w-0 flex-1 text-[14px] text-ink",
+                            focused ? "whitespace-pre-wrap [overflow-wrap:anywhere]" : "truncate",
+                          ].join(" ")}
+                        >
                           {task.text === "" ? "Untitled" : task.text}
                         </span>
                         {!focused && <BlockPips minutes={task.estimatedMinutes} />}
                         <CarriedBadge count={task.carriedCount} />
                       </div>
+                      {focused && <TaskNotes task={task} />}
                       {focused && <FocusedActions task={task} side="right" />}
-                    </div>
+                    </BoardRow>
                   );
                 })}
               </div>
