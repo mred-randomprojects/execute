@@ -18,10 +18,12 @@ function FocusIcon() {
   );
 }
 
-const PRIORITY_DOT: Record<number, string> = {
-  1: "bg-bad",
-  2: "bg-mid",
-  3: "bg-accent",
+// Priority is shown as a soft row tint (was a small dot) so it reads at a glance.
+// Same colour language as before: 1 = red (most urgent), 2 = amber, 3 = blue.
+const PRIORITY_BG: Record<number, string> = {
+  1: "bg-bad-soft",
+  2: "bg-mid-soft",
+  3: "bg-accent-soft",
 };
 
 function CheckIcon() {
@@ -186,6 +188,8 @@ export function TaskRow({ task, depth }: { task: Task; depth: number }) {
   // In Today, a task that isn't itself planned for today only shows because a
   // descendant is — dim it so the "for today" items stand out.
   const dimNotToday = ed.view === "today" && !plannedToday && isOpen(task);
+  // Only open tasks carry a priority tint — a done/won't-do task shouldn't glow.
+  const priorityBg = isOpen(task) ? (PRIORITY_BG[task.priority] ?? "") : "";
 
   const rowRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -244,7 +248,9 @@ export function TaskRow({ task, depth }: { task: Task; depth: number }) {
             ? "bg-accent-soft/40 ring-1 ring-inset ring-accent/40"
             : inSelection && !editing
               ? "bg-surface-2"
-              : "hover:bg-surface-2/60",
+              : priorityBg
+                ? `${priorityBg} hover:bg-surface-2/60`
+                : "hover:bg-surface-2/60",
           isMoving ? "opacity-50" : "",
           isDragging ? "opacity-40" : "",
           dropPos === "child" ? "ring-1 ring-inset ring-accent/70 bg-accent-soft/40" : "",
@@ -306,13 +312,6 @@ export function TaskRow({ task, depth }: { task: Task; depth: number }) {
         >
           {wontDo ? <XIcon /> : <CheckIcon />}
         </button>
-
-        {task.priority < 4 && isOpen(task) && (
-          <span
-            className={`h-[6px] w-[6px] shrink-0 rounded-full ${PRIORITY_DOT[task.priority] ?? ""}`}
-            title={`priority ${task.priority}`}
-          />
-        )}
 
         {editing ? (
           <RowInput task={task} />
