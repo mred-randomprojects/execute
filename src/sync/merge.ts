@@ -196,6 +196,7 @@ export function mergeStates(local: AppState, remote: AppState): AppState {
     devDateOverride: local.devDateOverride,
     dailyCapacityBlocks: local.dailyCapacityBlocks, // writer wins (a per-device setting)
     boardPreferred: local.boardPreferred, // writer wins (a per-device preference)
+    commandUsage: local.commandUsage, // writer wins (per-device palette rankings)
   };
 }
 

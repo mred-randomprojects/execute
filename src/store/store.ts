@@ -310,6 +310,36 @@ export function setCurrentTask(id: TaskId | null): void {
   update((s) => ({ ...s, currentTaskId: id }), false);
 }
 
+/**
+ * Record one run of a palette command, feeding its frecency ranking (bumps the
+ * count and stamps "now"). A usage stat, like theme — not undoable.
+ */
+export function recordCommandUse(id: string): void {
+  update((s) => {
+    const prev = s.commandUsage[id];
+    return {
+      ...s,
+      commandUsage: {
+        ...s.commandUsage,
+        [id]: { count: (prev?.count ?? 0) + 1, lastUsedAt: Date.now() },
+      },
+    };
+  }, false);
+}
+
+/**
+ * Forget a command's ranking (Raycast's "Reset Ranking"): drop its usage entry
+ * so it falls back to its default position in the palette. No-op if unused.
+ */
+export function resetCommandRanking(id: string): void {
+  update((s) => {
+    if (s.commandUsage[id] == null) return s;
+    const next = { ...s.commandUsage };
+    delete next[id];
+    return { ...s, commandUsage: next };
+  }, false);
+}
+
 // ─── Insert ─────────────────────────────────────────────────────────
 
 function insertAfterSibling(tasks: Task[], afterId: TaskId | null, newTask: Task): Task[] {

@@ -43,9 +43,11 @@ import {
   postponeManyToBacklog,
   postponeToBacklog,
   purgeFromTrash,
+  recordCommandUse,
   removeRecurrenceNode,
   renameProject,
   reorderAcrossProjects,
+  resetCommandRanking,
   restoreFromTrash,
   setBoardPreferred,
   setCompleted,
@@ -2160,7 +2162,13 @@ export function App() {
 
       {showHelp && <HelpOverlay onClose={() => setShowHelp(false)} />}
       {showPalette && (
-        <CommandPalette commands={commands} onClose={() => setShowPalette(false)} />
+        <CommandPalette
+          commands={commands}
+          usage={state.commandUsage}
+          onUse={recordCommandUse}
+          onResetRanking={resetCommandRanking}
+          onClose={() => setShowPalette(false)}
+        />
       )}
       {showSchedule && scheduleTargetIds.length > 0 && (
         <SchedulePicker

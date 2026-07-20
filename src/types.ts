@@ -137,6 +137,19 @@ export interface Task {
 export type ThemeName = "slate" | "ivory" | "carbon" | "bordeaux";
 
 /**
+ * Per-command usage stats behind the command palette's frecency ranking
+ * (Raycast-style: frequently *and* recently used commands float to the top).
+ * Keyed by {@link import("./components/CommandPalette").Command}'s `id`.
+ * `count` is how many times the command was run from the palette; `lastUsedAt`
+ * is the wall-clock ms of the most recent run. A per-device preference —
+ * writer wins on cloud merge, like {@link AppState.theme}.
+ */
+export interface CommandUsage {
+  count: number;
+  lastUsedAt: number;
+}
+
+/**
  * The atom of the effort estimate: a task's `estimatedMinutes` is presented and
  * edited in whole "blocks" of this many minutes (one block ≈ a short focused
  * sitting). 1 block = 20m, 3 blocks = 1h — a deliberately shallow scale.
@@ -200,9 +213,15 @@ export interface AppState {
    * persisted so a multi-day experiment sticks. Writer-wins on cloud merge.
    */
   boardPreferred: boolean;
+  /**
+   * Command-palette usage stats keyed by command id — the memory behind its
+   * frecency ranking (see {@link CommandUsage}). Empty until the first palette
+   * run. A per-device preference; writer wins on cloud merge.
+   */
+  commandUsage: Record<string, CommandUsage>;
 }
 
-export const SCHEMA_VERSION = 8;
+export const SCHEMA_VERSION = 9;
 export const DEFAULT_PROJECT_ID = "project-inbox" as ProjectId;
 export const PROJECT_ROW_PREFIX = "project:";
 
@@ -252,5 +271,6 @@ export function emptyState(): AppState {
     devDateOverride: null,
     dailyCapacityBlocks: DEFAULT_CAPACITY_BLOCKS,
     boardPreferred: false,
+    commandUsage: {},
   };
 }

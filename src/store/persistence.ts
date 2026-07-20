@@ -1,6 +1,7 @@
 import { nanoid } from "nanoid";
 import type {
   AppState,
+  CommandUsage,
   Horizon,
   HorizonUnit,
   LogAction,
@@ -247,6 +248,21 @@ function coerceLogAction(x: unknown): LogAction {
     : "completed";
 }
 
+// v9: command-palette frecency memory. Best-effort — drop any malformed entry
+// rather than let junk poison the ranking (a non-positive count scores 0
+// anyway). Pre-v9 data has no field → an empty map (no learned rankings yet).
+function coerceCommandUsage(raw: unknown): Record<string, CommandUsage> {
+  if (!isObject(raw)) return {};
+  const out: Record<string, CommandUsage> = {};
+  for (const [id, value] of Object.entries(raw)) {
+    if (!isObject(value)) continue;
+    const count = Math.max(0, Math.trunc(num(value.count, 0)));
+    if (count <= 0) continue;
+    out[id] = { count, lastUsedAt: num(value.lastUsedAt, 0) };
+  }
+  return out;
+}
+
 function coerceLogEntry(raw: unknown): LogEntry {
   const o = isObject(raw) ? raw : {};
   return {
@@ -298,5 +314,7 @@ export function coerceState(raw: unknown): AppState {
     dailyCapacityBlocks: Math.max(1, Math.trunc(num(raw.dailyCapacityBlocks, DEFAULT_CAPACITY_BLOCKS))),
     // v8: planning-board preference. Pre-v8 → classic card review.
     boardPreferred: bool(raw.boardPreferred, false),
+    // v9: command-palette frecency memory. Pre-v9 → no learned rankings.
+    commandUsage: coerceCommandUsage(raw.commandUsage),
   };
 }
