@@ -135,6 +135,96 @@ function googleOAuth(clientId, clientSecret) {
   });
 }
 
+// ─── Silent calendar writes (service account) ────────────────────────
+// "Add to calendar" creates real events with no browser round-trip by signing a
+// JWT with a Google service-account key and calling the Calendar API directly.
+// The key is a SECRET: it lives ONLY here in the main process, read from the
+// app-data dir — never in the renderer, the Vite bundle, or the repo. Drop it at
+// CAL_KEY_FILE and the feature turns on; absent, the renderer falls back to a
+// prefilled Google Calendar link. The target calendar must be shared with the
+// service account's email ("Make changes to events").
+const CAL_KEY_FILE = path.join(app.getPath("userData"), "calendar-service-account.json");
+const CALENDAR_SCOPE = "https://www.googleapis.com/auth/calendar.events";
+// The calendar events are written to. Not a secret (it's the app author's own
+// address, already in package.json); the SECRET is the key file above.
+const CALENDAR_ID = "maxiredigonda@gmail.com";
+
+let saKeyCache = null; // cached once successfully loaded; re-read until then
+function loadServiceAccountKey() {
+  if (saKeyCache != null) return saKeyCache;
+  try {
+    const k = JSON.parse(fs.readFileSync(CAL_KEY_FILE, "utf8"));
+    if (k && k.type === "service_account" && k.client_email && k.private_key) {
+      saKeyCache = k;
+      return k;
+    }
+  } catch {
+    /* absent or unreadable → not connected */
+  }
+  return null;
+}
+
+let tokenCache = null; // { token, exp } — reused until ~1 min before expiry
+async function getCalendarToken() {
+  const key = loadServiceAccountKey();
+  if (key == null) throw new Error("Calendar not connected (no service-account key).");
+  const now = Math.floor(Date.now() / 1000);
+  if (tokenCache != null && tokenCache.exp - 60 > now) return tokenCache.token;
+
+  const header = base64url(Buffer.from(JSON.stringify({ alg: "RS256", typ: "JWT" })));
+  const claims = base64url(
+    Buffer.from(
+      JSON.stringify({
+        iss: key.client_email,
+        scope: CALENDAR_SCOPE,
+        aud: "https://oauth2.googleapis.com/token",
+        iat: now,
+        exp: now + 3600,
+      }),
+    ),
+  );
+  const signingInput = `${header}.${claims}`;
+  const signature = base64url(crypto.createSign("RSA-SHA256").update(signingInput).sign(key.private_key));
+  const assertion = `${signingInput}.${signature}`;
+
+  const r = await fetch("https://oauth2.googleapis.com/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
+      assertion,
+    }),
+  });
+  const j = await r.json();
+  if (!r.ok || j.access_token == null) {
+    throw new Error(j.error_description || j.error || "Calendar token exchange failed");
+  }
+  tokenCache = { token: j.access_token, exp: now + (j.expires_in || 3600) };
+  return tokenCache.token;
+}
+
+async function createCalendarEvent(input) {
+  const token = await getCalendarToken();
+  const calId = encodeURIComponent(input.calendarId || CALENDAR_ID);
+  const start = new Date(input.startMs);
+  const end = new Date(input.startMs + input.durationMin * 60000);
+  const body = {
+    summary: (input.summary && input.summary.trim()) || "Untitled task",
+    start: { dateTime: start.toISOString() },
+    end: { dateTime: end.toISOString() },
+  };
+  if (input.description && input.description.trim()) body.description = input.description;
+
+  const r = await fetch(`https://www.googleapis.com/calendar/v3/calendars/${calId}/events`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const j = await r.json();
+  if (!r.ok) throw new Error((j.error && j.error.message) || `Calendar insert failed (${r.status})`);
+  return { ok: true, htmlLink: j.htmlLink || null };
+}
+
 function registerIpc() {
   ipcMain.handle("store:load", () => readStore());
   ipcMain.handle("store:save", (_event, data) => {
@@ -145,6 +235,11 @@ function registerIpc() {
     if (!clientId || !clientSecret) throw new Error("Missing Google OAuth client config");
     return googleOAuth(clientId, clientSecret);
   });
+  ipcMain.handle("calendar:status", () => {
+    const key = loadServiceAccountKey();
+    return { connected: key != null, clientEmail: key != null ? key.client_email : null };
+  });
+  ipcMain.handle("calendar:createEvent", (_event, input) => createCalendarEvent(input));
 }
 
 function createWindow() {

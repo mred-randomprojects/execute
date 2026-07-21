@@ -208,6 +208,10 @@ export function App() {
   // The task the calendar picker is acting on — captured at open so it can't
   // shift under the modal (the picker owns the keyboard, but be explicit).
   const [calendarTargetId, setCalendarTargetId] = useState<TaskId | null>(null);
+  // Desktop only: whether a service-account key is present so events create
+  // silently (vs. opening a prefilled Google Calendar link). Drives the picker's
+  // hint and which path `onConfirm` takes.
+  const [calendarConnected, setCalendarConnected] = useState(false);
   // The reckoning gate's two-panel skin (leftovers ↔ today + capacity). Opt-in
   // and persisted (state.boardPreferred); `v` toggles it and the card review.
   const boardMode = state.boardPreferred;
@@ -248,6 +252,16 @@ export function App() {
   // Auto cloud-sync (desktop only; no-op elsewhere). Rides the store's persist
   // hook, so every change syncs without per-action wiring.
   useEffect(() => initAutoSync(), []);
+  // Does "Add to calendar" create events silently (service-account key present)
+  // or fall back to opening a prefilled link? Ask the desktop bridge once.
+  useEffect(() => {
+    const bridge = window.execute;
+    if (bridge?.calendarStatus == null) return;
+    void bridge
+      .calendarStatus()
+      .then((s) => setCalendarConnected(s?.connected === true))
+      .catch(() => setCalendarConnected(false));
+  }, []);
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", state.theme);
   }, [state.theme]);
@@ -2229,18 +2243,38 @@ export function App() {
               initialDayISO={target.plannedFor ?? today}
               estimatedMinutes={target.estimatedMinutes}
               nowMs={Date.now()}
+              silent={calendarConnected}
               onConfirm={({ startMs, durationMin }) => {
-                // Decoupled export: open a pre-filled Google Calendar event (the
-                // user saves it), then leave a lightweight "scheduled at" stamp on
-                // the task for the row badge. We keep no event id — one task can
-                // spawn many events, none of them linked back.
-                const url = gcalTemplateUrl({
-                  title: target.text,
-                  details: target.notes,
-                  startMs,
-                  durationMin,
-                });
-                window.open(url, "_blank", "noopener,noreferrer");
+                // Decoupled export — never linked back to the task; one task can
+                // spawn many events. Prefer a SILENT create via the service-account
+                // bridge (desktop, key present); fall back to opening a prefilled
+                // Google Calendar link (web, or if the silent create fails). Either
+                // way, stamp the task for its row badge.
+                const bridge = window.execute;
+                const fallbackLink = () => {
+                  const url = gcalTemplateUrl({
+                    title: target.text,
+                    details: target.notes,
+                    startMs,
+                    durationMin,
+                  });
+                  window.open(url, "_blank", "noopener,noreferrer");
+                };
+                if (bridge?.createCalendarEvent != null) {
+                  void bridge
+                    .createCalendarEvent({
+                      summary: target.text,
+                      description: target.notes,
+                      startMs,
+                      durationMin,
+                    })
+                    .then((res) => {
+                      if (res?.ok !== true) fallbackLink();
+                    })
+                    .catch(() => fallbackLink());
+                } else {
+                  fallbackLink();
+                }
                 setScheduledAt(target.id, startMs);
               }}
               onClose={() => {

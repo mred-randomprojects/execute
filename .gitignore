@@ -9,3 +9,8 @@ build/
 .env
 .env.*
 !.env.example
+
+# Never commit service-account keys — the calendar integration reads this from
+# the app's userData dir at runtime, never from the repo or the bundle.
+*service-account*.json
+calendar-service-account.json

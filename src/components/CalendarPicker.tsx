@@ -41,6 +41,7 @@ export function CalendarPicker({
   initialDayISO,
   estimatedMinutes,
   nowMs,
+  silent = false,
   onConfirm,
   onClose,
 }: {
@@ -50,6 +51,8 @@ export function CalendarPicker({
   initialDayISO: ISODate;
   estimatedMinutes: number | null;
   nowMs: number;
+  /** True when confirming creates the event silently (vs. opening a browser tab). */
+  silent?: boolean;
   onConfirm: (choice: CalendarChoice) => void;
   onClose: () => void;
 }) {
@@ -165,7 +168,8 @@ export function CalendarPicker({
             {dayLabel(dayISO, today)} · {formatClock(startMin)} – {endLabel}
           </span>
           <span className="text-ink-faint">
-            <span className="kbd">↵</span> {field < rows.length - 1 ? "next" : "add"}
+            <span className="kbd">↵</span>{" "}
+            {field < rows.length - 1 ? "next" : silent ? "add to calendar" : "open in calendar"}
           </span>
         </div>
       </div>

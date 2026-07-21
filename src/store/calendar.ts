@@ -8,6 +8,20 @@
 import type { ISODate } from "../types";
 import { toISO } from "./dates";
 
+/**
+ * What the renderer hands the Electron main process to create a real event
+ * silently via the service-account Calendar API (see electron/main.cjs). The
+ * main process owns the credential + the target calendar id; the renderer only
+ * describes the event. `null`/absent `calendarId` → main's configured default.
+ */
+export interface CalendarEventInput {
+  summary: string;
+  description?: string;
+  startMs: number;
+  durationMin: number;
+  calendarId?: string;
+}
+
 /** Time is chosen in whole quarter-hours — the picker's ↑/↓ step. */
 export const CAL_STEP_MIN = 15;
 /** An event is at least this long (no zero-length blocks). */

@@ -30,6 +30,7 @@ import {
   emptyState,
 } from "../types";
 import { normalizeChildProjects } from "./tasks";
+import type { CalendarEventInput } from "./calendar";
 
 // Bridge exposed by electron/preload.cjs. In the browser (pnpm dev) it's absent
 // and we fall back to localStorage, so the renderer runs either way.
@@ -43,6 +44,14 @@ interface ExecuteBridge {
     clientId: string,
     clientSecret: string,
   ) => Promise<{ idToken: string }>;
+  // Calendar integration (desktop only): whether a service-account key is
+  // present, and a silent event-create that writes to the configured calendar.
+  // Absent in the browser / builds without it → the picker falls back to opening
+  // a prefilled Google Calendar link.
+  calendarStatus?: () => Promise<{ connected: boolean; clientEmail: string | null }>;
+  createCalendarEvent?: (
+    input: CalendarEventInput,
+  ) => Promise<{ ok: boolean; htmlLink: string | null }>;
 }
 
 declare global {

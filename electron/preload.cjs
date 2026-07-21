@@ -10,4 +10,8 @@ contextBridge.exposeInMainWorld("execute", {
   // process and resolves with a Google id_token for Firebase signInWithCredential.
   signInWithGoogle: (clientId, clientSecret) =>
     ipcRenderer.invoke("auth:google", { clientId, clientSecret }),
+  // Calendar integration: is a service-account key present, and create an event
+  // silently. The key never crosses this bridge — only these calls do.
+  calendarStatus: () => ipcRenderer.invoke("calendar:status"),
+  createCalendarEvent: (input) => ipcRenderer.invoke("calendar:createEvent", input),
 });
