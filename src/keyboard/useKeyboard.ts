@@ -38,6 +38,8 @@ export function getActiveContext(state: ContextState): KeyContext {
   if (state.showSchedule) return "schedule";
   // Likewise the estimate picker.
   if (state.showEstimate) return "estimate";
+  // Likewise the "add to calendar" picker.
+  if (state.showCalendar) return "calendar";
   // Likewise the repeat picker.
   if (state.showRepeat) return "repeat";
   if (isInteractiveElementFocused()) return "editing";

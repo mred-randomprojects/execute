@@ -83,6 +83,7 @@ describe("getActiveContext", () => {
     showPalette: false,
     showSchedule: false,
     showEstimate: false,
+    showCalendar: false,
     showRepeat: false,
     showConfirm: false,
     reckoningActive: false,
@@ -101,6 +102,9 @@ describe("getActiveContext", () => {
   });
   it("estimate picker owns the keyboard", () => {
     expect(getActiveContext({ ...base, showEstimate: true })).toBe("estimate");
+  });
+  it("calendar picker owns the keyboard", () => {
+    expect(getActiveContext({ ...base, showCalendar: true })).toBe("calendar");
   });
   it("confirm wins over everything", () => {
     expect(
@@ -133,6 +137,7 @@ describe("getActiveContext — focus zones", () => {
     showPalette: false,
     showSchedule: false,
     showEstimate: false,
+    showCalendar: false,
     showRepeat: false,
     showConfirm: false,
     reckoningActive: false,

@@ -12,6 +12,7 @@ export type KeyContext =
   | "palette"
   | "schedule"
   | "estimate"
+  | "calendar"
   | "repeat"
   | "confirm"
   | "reckoning"
@@ -28,6 +29,7 @@ export interface ContextState {
   showPalette: boolean;
   showSchedule: boolean;
   showEstimate: boolean;
+  showCalendar: boolean;
   showRepeat: boolean;
   showConfirm: boolean;
   reckoningActive: boolean;

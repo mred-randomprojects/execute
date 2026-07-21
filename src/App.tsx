@@ -61,6 +61,7 @@ import {
   setPlannedForMany,
   setProjectForMany,
   setPriority,
+  setScheduledAt,
   setRecurrenceRule,
   setRecurrenceText,
   setText,
@@ -145,6 +146,8 @@ import { StatusBar } from "./components/StatusBar";
 import { CommandPalette, type Command } from "./components/CommandPalette";
 import { SchedulePicker, type ScheduleChoice } from "./components/SchedulePicker";
 import { EstimatePicker } from "./components/EstimatePicker";
+import { CalendarPicker } from "./components/CalendarPicker";
+import { gcalTemplateUrl } from "./store/calendar";
 import { ConfirmModal, type ConfirmRequest } from "./components/ConfirmModal";
 
 const THEMES: ThemeName[] = ["slate", "ivory", "carbon", "bordeaux"];
@@ -201,6 +204,10 @@ export function App() {
   const [showPalette, setShowPalette] = useState(false);
   const [showSchedule, setShowSchedule] = useState(false);
   const [showEstimate, setShowEstimate] = useState(false);
+  const [showCalendar, setShowCalendar] = useState(false);
+  // The task the calendar picker is acting on — captured at open so it can't
+  // shift under the modal (the picker owns the keyboard, but be explicit).
+  const [calendarTargetId, setCalendarTargetId] = useState<TaskId | null>(null);
   // The reckoning gate's two-panel skin (leftovers ↔ today + capacity). Opt-in
   // and persisted (state.boardPreferred); `v` toggles it and the card review.
   const boardMode = state.boardPreferred;
@@ -1239,7 +1246,10 @@ export function App() {
         setShowSchedule(false);
         setBoardScheduleId(null);
       } else if (showEstimate) setShowEstimate(false);
-      else if (mode === "move") exitMove();
+      else if (showCalendar) {
+        setShowCalendar(false);
+        setCalendarTargetId(null);
+      } else if (mode === "move") exitMove();
       else if (reasonEditId != null) setReasonEditId(null);
       else if (editingProjectId != null) setEditingProjectId(null);
       else if (editingId != null) setEditingId(null);
@@ -1363,6 +1373,11 @@ export function App() {
   const openEstimatePicker = () => {
     if (actionTargets().length > 0) setShowEstimate(true);
   };
+  const openCalendarPicker = () => {
+    if (focusedTask == null) return;
+    setCalendarTargetId(focusedTask.id);
+    setShowCalendar(true);
+  };
 
   // ── Keyboard wiring ───────────────────────────────────────────────
   const dispatchState: ContextState = {
@@ -1370,6 +1385,7 @@ export function App() {
     showPalette,
     showSchedule,
     showEstimate,
+    showCalendar,
     showRepeat: repeatTarget != null,
     showConfirm: confirm != null,
     reckoningActive,
@@ -1831,6 +1847,7 @@ export function App() {
     { id: "sched-someday", label: "Schedule: Someday", aliases: ["schedule"], hint: "s s", run: () => applySchedule("someday") },
     { id: "sched-inbox", label: "Schedule: Inbox (untriage)", aliases: ["schedule"], hint: "s i", run: () => applySchedule("inbox") },
     { id: "estimate", label: "Estimate effort (blocks of ~20m)…", aliases: ["estimate", "effort", "blocks", "time", "size"], hint: "e", run: openEstimatePicker },
+    { id: "add-to-calendar", label: "Add to calendar…", aliases: ["calendar", "cal", "event", "gcal", "schedule event", "block time"], run: openCalendarPicker },
     { id: "capacity-up", label: `Daily capacity: raise (${state.dailyCapacityBlocks} → ${state.dailyCapacityBlocks + 1} blocks)`, aliases: ["capacity", "budget"], run: () => setDailyCapacityBlocks(state.dailyCapacityBlocks + 1) },
     { id: "capacity-down", label: `Daily capacity: lower (${state.dailyCapacityBlocks} → ${Math.max(1, state.dailyCapacityBlocks - 1)} blocks)`, aliases: ["capacity", "budget"], run: () => setDailyCapacityBlocks(state.dailyCapacityBlocks - 1) },
     // The home view's period tabs, reachable by name. Deliberately AFTER the
@@ -2200,6 +2217,39 @@ export function App() {
           onClose={() => setShowEstimate(false)}
         />
       )}
+      {showCalendar &&
+        (() => {
+          const target =
+            calendarTargetId != null ? findById(state.tasks, calendarTargetId) : null;
+          if (target == null) return null;
+          return (
+            <CalendarPicker
+              title={target.text}
+              today={today}
+              initialDayISO={target.plannedFor ?? today}
+              estimatedMinutes={target.estimatedMinutes}
+              nowMs={Date.now()}
+              onConfirm={({ startMs, durationMin }) => {
+                // Decoupled export: open a pre-filled Google Calendar event (the
+                // user saves it), then leave a lightweight "scheduled at" stamp on
+                // the task for the row badge. We keep no event id — one task can
+                // spawn many events, none of them linked back.
+                const url = gcalTemplateUrl({
+                  title: target.text,
+                  details: target.notes,
+                  startMs,
+                  durationMin,
+                });
+                window.open(url, "_blank", "noopener,noreferrer");
+                setScheduledAt(target.id, startMs);
+              }}
+              onClose={() => {
+                setShowCalendar(false);
+                setCalendarTargetId(null);
+              }}
+            />
+          );
+        })()}
       {repeatTarget != null && (
         <RepeatPicker
           anchor={today}

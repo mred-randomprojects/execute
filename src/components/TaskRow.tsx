@@ -3,6 +3,7 @@ import type { Task } from "../types";
 import { countAll, isOpen } from "../store/tasks";
 import { copyText } from "../ui/clipboard";
 import { relativeLabel } from "../store/dates";
+import { clockLabelFromMs, isOnDay } from "../store/calendar";
 import { horizonLabel } from "../selectors";
 import { BlockPips } from "./BlockPips";
 import { useEditor, type DropPos } from "../ui/editor";
@@ -52,6 +53,15 @@ function XIcon() {
         strokeLinecap="round"
         strokeLinejoin="round"
       />
+    </svg>
+  );
+}
+
+function CalIcon() {
+  return (
+    <svg viewBox="0 0 16 16" width="9" height="9" aria-hidden="true">
+      <rect x="2.5" y="3" width="11" height="10.5" rx="1.4" fill="none" stroke="currentColor" strokeWidth="1.3" />
+      <path d="M2.5 6h11M5.5 2v2.4M10.5 2v2.4" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
     </svg>
   );
 }
@@ -392,6 +402,23 @@ export function TaskRow({ task, depth }: { task: Task; depth: number }) {
 
         {task.estimatedMinutes != null && isOpen(task) && !editing && (
           <BlockPips minutes={task.estimatedMinutes} className="opacity-80" />
+        )}
+
+        {/* Calendar cue: this task has been blocked out on the calendar. Accented
+            when the event is today — the "what did I schedule for today" glance. */}
+        {task.scheduledAt != null && isOpen(task) && !editing && (
+          <span
+            className={[
+              "mono flex shrink-0 items-center gap-1 rounded-sm px-1.5 py-[1px] text-[10px] font-medium",
+              isOnDay(task.scheduledAt, ed.today)
+                ? "bg-accent-soft text-accent"
+                : "bg-surface-2 text-ink-faint",
+            ].join(" ")}
+            title={`On your calendar · ${new Date(task.scheduledAt).toLocaleString()}`}
+          >
+            <CalIcon />
+            {clockLabelFromMs(task.scheduledAt)}
+          </span>
         )}
 
         {!editing && (
