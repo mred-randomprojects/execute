@@ -27,6 +27,7 @@ export function makeTask(
     carriedCount: 0,
     recurrenceId: null,
     occurrenceDate: null,
+    scheduledAt: null,
   };
 }
 

@@ -184,6 +184,8 @@ function coerceTask(raw: unknown): Task {
     // v5: recurrence instance link. Legacy tasks aren't from recurrences → null.
     recurrenceId: strOrNull(o.recurrenceId) as RecurrenceId | null,
     occurrenceDate: strOrNull(o.occurrenceDate),
+    // v10: last "added to calendar" time. Pre-v10 tasks were never calendared → null.
+    scheduledAt: numOrNull(o.scheduledAt),
   };
 }
 

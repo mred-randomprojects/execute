@@ -67,6 +67,7 @@ function mergeOwnFields(base: Task, other: Task | undefined): Task {
     estimatedMinutes: newer.estimatedMinutes,
     recurrenceId: newer.recurrenceId,
     occurrenceDate: newer.occurrenceDate,
+    scheduledAt: newer.scheduledAt,
     carriedCount: Math.max(base.carriedCount, other.carriedCount),
     labels: labelsUnion(base.labels, other.labels),
     updatedAt: Math.max(base.updatedAt, other.updatedAt),

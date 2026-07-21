@@ -151,6 +151,7 @@ function sameOwnFields(a: Task, b: Task): boolean {
     a.carriedCount === b.carriedCount &&
     a.recurrenceId === b.recurrenceId &&
     a.occurrenceDate === b.occurrenceDate &&
+    a.scheduledAt === b.scheduledAt &&
     horizonEq(a.horizon, b.horizon) &&
     wontDoEq(a.wontDo, b.wontDo) &&
     labelsEq(a.labels, b.labels)
@@ -830,6 +831,16 @@ export function setEstimatedMinutesMany(ids: TaskId[], minutes: number | null): 
 
 export function setPlannedFor(id: TaskId, plannedFor: ISODate | null): void {
   updateTasks((tasks) => mapById(tasks, id, (t) => ({ ...t, plannedFor, horizon: null })));
+}
+
+/**
+ * Stamp when this task was last blocked out on the calendar (from "Add to
+ * calendar"). Decoupled from the real event — just a display cue. `null` clears
+ * it. Kept out of the undo stack: the event itself already lives in the user's
+ * calendar, so undo here would only desync the badge from reality.
+ */
+export function setScheduledAt(id: TaskId, at: number | null): void {
+  updateTasks((tasks) => mapById(tasks, id, (t) => ({ ...t, scheduledAt: at })), false);
 }
 
 export function setProjectForMany(ids: TaskId[], projectId: ProjectId): void {

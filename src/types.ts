@@ -132,6 +132,15 @@ export interface Task {
   recurrenceId: RecurrenceId | null;
   /** Which occurrence (its firing day) this instance represents. `null` otherwise. */
   occurrenceDate: ISODate | null;
+  /**
+   * Wall-clock ms of the calendar event this task was most recently sent to (via
+   * "Add to calendar"). Deliberately *decoupled* from any real event: we keep no
+   * event id and never read the calendar back, so one task can spawn many events
+   * and this is only a lightweight "when did I last block time for this" stamp —
+   * it drives the row's calendar badge and the "scheduled today" cue. `null` =
+   * never calendared. See src/store/calendar.ts.
+   */
+  scheduledAt: number | null;
 }
 
 export type ThemeName = "slate" | "ivory" | "carbon" | "bordeaux";
@@ -221,7 +230,7 @@ export interface AppState {
   commandUsage: Record<string, CommandUsage>;
 }
 
-export const SCHEMA_VERSION = 9;
+export const SCHEMA_VERSION = 10;
 export const DEFAULT_PROJECT_ID = "project-inbox" as ProjectId;
 export const PROJECT_ROW_PREFIX = "project:";
 

@@ -23,6 +23,7 @@ function task(text: string, over: Partial<Task> = {}): Task {
     carriedCount: 0,
     recurrenceId: null,
     occurrenceDate: null,
+    scheduledAt: null,
     ...over,
   };
 }

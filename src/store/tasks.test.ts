@@ -44,6 +44,7 @@ function task(id: string, children: Task[] = [], overrides: Partial<Task> = {}):
     carriedCount: 0,
     recurrenceId: null,
     occurrenceDate: null,
+    scheduledAt: null,
     ...overrides,
   };
 }
