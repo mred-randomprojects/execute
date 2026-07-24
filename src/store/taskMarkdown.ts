@@ -33,3 +33,26 @@ export function taskToMarkdown(task: Task, opts: MarkdownOptions): string {
   renderNode(task, opts, 0, out);
   return out.join("\n");
 }
+
+/** A titled block of top-level tasks — e.g. one project (or Later bucket) in a view. */
+export interface MarkdownSection {
+  heading: string;
+  tasks: Task[];
+}
+
+/**
+ * Serialize a whole view — its ordered, headed sections — to markdown. Each
+ * non-empty section becomes a `## heading` followed by its tasks as nested
+ * checklists (each task recursing through its subtree). Empty sections are
+ * skipped so a header never dangles over nothing; returns "" when no section
+ * has any tasks.
+ */
+export function sectionsToMarkdown(sections: MarkdownSection[], opts: MarkdownOptions): string {
+  const blocks: string[] = [];
+  for (const section of sections) {
+    if (section.tasks.length === 0) continue;
+    const items = section.tasks.map((t) => taskToMarkdown(t, opts)).join("\n");
+    blocks.push(`## ${section.heading}\n\n${items}`);
+  }
+  return blocks.join("\n\n");
+}

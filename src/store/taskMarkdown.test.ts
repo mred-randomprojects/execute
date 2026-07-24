@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import type { Task, TaskId } from "../types";
 import { DEFAULT_PROJECT_ID } from "../types";
-import { taskToMarkdown } from "./taskMarkdown";
+import { taskToMarkdown, sectionsToMarkdown } from "./taskMarkdown";
 
 function task(text: string, over: Partial<Task> = {}): Task {
   return {
@@ -52,5 +52,52 @@ describe("taskToMarkdown", () => {
 
   it("labels empty titles as Untitled", () => {
     expect(taskToMarkdown(task(""), { includeNotes: false })).toBe("- [ ] Untitled");
+  });
+});
+
+describe("sectionsToMarkdown", () => {
+  it("emits a `## heading` per section, subtrees nested under each", () => {
+    const md = sectionsToMarkdown(
+      [
+        { heading: "Work", tasks: [task("Ship it", { children: [task("Sub")] })] },
+        { heading: "Life", tasks: [task("Groceries", { completed: true })] },
+      ],
+      { includeNotes: false },
+    );
+    expect(md).toBe(
+      [
+        "## Work",
+        "",
+        "- [ ] Ship it",
+        "  - [ ] Sub",
+        "",
+        "## Life",
+        "",
+        "- [x] Groceries",
+      ].join("\n"),
+    );
+  });
+
+  it("skips empty sections so headers never dangle", () => {
+    const md = sectionsToMarkdown(
+      [
+        { heading: "Work", tasks: [task("A")] },
+        { heading: "Suggested for today", tasks: [] },
+      ],
+      { includeNotes: false },
+    );
+    expect(md).toBe(["## Work", "", "- [ ] A"].join("\n"));
+  });
+
+  it("returns an empty string when nothing has tasks", () => {
+    expect(sectionsToMarkdown([{ heading: "Work", tasks: [] }], { includeNotes: false })).toBe("");
+  });
+
+  it("carries notes through when asked", () => {
+    const md = sectionsToMarkdown(
+      [{ heading: "Work", tasks: [task("A", { notes: "detail" })] }],
+      { includeNotes: true },
+    );
+    expect(md).toBe(["## Work", "", "- [ ] A", "  detail"].join("\n"));
   });
 });

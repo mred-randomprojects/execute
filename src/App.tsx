@@ -78,7 +78,7 @@ import { findById, findParentId, isOpen, walk } from "./store/tasks";
 import { addDays, monthKey, monthKeyOffset, todayISO, weekKey, weekKeyOffset } from "./store/dates";
 import { defaultRule } from "./store/recurrence";
 import { parseCapture } from "./store/capture";
-import { taskToMarkdown } from "./store/taskMarkdown";
+import { taskToMarkdown, sectionsToMarkdown, type MarkdownSection } from "./store/taskMarkdown";
 import {
   backlogCount,
   filterTree,
@@ -1818,6 +1818,30 @@ export function App() {
     setTheme(THEMES[(i + 1) % THEMES.length]);
   };
 
+  // Copy every task shown in the current outline to the clipboard as markdown:
+  // one `## ` section per project (or Later bucket when the by-date layout is on),
+  // each task recursing through its (visible) subtree. `includeSuggested` also
+  // appends the passive "Suggested for today" / "Recurring today" blocks that
+  // trail the Today outline. Silent, matching the other copy-* commands.
+  const copyView = (includeSuggested: boolean) => {
+    const sections: MarkdownSection[] = usingBuckets
+      ? bucketGroups.map((g) => ({ heading: g.meta.label, tasks: g.tasks }))
+      : displayGroups.map((g) => ({ heading: g.project.name, tasks: g.tasks }));
+    if (includeSuggested) {
+      sections.push({ heading: "Suggested for today", tasks: suggestedTasks });
+      sections.push({ heading: "Recurring today", tasks: recurringToday.map((r) => r.template) });
+    }
+    const body = sectionsToMarkdown(sections, { includeNotes: false });
+    if (body.trim() === "") return;
+    const title =
+      view === "today"
+        ? period === "today"
+          ? "Today"
+          : PERIOD_LABELS[period]
+        : VIEW_TITLES[view];
+    void copyText(`# ${title}\n\n${body}`);
+  };
+
   const commands: Command[] = [
     { id: "today", label: "Go to Today", hint: "1", run: cmd.gotoView("today") },
     { id: "backlog", label: "Go to Backlog", hint: "2", run: cmd.gotoView("backlog") },
@@ -1900,6 +1924,18 @@ export function App() {
       run: () => {
         if (focusedTask != null) void copyText(taskToMarkdown(focusedTask, { includeNotes: false }));
       },
+    },
+    {
+      id: "copy-view",
+      label: "Copy this view (markdown)",
+      aliases: ["copy view", "copy today", "copy list", "copy panel", "copy all tasks", "export view"],
+      run: () => copyView(false),
+    },
+    {
+      id: "copy-view-suggested",
+      label: "Copy this view + suggested (markdown)",
+      aliases: ["copy view suggested", "copy today suggested", "export view suggested"],
+      run: () => copyView(true),
     },
     { id: "move", label: "Move task (re-parent)", hint: "m", run: cmd.moveEnter },
     { id: "zoom", label: "Zoom in / focus", hint: "⌥↵", run: cmd.zoomIn },
