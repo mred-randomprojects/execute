@@ -1,5 +1,7 @@
 import { nanoid } from "nanoid";
 import type {
+  ActionLogEntry,
+  ActionLogKind,
   AppState,
   CommandUsage,
   Horizon,
@@ -22,6 +24,7 @@ import type {
 } from "../types";
 import { normalizeRule } from "./recurrence";
 import {
+  ACTION_LOG_LIMIT,
   DEFAULT_CAPACITY_BLOCKS,
   DEFAULT_PROJECT_ID,
   PROJECT_COLORS,
@@ -287,6 +290,26 @@ function coerceLogEntry(raw: unknown): LogEntry {
   };
 }
 
+function coerceActionLogKind(raw: unknown): ActionLogKind {
+  return raw === "undo" || raw === "redo" ? raw : "do";
+}
+
+function coerceActionLog(raw: unknown): ActionLogEntry[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((entry): ActionLogEntry => {
+      const o = isObject(entry) ? entry : {};
+      return {
+        id: str(o.id) || nanoid(),
+        label: str(o.label),
+        kind: coerceActionLogKind(o.kind),
+        at: num(o.at, Date.now()),
+      };
+    })
+    .filter((entry) => entry.label !== "")
+    .slice(0, ACTION_LOG_LIMIT);
+}
+
 export function coerceState(raw: unknown): AppState {
   if (!isObject(raw)) return emptyState();
   const projects = coerceProjects(raw.projects);
@@ -327,5 +350,7 @@ export function coerceState(raw: unknown): AppState {
     boardPreferred: bool(raw.boardPreferred, false),
     // v9: command-palette frecency memory. Pre-v9 → no learned rankings.
     commandUsage: coerceCommandUsage(raw.commandUsage),
+    // v11: the action history. Pre-v11 data has none → the log starts here.
+    actionLog: coerceActionLog(raw.actionLog),
   };
 }

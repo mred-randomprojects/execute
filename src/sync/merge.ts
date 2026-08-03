@@ -1,4 +1,14 @@
-import type { AppState, LogEntry, Project, Recurrence, Task, TaskId, TrashedTask } from "../types";
+import type {
+  ActionLogEntry,
+  AppState,
+  LogEntry,
+  Project,
+  Recurrence,
+  Task,
+  TaskId,
+  TrashedTask,
+} from "../types";
+import { ACTION_LOG_LIMIT } from "../types";
 
 // ─── Two-way merge (per-task last-write-wins) ────────────────────────
 //
@@ -19,6 +29,8 @@ import type { AppState, LogEntry, Project, Recurrence, Task, TaskId, TrashedTask
 //     are grafted back in at ANY depth — under their remote parent when it
 //     survived locally, else at top level — so no add is ever dropped, whether it
 //     was made at the root or nested under an existing task.
+//   • actionLog: UNION by id (append-only on both sides — nobody rewrites it),
+//     newest first and capped, so the history reads as one trail per account.
 
 function flatten(tasks: Task[]): Map<TaskId, Task> {
   const m = new Map<TaskId, Task>();
@@ -85,6 +97,17 @@ function mergeLog(a: LogEntry[], b: LogEntry[]): LogEntry[] {
   const byId = new Map<string, LogEntry>();
   for (const e of [...a, ...b]) if (!byId.has(e.id)) byId.set(e.id, e);
   return [...byId.values()].sort((x, y) => y.at - x.at);
+}
+
+/**
+ * The action history is append-only on both sides, so a union by id is the whole
+ * merge — no side ever rewrites a line. Newest first, then trimmed, so two busy
+ * devices converge on one capped trail instead of growing without bound.
+ */
+function mergeActionLog(a: ActionLogEntry[], b: ActionLogEntry[]): ActionLogEntry[] {
+  const byId = new Map<string, ActionLogEntry>();
+  for (const e of [...a, ...b]) if (!byId.has(e.id)) byId.set(e.id, e);
+  return [...byId.values()].sort((x, y) => y.at - x.at).slice(0, ACTION_LOG_LIMIT);
 }
 
 function maxDate(a: string | null, b: string | null): string | null {
@@ -198,6 +221,7 @@ export function mergeStates(local: AppState, remote: AppState): AppState {
     dailyCapacityBlocks: local.dailyCapacityBlocks, // writer wins (a per-device setting)
     boardPreferred: local.boardPreferred, // writer wins (a per-device preference)
     commandUsage: local.commandUsage, // writer wins (per-device palette rankings)
+    actionLog: mergeActionLog(local.actionLog, remote.actionLog),
   };
 }
 

@@ -534,7 +534,11 @@ export const LATER_BUCKET_ORDER: readonly LaterBucket[] = [
  * carry forward into "this week / this month" (they never reckon, never nag).
  */
 export function taskBucket(task: Task, today: ISODate): LaterBucket {
-  const h = task.horizon;
+  return horizonBucket(task.horizon, today);
+}
+
+/** The bucket half of {@link taskBucket}, for callers holding a bare horizon. */
+export function horizonBucket(h: Horizon | null, today: ISODate): LaterBucket {
   if (h == null) return "inbox";
   if (h.unit === "someday") return "someday";
   if (h.unit === "week") {
@@ -688,7 +692,12 @@ export function recurringForToday(
 /** Short chip label for a task's horizon (for the by-project layout). `null` for Inbox/dated. */
 export function horizonLabel(task: Task, today: ISODate): string | null {
   if (task.horizon == null) return null;
-  switch (taskBucket(task, today)) {
+  return horizonWords(task.horizon, today);
+}
+
+/** A fuzzy horizon in plain words ("next week"), for chips and history lines. */
+export function horizonWords(horizon: Horizon, today: ISODate): string {
+  switch (horizonBucket(horizon, today)) {
     case "thisWeek":
       return "this week";
     case "nextWeek":

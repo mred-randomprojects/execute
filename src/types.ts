@@ -194,6 +194,32 @@ export interface LogEntry {
   date: ISODate;
 }
 
+/**
+ * What a line of the action history records: the action itself, or a later move
+ * back and forth over it. Undo and redo are events in their own right — the log
+ * is append-only, so it tells you what actually happened, not what survived.
+ */
+export type ActionLogKind = "do" | "undo" | "redo";
+
+/**
+ * One line of the append-only action history (the `⌘ y` panel). Deliberately
+ * light — a sentence and a timestamp, never a state snapshot — so the whole log
+ * can be persisted and synced without weighing the document down. The undoable
+ * *snapshots* live in memory only (see the undo stack in src/store/store); `id`
+ * is the join between the two, so the panel can tell which lines are still
+ * reachable by undo in this session.
+ */
+export interface ActionLogEntry {
+  id: string;
+  /** Human sentence, written at the mutation site, e.g. `Complete “Buy milk”`. */
+  label: string;
+  kind: ActionLogKind;
+  at: number;
+}
+
+/** How many action-history lines to keep. Trimmed oldest-first. */
+export const ACTION_LOG_LIMIT = 200;
+
 /** The single persisted document. */
 export interface AppState {
   schemaVersion: number;
@@ -228,9 +254,17 @@ export interface AppState {
    * run. A per-device preference; writer wins on cloud merge.
    */
   commandUsage: Record<string, CommandUsage>;
+  /**
+   * Append-only history of everything you did, newest first, capped at
+   * {@link ACTION_LOG_LIMIT}. Written at the store's single mutation choke
+   * point, so nothing can change without leaving a line. Never rolled back —
+   * undoing an action *adds* a line rather than erasing one. Merged as a union
+   * across devices, so the log reads as one trail.
+   */
+  actionLog: ActionLogEntry[];
 }
 
-export const SCHEMA_VERSION = 10;
+export const SCHEMA_VERSION = 11;
 export const DEFAULT_PROJECT_ID = "project-inbox" as ProjectId;
 export const PROJECT_ROW_PREFIX = "project:";
 
@@ -281,5 +315,6 @@ export function emptyState(): AppState {
     dailyCapacityBlocks: DEFAULT_CAPACITY_BLOCKS,
     boardPreferred: false,
     commandUsage: {},
+    actionLog: [],
   };
 }

@@ -1,6 +1,7 @@
 import { useSyncExternalStore } from "react";
 import { nanoid } from "nanoid";
 import type {
+  ActionLogEntry,
   AppState,
   Horizon,
   ISODate,
@@ -16,7 +17,12 @@ import type {
   ThemeName,
   WontDo,
 } from "../types";
-import { DEFAULT_PROJECT_ID, PROJECT_COLORS, emptyState } from "../types";
+import {
+  ACTION_LOG_LIMIT,
+  DEFAULT_PROJECT_ID,
+  PROJECT_COLORS,
+  emptyState,
+} from "../types";
 import {
   cloneWithNewIds,
   findById,
@@ -38,6 +44,7 @@ import {
   setProjectForIds,
 } from "./tasks";
 import { normalizeRule } from "./recurrence";
+import { horizonWords } from "../selectors";
 import { todayISO } from "./dates";
 import { coerceState, loadRaw, saveRaw } from "./persistence";
 
@@ -51,7 +58,31 @@ let loadError: string | null = null;
 const listeners = new Set<() => void>();
 
 const MAX_UNDO = 100;
-let undoStack: AppState[] = [];
+
+/**
+ * One reversible step. The snapshot is the state as it was *before* the action;
+ * `touched` is the set of task ids the action added, removed, or edited — its
+ * footprint, which {@link restamp} needs to make the reversal stick across the
+ * cloud. `id` is shared with the matching {@link ActionLogEntry}, so the history
+ * panel can tell which of its (persisted) lines are still reachable in memory.
+ */
+interface HistoryStep {
+  id: string;
+  label: string;
+  at: number;
+  state: AppState;
+  touched: Set<TaskId>;
+}
+
+/** A history step as the UI sees it — no snapshot, just the line. */
+export interface HistoryStepView {
+  id: string;
+  label: string;
+  at: number;
+}
+
+let undoStack: HistoryStep[] = [];
+let redoStack: HistoryStep[] = [];
 
 let saveTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -115,10 +146,6 @@ function getSnapshot(): AppState {
   return state;
 }
 
-/**
- * Apply a transform. `track` (default true) pushes an undo snapshot first;
- * pass false for incidental changes (theme, dev date, rollover bookkeeping).
- */
 // ─── Automatic per-task updatedAt stamping ──────────────────────────
 //
 // Cloud sync merges per task by updatedAt (see src/sync/merge). Rather than
@@ -163,36 +190,149 @@ function indexById(tasks: Task[], into: Map<TaskId, Task>): void {
     indexById(t.children, into);
   }
 }
-function stampNode(node: Task, prevById: Map<TaskId, Task>, now: number): Task {
+function stampNode(
+  node: Task,
+  prevById: Map<TaskId, Task>,
+  now: number,
+  touched: Set<TaskId>,
+): Task {
   let children = node.children;
   if (children.length > 0) {
-    const mapped = children.map((c) => stampNode(c, prevById, now));
+    const mapped = children.map((c) => stampNode(c, prevById, now, touched));
     if (mapped.some((c, i) => c !== children[i])) children = mapped;
   }
   const before = prevById.get(node.id);
   const ownChanged = before == null || !sameOwnFields(before, node);
+  if (ownChanged) touched.add(node.id);
   const updatedAt = ownChanged ? now : node.updatedAt;
   if (children === node.children && updatedAt === node.updatedAt) return node;
   return { ...node, children, updatedAt };
 }
-function stampTasks(prev: AppState, next: AppState): AppState {
-  if (next.tasks === prev.tasks) return next; // no structural task change
-  const prevById = new Map<TaskId, Task>();
-  indexById(prev.tasks, prevById);
-  const now = Date.now();
-  return { ...next, tasks: next.tasks.map((t) => stampNode(t, prevById, now)) };
+
+/** The stamped state plus the ids the transform actually touched. */
+interface Stamped {
+  state: AppState;
+  touched: Set<TaskId>;
 }
 
-function update(fn: (s: AppState) => AppState, track = true): void {
-  if (track) undoStack = [state, ...undoStack].slice(0, MAX_UNDO);
+function stampTasks(prev: AppState, next: AppState): Stamped {
+  if (next.tasks === prev.tasks) return { state: next, touched: new Set() };
+  const prevById = new Map<TaskId, Task>();
+  indexById(prev.tasks, prevById);
+  const nextById = new Map<TaskId, Task>();
+  indexById(next.tasks, nextById);
+  const now = Date.now();
+  const touched = new Set<TaskId>();
+  // Deletions have to be collected separately: `stampNode` only ever walks the
+  // *next* tree, so a task that was trashed leaves no node behind to mark — and
+  // it's exactly the one undo has to resurrect against its own tombstone.
+  for (const id of prevById.keys()) if (!nextById.has(id)) touched.add(id);
+  const tasks = next.tasks.map((t) => stampNode(t, prevById, now, touched));
+  return { state: { ...next, tasks }, touched };
+}
+
+/**
+ * Re-stamp `updatedAt = now` on exactly the tasks an undone (or redone) action
+ * touched. This is what makes undo *stick* once you're signed in: cloud sync
+ * resolves every task by last-write-wins on `updatedAt` (see src/sync/merge), so
+ * a snapshot restored with its original — older — stamps loses to the very edit
+ * it was meant to reverse, and the next pull puts that edit straight back.
+ * Restoring a trashed task is the same story against its tombstone, which wins
+ * while `deletedAt >= updatedAt`.
+ *
+ * Scoped to the footprint on purpose. Tasks *outside* it keep the snapshot's
+ * stamps, so undoing your own edit can't also clobber an unrelated task another
+ * device changed in the meantime — that one stays older, loses LWW, and heals on
+ * the next pull.
+ */
+function restamp(target: AppState, touched: Set<TaskId>): AppState {
+  if (touched.size === 0) return target;
+  const now = Date.now();
+  const walk = (nodes: Task[]): Task[] =>
+    nodes.map((t) => {
+      const children = t.children.length > 0 ? walk(t.children) : t.children;
+      if (!touched.has(t.id)) return children === t.children ? t : { ...t, children };
+      return { ...t, children, updatedAt: now };
+    });
+  return { ...target, tasks: walk(target.tasks) };
+}
+
+/** Prepend one line to the action history, capped. `log` is the trail to extend
+ *  — passed explicitly because undo restores an old snapshot but must carry the
+ *  *current* log forward: the history records what happened, and an undo did. */
+function withHistory(
+  s: AppState,
+  log: ActionLogEntry[],
+  entry: ActionLogEntry,
+): AppState {
+  return { ...s, actionLog: [entry, ...log].slice(0, ACTION_LOG_LIMIT) };
+}
+
+/**
+ * Apply a transform. `label` is the sentence this change goes down as in the
+ * history (`Complete “Buy milk”`) — and passing it is what makes the change
+ * undoable. `null` means an incidental change that is neither undoable nor
+ * worth a history line: preferences, dev-date, rollover bookkeeping.
+ *
+ * The label is required rather than defaulted so that every new mutation has to
+ * answer "what do I call this, and should undo reach it?" at the call site.
+ */
+function update(fn: (s: AppState) => AppState, label: string | null): void {
   const prev = state;
-  state = stampTasks(prev, fn(prev));
+  const produced = fn(prev);
+  // A guard that bailed (`markWontDo` on an already-skipped task, and friends)
+  // returns `s` untouched. Stop here: an undo step that does nothing, and a
+  // history line for a change that never happened, are both worse than silence.
+  if (produced === prev) return;
+
+  const { state: next, touched } = stampTasks(prev, produced);
+  if (label == null) {
+    state = next;
+  } else {
+    const id = nanoid();
+    const at = Date.now();
+    undoStack = [{ id, label, at, state: prev, touched }, ...undoStack].slice(0, MAX_UNDO);
+    redoStack = []; // a new action forks the timeline — nothing left to redo
+    state = withHistory(next, next.actionLog, { id, label, kind: "do", at });
+  }
   notify();
   scheduleSave();
 }
 
-function updateTasks(fn: (tasks: Task[]) => Task[], track = true): void {
-  update((s) => ({ ...s, tasks: fn(s.tasks) }), track);
+function updateTasks(fn: (tasks: Task[]) => Task[], label: string | null): void {
+  update((s) => ({ ...s, tasks: fn(s.tasks) }), label);
+}
+
+// ─── History labels ─────────────────────────────────────────────────
+//
+// Every undoable mutation names itself. Kept here (at the effect, not at the
+// keybinding) so a change made with the mouse, the palette, or a keystroke all
+// land the same line — there is no path into the store that skips this.
+
+const LABEL_TITLE_MAX = 40;
+
+/** A task title, trimmed and quoted for a history line. */
+function quoteText(text: string): string {
+  const clean = text.trim();
+  if (clean === "") return "an untitled task";
+  const short =
+    clean.length > LABEL_TITLE_MAX ? `${clean.slice(0, LABEL_TITLE_MAX - 1)}…` : clean;
+  return `“${short}”`;
+}
+
+function quote(task: Task | null | undefined): string {
+  return quoteText(task?.text ?? "");
+}
+
+/** `New task “Buy milk”` — or just `New task`, for something not yet named. */
+function titled(prefix: string, text: string): string {
+  return text.trim() === "" ? prefix : `${prefix} ${quoteText(text)}`;
+}
+
+/** `“Buy milk”` for a single id, `3 tasks` for several — a line's subject. */
+function subject(ids: TaskId[], tasks: Task[] = state.tasks): string {
+  if (ids.length === 1) return quote(findById(tasks, ids[0]));
+  return `${ids.length} tasks`;
 }
 
 function topLevelIdFor(tasks: Task[], id: TaskId): TaskId {
@@ -284,31 +424,31 @@ export function useStore(): { state: AppState; ready: boolean; loadError: string
 // ─── App-level settings ─────────────────────────────────────────────
 
 export function setTheme(theme: ThemeName): void {
-  update((s) => ({ ...s, theme }), false);
+  update((s) => ({ ...s, theme }), null);
 }
 
 export function setDevDateOverride(date: ISODate | null): void {
-  update((s) => ({ ...s, devDateOverride: date }), false);
+  update((s) => ({ ...s, devDateOverride: date }), null);
 }
 
 export function markOpened(date: ISODate): void {
-  update((s) => ({ ...s, lastOpenedDate: date }), false);
+  update((s) => ({ ...s, lastOpenedDate: date }), null);
 }
 
 /** Set the daily capacity budget, in blocks (clamped to ≥ 1). Not undoable. */
 export function setDailyCapacityBlocks(blocks: number): void {
   const clamped = Math.max(1, Math.round(blocks));
-  update((s) => ({ ...s, dailyCapacityBlocks: clamped }), false);
+  update((s) => ({ ...s, dailyCapacityBlocks: clamped }), null);
 }
 
 /** Choose how the reckoning renders (board vs. card review). Not undoable. */
 export function setBoardPreferred(preferred: boolean): void {
-  update((s) => ({ ...s, boardPreferred: preferred }), false);
+  update((s) => ({ ...s, boardPreferred: preferred }), null);
 }
 
 /** Set (or clear, with null) the "right now" task. A focus pointer, not undoable. */
 export function setCurrentTask(id: TaskId | null): void {
-  update((s) => ({ ...s, currentTaskId: id }), false);
+  update((s) => ({ ...s, currentTaskId: id }), null);
 }
 
 /**
@@ -325,7 +465,7 @@ export function recordCommandUse(id: string): void {
         [id]: { count: (prev?.count ?? 0) + 1, lastUsedAt: Date.now() },
       },
     };
-  }, false);
+  }, null);
 }
 
 /**
@@ -338,7 +478,7 @@ export function resetCommandRanking(id: string): void {
     const next = { ...s.commandUsage };
     delete next[id];
     return { ...s, commandUsage: next };
-  }, false);
+  }, null);
 }
 
 // ─── Insert ─────────────────────────────────────────────────────────
@@ -397,7 +537,7 @@ export function addTaskAfter(
     ...makeTask(text, projectId ?? after?.projectId ?? DEFAULT_PROJECT_ID),
     plannedFor,
   };
-  updateTasks((tasks) => insertAfterSibling(tasks, afterId, t));
+  updateTasks((tasks) => insertAfterSibling(tasks, afterId, t), titled("New task", text));
   return t.id;
 }
 
@@ -407,10 +547,10 @@ export function addTaskAtProjectStart(
   plannedFor: ISODate | null = null
 ): TaskId {
   const t = { ...makeTask(text, projectId), plannedFor };
-  update((s) => ({
-    ...s,
-    tasks: insertAtProjectStart(s.tasks, s.projects, projectId, t),
-  }));
+  update(
+    (s) => ({ ...s, tasks: insertAtProjectStart(s.tasks, s.projects, projectId, t) }),
+    titled("New task", text),
+  );
   return t.id;
 }
 
@@ -425,8 +565,9 @@ export function addChild(
     ...makeTask(text, parent?.projectId ?? DEFAULT_PROJECT_ID),
     plannedFor,
   };
-  updateTasks((tasks) =>
-    mapById(tasks, parentId, (p) => ({ ...p, children: [...p.children, child] }))
+  updateTasks(
+    (tasks) => mapById(tasks, parentId, (p) => ({ ...p, children: [...p.children, child] })),
+    `New subtask of ${quote(parent)}`,
   );
   return child.id;
 }
@@ -451,7 +592,7 @@ export function createProject(name: string): ProjectId {
         createdAt: Date.now(),
       },
     ],
-  }));
+  }), titled("New project", cleanName));
   return id;
 }
 
@@ -463,7 +604,7 @@ export function renameProject(id: ProjectId, name: string): void {
     projects: s.projects.map((project) =>
       project.id === id ? { ...project, name: cleanName } : project
     ),
-  }));
+  }), titled("Rename project to", cleanName));
 }
 
 export function cycleProjectColor(id: ProjectId): void {
@@ -474,17 +615,27 @@ export function cycleProjectColor(id: ProjectId): void {
       const i = PROJECT_COLORS.indexOf(project.color as (typeof PROJECT_COLORS)[number]);
       return { ...project, color: PROJECT_COLORS[(i + 1) % PROJECT_COLORS.length] };
     }),
-  }));
+  }), "Change a project’s colour");
 }
 
 // ─── Mutate ─────────────────────────────────────────────────────────
 
 export function setText(id: TaskId, text: string): void {
-  updateTasks((tasks) => mapById(tasks, id, (t) => ({ ...t, text })));
+  const before = findById(state.tasks, id);
+  // A brand-new row starts empty, so its first commit is a naming, not a rename.
+  const named = (before?.text ?? "").trim() !== "";
+  const label =
+    text.trim() === ""
+      ? `Clear the title of ${quote(before)}`
+      : `${named ? "Rename" : "Name"} ${quoteText(text)}`;
+  updateTasks((tasks) => mapById(tasks, id, (t) => ({ ...t, text })), label);
 }
 
 export function setNotes(id: TaskId, notes: string): void {
-  updateTasks((tasks) => mapById(tasks, id, (t) => ({ ...t, notes })));
+  updateTasks(
+    (tasks) => mapById(tasks, id, (t) => ({ ...t, notes })),
+    `Edit the notes on ${quote(findById(state.tasks, id))}`,
+  );
 }
 
 function makeLog(
@@ -505,6 +656,8 @@ function makeLog(
 }
 
 export function toggleComplete(id: TaskId): void {
+  const before = findById(state.tasks, id);
+  const willComplete = before != null && !before.completed;
   update((s) => {
     const t = findById(s.tasks, id);
     if (t == null) return s;
@@ -520,7 +673,7 @@ export function toggleComplete(id: TaskId): void {
       })),
       log: [makeLog(s, t, completed ? "completed" : "uncompleted", null), ...s.log],
     };
-  });
+  }, `${willComplete ? "Complete" : "Uncomplete"} ${quote(before)}`);
 }
 
 export function setCompleted(
@@ -541,7 +694,7 @@ export function setCompleted(
       })),
       log: completed ? [makeLog(s, t, "completed", reason), ...s.log] : s.log,
     };
-  });
+  }, `${completed ? "Complete" : "Uncomplete"} ${quote(findById(state.tasks, id))}`);
 }
 
 // ─── Won't do (intentionally skipped) ───────────────────────────────
@@ -575,7 +728,7 @@ export function markWontDo(id: TaskId, reason: string | null = null): void {
       tasks: mapById(s.tasks, id, (x) => applyWontDo(x, reason)),
       log: [makeLog(s, t, "skipped", reason), ...s.log],
     };
-  });
+  }, `Won’t do ${quote(findById(state.tasks, id))}`);
 }
 
 /** Mark a batch "won't do" — each a "skipped" log entry, one undo step. */
@@ -590,7 +743,7 @@ export function markWontDoMany(ids: TaskId[], reason: string | null = null): voi
       logs.push(makeLog(s, t, "skipped", reason));
     }
     return { ...s, tasks, log: [...logs, ...s.log] };
-  });
+  }, `Won’t do ${subject(ids)}`);
 }
 
 /** Reopen a skipped task (or clear a skip). Logs a reopen for the record. */
@@ -603,7 +756,7 @@ export function clearWontDo(id: TaskId): void {
       tasks: mapById(s.tasks, id, (x) => ({ ...x, wontDo: null })),
       log: [makeLog(s, t, "uncompleted", null), ...s.log],
     };
-  });
+  }, `Reopen ${quote(findById(state.tasks, id))}`);
 }
 
 /** Toggle the won't-do state (detail-panel / mouse affordance). */
@@ -628,7 +781,7 @@ export function setWontDoReason(id: TaskId, reason: string): void {
       ),
       log: patchLatestSkip(s.log, id, value),
     };
-  });
+  }, `Give a reason for not doing ${quote(findById(state.tasks, id))}`);
 }
 
 /** Unplan a task (back to the Inbox) and log it as a postponement. */
@@ -641,7 +794,7 @@ export function postponeToBacklog(id: TaskId, reason: string | null = null): voi
       tasks: mapById(s.tasks, id, (x) => ({ ...x, plannedFor: null, horizon: null })),
       log: [makeLog(s, t, "postponed", reason), ...s.log],
     };
-  });
+  }, `Send ${quote(findById(state.tasks, id))} to the backlog`);
 }
 
 /**
@@ -663,7 +816,7 @@ export function keepForToday(id: TaskId, reason: string | null = null): void {
       })),
       log: [makeLog(s, t, "kept", reason), ...s.log],
     };
-  });
+  }, `Keep ${quote(findById(state.tasks, id))} for today`);
 }
 
 export function logBreakdown(id: TaskId): void {
@@ -671,7 +824,7 @@ export function logBreakdown(id: TaskId): void {
     const t = findById(s.tasks, id);
     if (t == null) return s;
     return { ...s, log: [makeLog(s, t, "brokeDown", null), ...s.log] };
-  });
+  }, `Break down ${quote(findById(state.tasks, id))}`);
 }
 
 /** Soft delete: move the subtree to the Trash. Optionally log it as a drop. */
@@ -690,7 +843,7 @@ export function trashTask(
         ? [makeLog(s, t, "dropped", opts.reason ?? null), ...s.log]
         : s.log,
     };
-  });
+  }, `Trash ${quote(findById(state.tasks, id))}`);
 }
 
 export function restoreFromTrash(taskId: TaskId): void {
@@ -702,19 +855,26 @@ export function restoreFromTrash(taskId: TaskId): void {
       tasks: [...s.tasks, entry.task],
       trash: s.trash.filter((e) => e.task.id !== taskId),
     };
-  });
+  }, `Restore ${quote(state.trash.find((e) => e.task.id === taskId)?.task)} from the trash`);
 }
 
 export function purgeFromTrash(taskId: TaskId): void {
-  update((s) => ({ ...s, trash: s.trash.filter((e) => e.task.id !== taskId) }));
+  const gone = quote(state.trash.find((e) => e.task.id === taskId)?.task);
+  update(
+    (s) => ({ ...s, trash: s.trash.filter((e) => e.task.id !== taskId) }),
+    `Delete ${gone} for good`,
+  );
 }
 
 export function emptyTrash(): void {
-  update((s) => ({ ...s, trash: [] }));
+  update((s) => ({ ...s, trash: [] }), `Empty the trash (${state.trash.length})`);
 }
 
 export function reorder(selectedIds: TaskId[], dir: "up" | "down"): void {
-  updateTasks((tasks) => reorderSelected(tasks, new Set(selectedIds), dir));
+  updateTasks(
+    (tasks) => reorderSelected(tasks, new Set(selectedIds), dir),
+    `Move ${subject(selectedIds)} ${dir}`,
+  );
 }
 
 // `visible` is the set of task ids the current view actually shows, so a reorder
@@ -727,7 +887,7 @@ export function reorderAcrossProjects(
   update((s) => ({
     ...s,
     tasks: reorderSelectedAcrossProjects(s.tasks, new Set(selectedIds), dir, s.projects, visible),
-  }));
+  }), `Move ${subject(selectedIds)} ${dir}`);
 }
 
 // ─── Bulk operations (multi-select) — each a single undo step ────────
@@ -743,7 +903,7 @@ export function trashMany(ids: TaskId[]): void {
       trashed.push({ task: t, deletedAt: Date.now() });
     }
     return { ...s, tasks, trash: [...trashed, ...s.trash] };
-  });
+  }, `Trash ${subject(ids)}`);
 }
 
 /** Reckoning "Backlog all": unplan a batch of leftovers, each logged as postponed. */
@@ -758,7 +918,7 @@ export function postponeManyToBacklog(ids: TaskId[], reason: string | null = nul
       logs.push(makeLog(s, t, "postponed", reason));
     }
     return { ...s, tasks, log: [...logs, ...s.log] };
-  });
+  }, `Send ${subject(ids)} to the backlog`);
 }
 
 /** Reckoning "Drop all": trash a batch of leftovers, each logged as dropped. */
@@ -775,7 +935,7 @@ export function dropManyWithLog(ids: TaskId[], reason: string | null = null): vo
       logs.push(makeLog(s, t, "dropped", reason));
     }
     return { ...s, tasks, trash: [...trashed, ...s.trash], log: [...logs, ...s.log] };
-  });
+  }, `Drop ${subject(ids)}`);
 }
 
 export function setCompletedMany(ids: TaskId[], completed: boolean): void {
@@ -794,7 +954,7 @@ export function setCompletedMany(ids: TaskId[], completed: boolean): void {
       if (completed) logs.push(makeLog(s, t, "completed", null));
     }
     return { ...s, tasks, log: [...logs, ...s.log] };
-  });
+  }, `${completed ? "Complete" : "Uncomplete"} ${subject(ids)}`);
 }
 
 export function setPlannedForMany(ids: TaskId[], date: ISODate | null): void {
@@ -803,7 +963,7 @@ export function setPlannedForMany(ids: TaskId[], date: ISODate | null): void {
     // A concrete date and a fuzzy horizon are mutually exclusive.
     for (const id of ids) tasks = mapById(tasks, id, (x) => ({ ...x, plannedFor: date, horizon: null }));
     return { ...s, tasks };
-  });
+  }, date == null ? `Unschedule ${subject(ids)}` : `Schedule ${subject(ids)} for ${date}`);
 }
 
 /** Set a fuzzy horizon (this/next week·month, someday) — clears any concrete date. */
@@ -812,25 +972,37 @@ export function setHorizonMany(ids: TaskId[], horizon: Horizon | null): void {
     let tasks = s.tasks;
     for (const id of ids) tasks = mapById(tasks, id, (x) => ({ ...x, plannedFor: null, horizon }));
     return { ...s, tasks };
-  });
+  }, horizon == null ? `Unschedule ${subject(ids)}` : `Schedule ${subject(ids)} for ${horizonWords(horizon, todayISO(state.devDateOverride))}`);
 }
 
 export function setPriority(id: TaskId, priority: TaskPriority): void {
-  updateTasks((tasks) => mapById(tasks, id, (t) => ({ ...t, priority })));
+  updateTasks(
+    (tasks) => mapById(tasks, id, (t) => ({ ...t, priority })),
+    `Set ${quote(findById(state.tasks, id))} to priority ${priority}`,
+  );
 }
 
 /** Set (or clear, with null) the effort estimate on a batch — one undo step. */
 export function setEstimatedMinutesMany(ids: TaskId[], minutes: number | null): void {
   const value = minutes == null || minutes <= 0 ? null : Math.round(minutes);
-  updateTasks((tasks) => {
-    let next = tasks;
-    for (const id of ids) next = mapById(next, id, (t) => ({ ...t, estimatedMinutes: value }));
-    return next;
-  });
+  updateTasks(
+    (tasks) => {
+      let next = tasks;
+      for (const id of ids) next = mapById(next, id, (t) => ({ ...t, estimatedMinutes: value }));
+      return next;
+    },
+    value == null
+      ? `Clear the estimate on ${subject(ids)}`
+      : `Estimate ${subject(ids)} at ${value} min`,
+  );
 }
 
 export function setPlannedFor(id: TaskId, plannedFor: ISODate | null): void {
-  updateTasks((tasks) => mapById(tasks, id, (t) => ({ ...t, plannedFor, horizon: null })));
+  const what = quote(findById(state.tasks, id));
+  updateTasks(
+    (tasks) => mapById(tasks, id, (t) => ({ ...t, plannedFor, horizon: null })),
+    plannedFor == null ? `Unschedule ${what}` : `Schedule ${what} for ${plannedFor}`,
+  );
 }
 
 /**
@@ -840,14 +1012,18 @@ export function setPlannedFor(id: TaskId, plannedFor: ISODate | null): void {
  * calendar, so undo here would only desync the badge from reality.
  */
 export function setScheduledAt(id: TaskId, at: number | null): void {
-  updateTasks((tasks) => mapById(tasks, id, (t) => ({ ...t, scheduledAt: at })), false);
+  updateTasks((tasks) => mapById(tasks, id, (t) => ({ ...t, scheduledAt: at })), null);
 }
 
 export function setProjectForMany(ids: TaskId[], projectId: ProjectId): void {
-  updateTasks((tasks) => {
-    const topLevelIds = new Set(ids.map((id) => topLevelIdFor(tasks, id)));
-    return normalizeChildProjects(setProjectForIds(tasks, topLevelIds, projectId));
-  });
+  const project = state.projects.find((p) => p.id === projectId);
+  updateTasks(
+    (tasks) => {
+      const topLevelIds = new Set(ids.map((id) => topLevelIdFor(tasks, id)));
+      return normalizeChildProjects(setProjectForIds(tasks, topLevelIds, projectId));
+    },
+    `Move ${subject(ids)} to ${quoteText(project?.name ?? "another project")}`,
+  );
 }
 
 // ─── Outline structure ──────────────────────────────────────────────
@@ -856,49 +1032,63 @@ export function setProjectForMany(ids: TaskId[], projectId: ProjectId): void {
 // under the row above, not under a filtered-out sibling). When omitted, falls
 // back to the raw previous sibling.
 export function indent(id: TaskId, underId?: TaskId | null): void {
-  updateTasks((tasks) =>
-    normalizeChildProjects(
-      underId == null ? indentTask(tasks, id) : indentUnder(tasks, id, underId)
-    )
+  updateTasks(
+    (tasks) =>
+      normalizeChildProjects(
+        underId == null ? indentTask(tasks, id) : indentUnder(tasks, id, underId)
+      ),
+    `Indent ${quote(findById(state.tasks, id))}`,
   );
 }
 
 export function outdent(id: TaskId): void {
-  updateTasks((tasks) => normalizeChildProjects(outdentTask(tasks, id)));
+  updateTasks(
+    (tasks) => normalizeChildProjects(outdentTask(tasks, id)),
+    `Outdent ${quote(findById(state.tasks, id))}`,
+  );
 }
 
 export function reorderSibling(activeId: TaskId, overId: TaskId): void {
-  updateTasks((tasks) => moveSibling(tasks, activeId, overId));
+  updateTasks(
+    (tasks) => moveSibling(tasks, activeId, overId),
+    `Move ${quote(findById(state.tasks, activeId))}`,
+  );
 }
 
 export function moveBefore(taskId: TaskId, beforeId: TaskId): void {
   const targetProjectId = findById(state.tasks, beforeId)?.projectId ?? DEFAULT_PROJECT_ID;
-  updateTasks((tasks) =>
-    normalizeChildProjects(
-      setProjectForIds(relocateTask(tasks, taskId, beforeId), new Set([taskId]), targetProjectId)
-    )
+  updateTasks(
+    (tasks) =>
+      normalizeChildProjects(
+        setProjectForIds(relocateTask(tasks, taskId, beforeId), new Set([taskId]), targetProjectId)
+      ),
+    `Move ${quote(findById(state.tasks, taskId))}`,
   );
 }
 
 export function moveAfter(taskId: TaskId, afterId: TaskId): void {
   const targetProjectId = findById(state.tasks, afterId)?.projectId ?? DEFAULT_PROJECT_ID;
-  updateTasks((tasks) =>
-    normalizeChildProjects(
-      setProjectForIds(relocateAfter(tasks, taskId, afterId), new Set([taskId]), targetProjectId)
-    )
+  updateTasks(
+    (tasks) =>
+      normalizeChildProjects(
+        setProjectForIds(relocateAfter(tasks, taskId, afterId), new Set([taskId]), targetProjectId)
+      ),
+    `Move ${quote(findById(state.tasks, taskId))}`,
   );
 }
 
 export function moveAsChild(taskId: TaskId, newParentId: TaskId): void {
   const targetProjectId = findById(state.tasks, newParentId)?.projectId ?? DEFAULT_PROJECT_ID;
-  updateTasks((tasks) =>
-    normalizeChildProjects(
-      setProjectForIds(
-        relocateAsChild(tasks, taskId, newParentId),
-        new Set([taskId]),
-        targetProjectId
-      )
-    )
+  updateTasks(
+    (tasks) =>
+      normalizeChildProjects(
+        setProjectForIds(
+          relocateAsChild(tasks, taskId, newParentId),
+          new Set([taskId]),
+          targetProjectId
+        )
+      ),
+    `Move ${quote(findById(state.tasks, taskId))} under ${quote(findById(state.tasks, newParentId))}`,
   );
 }
 
@@ -929,7 +1119,7 @@ export function createRecurrence(
   update((s) => ({
     ...s,
     recurrences: [...s.recurrences, { id, template, rule: normalizeRule(rule), createdAt: Date.now() }],
-  }));
+  }), titled("New recurring task", text));
   return { id, taskId: template.id };
 }
 
@@ -937,11 +1127,15 @@ export function setRecurrenceRule(id: RecurrenceId, rule: RecurrenceRule): void 
   update((s) => ({
     ...s,
     recurrences: s.recurrences.map((r) => (r.id === id ? { ...r, rule: normalizeRule(rule) } : r)),
-  }));
+  }), "Change a repeat schedule");
 }
 
 export function deleteRecurrence(id: RecurrenceId): void {
-  update((s) => ({ ...s, recurrences: s.recurrences.filter((r) => r.id !== id) }));
+  const gone = state.recurrences.find((r) => r.id === id);
+  update(
+    (s) => ({ ...s, recurrences: s.recurrences.filter((r) => r.id !== id) }),
+    `Delete the recurring task ${quote(gone?.template)}`,
+  );
 }
 
 export function setRecurrenceText(taskId: TaskId, text: string): void {
@@ -950,7 +1144,7 @@ export function setRecurrenceText(taskId: TaskId, text: string): void {
     recurrences: mapRecurrenceOfNode(s.recurrences, taskId, (tpl) =>
       mapById([tpl], taskId, (t) => ({ ...t, text }))[0]
     ),
-  }));
+  }), titled("Rename a recurring step", text));
 }
 
 /** Add an empty step: a child of `taskId`, or a sibling after it. Returns its id. */
@@ -965,7 +1159,7 @@ export function addRecurrenceStep(taskId: TaskId, mode: "child" | "sibling"): Ta
       }
       return insertAfterSibling([tpl], taskId, child)[0];
     }),
-  }));
+  }), "New recurring step");
   return step.id;
 }
 
@@ -976,7 +1170,7 @@ export function indentRecurrenceNode(taskId: TaskId, underId?: TaskId | null): v
       const forest = underId == null ? indentTask([tpl], taskId) : indentUnder([tpl], taskId, underId);
       return forest[0] ?? tpl;
     }),
-  }));
+  }), "Indent a recurring step");
 }
 
 export function outdentRecurrenceNode(taskId: TaskId): void {
@@ -988,7 +1182,7 @@ export function outdentRecurrenceNode(taskId: TaskId): void {
       if (parentId == null || parentId === tpl.id) return tpl;
       return outdentTask([tpl], taskId)[0] ?? tpl;
     }),
-  }));
+  }), "Outdent a recurring step");
 }
 
 /** Remove a step; removing the template root deletes the whole recurrence. */
@@ -1005,7 +1199,7 @@ export function removeRecurrenceNode(taskId: TaskId): void {
         r.id === rec.id ? { ...r, template: removeById([r.template], taskId)[0] } : r
       ),
     };
-  });
+  }, "Delete a recurring step");
 }
 
 /** Clone a recurrence's template into a concrete, dated-for-today commitment. */
@@ -1035,21 +1229,86 @@ export function acceptRecurrence(recId: RecurrenceId, today: ISODate): TaskId | 
   update((s) => ({
     ...s,
     tasks: insertAtProjectStart(s.tasks, s.projects, instance.projectId, instance),
-  }));
+  }), `Take on today’s ${quote(rec.template)}`);
   return instance.id;
 }
 
-// ─── Undo ───────────────────────────────────────────────────────────
+// ─── Undo / redo / history ──────────────────────────────────────────
+//
+// Undo is a stack of whole-state snapshots — coarse, but it means every change
+// that goes through update() is reversible without any per-mutation inverse to
+// write (or forget). Redo is its mirror: undoing moves a step across to the redo
+// stack, and any *new* action forks the timeline and clears it.
+//
+// The action log is the one thing that never rewinds. It is an account of what
+// you did, so undoing records a line rather than erasing one.
 
-export function undo(): void {
-  if (undoStack.length === 0) return;
-  const [prev, ...rest] = undoStack;
-  undoStack = rest;
-  state = prev;
+/** Restore a snapshot and record the move. Shared by undo and redo. */
+function applyStep(step: HistoryStep, kind: "undo" | "redo"): void {
+  const restored = restamp(step.state, step.touched);
+  state = withHistory(restored, state.actionLog, {
+    id: nanoid(),
+    label: step.label,
+    kind,
+    at: Date.now(),
+  });
   notify();
   scheduleSave();
 }
 
+export function undo(): void {
+  const step = undoStack[0];
+  if (step == null) return;
+  undoStack = undoStack.slice(1);
+  // What we're leaving behind becomes the redo step — same name, same footprint.
+  redoStack = [{ ...step, state }, ...redoStack].slice(0, MAX_UNDO);
+  applyStep(step, "undo");
+}
+
+export function redo(): void {
+  const step = redoStack[0];
+  if (step == null) return;
+  redoStack = redoStack.slice(1);
+  undoStack = [{ ...step, state }, ...undoStack].slice(0, MAX_UNDO);
+  applyStep(step, "redo");
+}
+
+/** Undo everything back through the step with this history id, inclusive. */
+export function undoThrough(historyId: string): void {
+  const idx = undoStack.findIndex((e) => e.id === historyId);
+  if (idx === -1) return;
+  for (let i = 0; i <= idx; i++) undo();
+}
+
+/** Redo forward through the step with this history id, inclusive. */
+export function redoThrough(historyId: string): void {
+  const idx = redoStack.findIndex((e) => e.id === historyId);
+  if (idx === -1) return;
+  for (let i = 0; i <= idx; i++) redo();
+}
+
 export function canUndo(): boolean {
   return undoStack.length > 0;
+}
+
+export function canRedo(): boolean {
+  return redoStack.length > 0;
+}
+
+/** How many steps are still reversible — without materialising the stack. */
+export function undoDepth(): number {
+  return undoStack.length;
+}
+
+const toView = (e: HistoryStep): HistoryStepView => ({ id: e.id, label: e.label, at: e.at });
+
+/** The reversible steps, newest first. Only these history lines can be jumped
+ *  to — the log outlives the session, the snapshots don't. */
+export function getUndoSteps(): HistoryStepView[] {
+  return undoStack.map(toView);
+}
+
+/** The steps waiting to be redone, most-recently-undone first. */
+export function getRedoSteps(): HistoryStepView[] {
+  return redoStack.map(toView);
 }

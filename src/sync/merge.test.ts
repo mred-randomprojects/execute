@@ -43,6 +43,7 @@ function state(over: Partial<AppState> = {}): AppState {
     dailyCapacityBlocks: 12,
     boardPreferred: false,
     commandUsage: {},
+    actionLog: [],
     ...over,
   };
 }
