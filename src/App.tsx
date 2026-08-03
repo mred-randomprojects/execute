@@ -72,6 +72,12 @@ import {
   trashMany,
   trashTask,
   undo,
+  undoThrough,
+  redo,
+  redoThrough,
+  getUndoSteps,
+  getRedoSteps,
+  undoDepth,
   useStore,
 } from "./store/store";
 import { findById, findParentId, isOpen, walk } from "./store/tasks";
@@ -141,6 +147,7 @@ import { TrashView } from "./views/TrashView";
 import { RepeatPicker } from "./components/RepeatPicker";
 import { DetailPanel, type DetailHandlers } from "./components/DetailPanel";
 import { HelpOverlay } from "./components/HelpOverlay";
+import { HistoryPanel, buildHistoryRows, type HistoryRow } from "./components/HistoryPanel";
 import { DevControls } from "./components/DevControls";
 import { StatusBar } from "./components/StatusBar";
 import { CommandPalette, type Command } from "./components/CommandPalette";
@@ -201,6 +208,10 @@ export function App() {
   // The task currently being dragged (mouse DnD), or null.
   const [dragId, setDragId] = useState<TaskId | null>(null);
   const [showHelp, setShowHelp] = useState(false);
+  // The history panel's cursor lives here, like every other list's: the keymap's
+  // "history" context drives it, the panel just renders it.
+  const [showHistory, setShowHistory] = useState(false);
+  const [historySel, setHistorySel] = useState(0);
   const [showPalette, setShowPalette] = useState(false);
   const [showSchedule, setShowSchedule] = useState(false);
   const [showEstimate, setShowEstimate] = useState(false);
@@ -1255,6 +1266,7 @@ export function App() {
       if (confirm != null) setConfirm(null);
       else if (repeatTarget != null) setRepeatTarget(null);
       else if (showHelp) setShowHelp(false);
+      else if (showHistory) setShowHistory(false);
       else if (showPalette) setShowPalette(false);
       else if (showSchedule) {
         setShowSchedule(false);
@@ -1393,10 +1405,39 @@ export function App() {
     setShowCalendar(true);
   };
 
+  // ── History panel ─────────────────────────────────────────────────
+  // The persisted log paired with the snapshots still in memory: only lines
+  // whose step survived this session can be rewound to.
+  const historyRows = useMemo(
+    () => (showHistory ? buildHistoryRows(state.actionLog, getUndoSteps(), getRedoSteps()) : []),
+    // The stacks aren't part of the store snapshot, so they can't be a dep — but
+    // every push/pop notifies with a new state, which re-runs this. Gated on the
+    // panel being open: this app re-renders on every keystroke, and pairing up to
+    // 200 log lines with the stacks is pure waste while nothing is showing them.
+    [state, showHistory],
+  );
+  const openHistory = () => {
+    setHistorySel(0);
+    setShowHistory(true);
+  };
+  const jumpHistory = (row: HistoryRow) => {
+    if (row.reach === "undo") undoThrough(row.entry.id);
+    else if (row.reach === "redo") redoThrough(row.entry.id);
+    // Rewinding rewrites the log; put the cursor back on the newest line so the
+    // panel doesn't strand it in the middle of a list that just changed shape.
+    setHistorySel(0);
+  };
+  const moveHistoryCursor = (dir: "up" | "down") => {
+    setHistorySel((i) =>
+      dir === "down" ? Math.min(i + 1, historyRows.length - 1) : Math.max(i - 1, 0),
+    );
+  };
+
   // ── Keyboard wiring ───────────────────────────────────────────────
   const dispatchState: ContextState = {
     showHelp,
     showPalette,
+    showHistory,
     showSchedule,
     showEstimate,
     showCalendar,
@@ -1439,7 +1480,15 @@ export function App() {
     "capture.focus": cmd.captureFocus,
     "filter.hideCompleted": cmd.toggleHideCompleted,
     "undo": undo,
+    "redo": redo,
     "help.toggle": cmd.helpToggle,
+    "history.toggle": () => (showHistory ? setShowHistory(false) : openHistory()),
+    "history.down": () => moveHistoryCursor("down"),
+    "history.up": () => moveHistoryCursor("up"),
+    "history.jump": () => {
+      const row = historyRows[historySel];
+      if (row != null && row.reach !== "gone") jumpHistory(row);
+    },
     "palette.open": cmd.paletteOpen,
     "schedule.open": cmd.scheduleOpen,
     "estimate.open": openEstimatePicker,
@@ -1984,6 +2033,14 @@ export function App() {
     { id: "p3", label: "Priority: Medium", run: () => focusedTaskId && setPriority(focusedTaskId, 3) },
     { id: "p4", label: "Priority: None", run: () => focusedTaskId && setPriority(focusedTaskId, 4) },
     { id: "undo", label: "Undo", hint: "⌘z", run: undo },
+    { id: "redo", label: "Redo", hint: "⌘⇧z", run: redo },
+    {
+      id: "history",
+      label: "History: everything you just did",
+      aliases: ["history", "log", "audit", "recent", "undo history"],
+      hint: "⌘y",
+      run: openHistory,
+    },
     { id: "help", label: "Keyboard help", hint: "?", run: () => setShowHelp(true) },
     { id: "theme-slate", label: "Theme: Slate", run: () => setTheme("slate") },
     { id: "theme-ivory", label: "Theme: Ivory", run: () => setTheme("ivory") },
@@ -2228,6 +2285,17 @@ export function App() {
       </main>
 
       {showHelp && <HelpOverlay onClose={() => setShowHelp(false)} />}
+      {showHistory && (
+        <HistoryPanel
+          rows={historyRows}
+          sel={historySel}
+          undoCount={undoDepth()}
+          today={today}
+          onHover={setHistorySel}
+          onJump={jumpHistory}
+          onClose={() => setShowHistory(false)}
+        />
+      )}
       {showPalette && (
         <CommandPalette
           commands={commands}

@@ -32,6 +32,9 @@ export function getActiveContext(state: ContextState): KeyContext {
   // A confirmation dialog is modal: it owns the keyboard above everything else.
   if (state.showConfirm) return "confirm";
   if (state.showHelp) return "help";
+  // The history panel is modal like the help overlay: it owns the keyboard while
+  // it's up, so ↑/↓/↵ walk and rewind the history rather than the outline.
+  if (state.showHistory) return "history";
   if (state.showPalette) return "palette";
   // The schedule picker owns the keyboard while open (it has no app bindings),
   // so normal/editing shortcuts stay dormant beneath it.
@@ -63,8 +66,9 @@ export function useKeyboard<D extends ContextState>(
       const combo = toCombo(e);
       const context = getActiveContext(dispatch);
 
-      // Let text fields keep native undo while focused.
-      if (combo === "Meta+z") {
+      // Let text fields keep native undo/redo while focused. ⌘⇧z normalizes to
+      // "Meta+Z" — `toCombo` folds shift into the letter's case for single chars.
+      if (combo === "Meta+z" || combo === "Meta+Z") {
         const tag = document.activeElement?.tagName;
         if (tag === "TEXTAREA" || tag === "INPUT") return;
       }

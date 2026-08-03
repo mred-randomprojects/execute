@@ -44,7 +44,8 @@ keymap). Highlights:
 | `m` then `↵`/`⌘↵` | move mode (re-parent) |
 | `⌫` | move to trash |
 | `1` / `2` / `3` / `4` | Today / Backlog / All / Trash |
-| `⌘k` | command palette · `⌘z` undo |
+| `⌘k` | command palette · `⌘z` undo · `⌘⇧z` redo |
+| `⌘y` | history — everything you just did (`↵` rewinds to a point) |
 | `?` | keyboard help |
 
 Task **titles** and **notes** render inline **markdown** (`` `code` ``, `**bold**`,

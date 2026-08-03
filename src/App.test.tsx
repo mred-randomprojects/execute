@@ -1628,3 +1628,74 @@ describe("Estimates & the planning board", () => {
     expect(screen.getByText("Pull what you can into today")).toBeTruthy();
   });
 });
+
+describe("Undo, redo and the history panel", () => {
+  /** Capture a task from the bar, then step back out to the normal context. */
+  async function capture(text: string): Promise<HTMLInputElement> {
+    const input = (await screen.findByPlaceholderText(
+      "Add a task for today…"
+    )) as HTMLInputElement;
+    fireEvent.change(input, { target: { value: text } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    await screen.findByText(text);
+    input.blur();
+    return input;
+  }
+
+  it("⌘⇧z redoes what ⌘z just undid", async () => {
+    render(<App />);
+    await capture("redo me");
+
+    fireEvent.keyDown(document.body, { key: " " }); // complete it
+    await waitFor(() => expect(screen.getByLabelText("Mark incomplete")).toBeTruthy());
+
+    fireEvent.keyDown(document.body, { key: "z", metaKey: true });
+    await waitFor(() => expect(screen.getByLabelText("Mark complete")).toBeTruthy());
+
+    // ⌘⇧z arrives as an uppercase "Z" — shift is folded into the letter's case.
+    fireEvent.keyDown(document.body, { key: "Z", metaKey: true, shiftKey: true });
+    await waitFor(() => expect(screen.getByLabelText("Mark incomplete")).toBeTruthy());
+  });
+
+  it("⌘y opens the history, naming what was done", async () => {
+    render(<App />);
+    await capture("buy oat milk");
+    fireEvent.keyDown(document.body, { key: " " });
+    await waitFor(() => expect(screen.getByLabelText("Mark incomplete")).toBeTruthy());
+
+    fireEvent.keyDown(document.body, { key: "y", metaKey: true });
+
+    const list = await screen.findByRole("listbox", { name: "Action history" });
+    expect(within(list).getByText("Complete “buy oat milk”")).toBeTruthy();
+    expect(within(list).getByText("New task “buy oat milk”")).toBeTruthy();
+  });
+
+  it("rewinds through the selected history line and records the undo", async () => {
+    render(<App />);
+    await capture("first");
+    fireEvent.keyDown(document.body, { key: " " }); // complete
+    await waitFor(() => expect(screen.getByLabelText("Mark incomplete")).toBeTruthy());
+
+    fireEvent.keyDown(document.body, { key: "y", metaKey: true });
+    await screen.findByRole("listbox", { name: "Action history" });
+
+    // The cursor starts on the newest line ("Complete …"); ↵ rewinds through it.
+    fireEvent.keyDown(document.body, { key: "Enter" });
+    await waitFor(() => expect(screen.getByLabelText("Mark complete")).toBeTruthy());
+
+    const list = screen.getByRole("listbox", { name: "Action history" });
+    expect(within(list).getByText("Undid complete “first”")).toBeTruthy();
+  });
+
+  it("closes on esc", async () => {
+    render(<App />);
+    await capture("anything");
+    fireEvent.keyDown(document.body, { key: "y", metaKey: true });
+    await screen.findByRole("listbox", { name: "Action history" });
+
+    fireEvent.keyDown(document.body, { key: "Escape" });
+    await waitFor(() =>
+      expect(screen.queryByRole("listbox", { name: "Action history" })).toBeNull()
+    );
+  });
+});

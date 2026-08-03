@@ -81,6 +81,7 @@ describe("getActiveContext", () => {
   const base = {
     showHelp: false,
     showPalette: false,
+    showHistory: false,
     showSchedule: false,
     showEstimate: false,
     showCalendar: false,
@@ -135,6 +136,7 @@ describe("getActiveContext — focus zones", () => {
   const base = {
     showHelp: false,
     showPalette: false,
+    showHistory: false,
     showSchedule: false,
     showEstimate: false,
     showCalendar: false,

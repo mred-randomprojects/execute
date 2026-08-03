@@ -10,8 +10,18 @@ export const keymap: KeyBinding[] = [
   // ── global ────────────────────────────────────────────────────────
   { key: "Escape", action: "dismiss", context: "global", displayKey: "esc", description: "close / cancel", section: "General" },
   { key: "Meta+z", action: "undo", context: "global", displayKey: "⌘ z", description: "undo", section: "General" },
+  { key: "Meta+Z", action: "redo", context: "global", displayKey: "⌘ ⇧ z", description: "redo", section: "General" },
+  { key: "Meta+y", action: "history.toggle", context: ["normal", "reckoning", "board"], displayKey: "⌘ y", description: "history — everything you just did", section: "General" },
   { key: "?", action: "help.toggle", context: ["normal", "reckoning", "board"], displayKey: "?", description: "keyboard help", section: "General" },
   { key: "Meta+k", action: "palette.open", context: ["normal", "reckoning", "board", "editing"], displayKey: "⌘ k", description: "command palette", section: "General" },
+
+  // ── history panel ─────────────────────────────────────────────────
+  { key: "ArrowDown", action: "history.down", context: "history", displayKey: "↑ / ↓", description: "walk the history", section: "History" },
+  { key: "j", action: "history.down", context: "history" },
+  { key: "ArrowUp", action: "history.up", context: "history" },
+  { key: "k", action: "history.up", context: "history" },
+  { key: "Enter", action: "history.jump", context: "history", displayKey: "↵", description: "rewind to just before this action (or replay it)", section: "History" },
+  { key: "Meta+y", action: "dismiss", context: "history" },
 
   // ── views ─────────────────────────────────────────────────────────
   { key: "1", action: "view.today", context: "normal", displayKey: "1", description: "go to Today", section: "Views" },
