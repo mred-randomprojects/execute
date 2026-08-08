@@ -33,6 +33,7 @@ export function CommandPalette({
   const [query, setQuery] = useState("");
   const [sel, setSel] = useState(0);
   const ref = useRef<HTMLInputElement>(null);
+  const selRef = useRef<HTMLDivElement>(null);
   // Freeze "now" at open so the ranking stays stable while the palette is up
   // (a command run mid-session mustn't re-sort the list under the cursor).
   const [clock] = useState(() => now ?? Date.now());
@@ -78,6 +79,11 @@ export function CommandPalette({
   useEffect(() => {
     if (sel > filtered.length - 1) setSel(0);
   }, [filtered.length, sel]);
+
+  // The list scrolls; the cursor must never walk out of sight below its fold.
+  useEffect(() => {
+    selRef.current?.scrollIntoView?.({ block: "nearest" });
+  }, [sel, filtered.length]);
 
   const run = (i: number) => {
     const c = filtered[i];
@@ -152,6 +158,7 @@ export function CommandPalette({
               return (
                 <div
                   key={c.id}
+                  ref={isSel ? selRef : null}
                   role="option"
                   aria-selected={isSel}
                   onMouseMove={() => setSel(i)}
