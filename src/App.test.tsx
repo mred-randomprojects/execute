@@ -956,6 +956,68 @@ describe("Schedule picker (s)", () => {
     fireEvent.keyDown(document.body, { key: "3" });
     expect(await screen.findByText("call the bank")).toBeTruthy();
   });
+
+  it("takes typed words: “next week” filters to that rung, ↵ picks it", async () => {
+    render(<App />);
+    await screen.findByPlaceholderText("Add a task for today…");
+    // Pin to a Monday, or the suggested-day engine projects a this/next-week
+    // horizon back onto today and the task never leaves the list.
+    act(() => setDevDateOverride("2026-06-15"));
+    await addTask("draft the proposal");
+    blurActive();
+
+    fireEvent.keyDown(document.body, { key: "s" });
+    const picker = await screen.findByRole("dialog", { name: "Schedule" });
+    const when = within(picker).getByLabelText("When");
+    fireEvent.change(when, { target: { value: "next week" } });
+
+    // The list narrows to the one rung that matches — no mnemonic letter needed.
+    const options = within(picker).getAllByRole("option");
+    expect(options).toHaveLength(1);
+    expect(options[0].textContent).toContain("Next week");
+
+    fireEvent.keyDown(when, { key: "Enter" });
+    await waitFor(() => expect(screen.queryByText("draft the proposal")).toBeNull());
+    fireEvent.keyDown(document.body, { key: "2" }); // Later
+    expect(await screen.findByText("draft the proposal")).toBeTruthy();
+    expect(screen.getByText("Next week")).toBeTruthy(); // its bucket header
+  });
+
+  it("reads a typed date and schedules the exact day", async () => {
+    render(<App />);
+    await screen.findByPlaceholderText("Add a task for today…");
+    act(() => setDevDateOverride("2026-06-15")); // a Monday
+    await addTask("dentist");
+    blurActive();
+
+    fireEvent.keyDown(document.body, { key: "s" });
+    const picker = await screen.findByRole("dialog", { name: "Schedule" });
+    const when = within(picker).getByLabelText("When");
+    fireEvent.change(when, { target: { value: "friday" } });
+
+    // The concrete date leads, spelled out so there's nothing to second-guess.
+    const options = within(picker).getAllByRole("option");
+    expect(options[0].textContent).toContain("Friday, June 19");
+    fireEvent.keyDown(when, { key: "Enter" });
+
+    await waitFor(() => expect(screen.queryByText("dentist")).toBeNull()); // left Today
+    fireEvent.keyDown(document.body, { key: "3" }); // All
+    expect(await screen.findByText("dentist")).toBeTruthy();
+    expect(screen.getByText("in 4d")).toBeTruthy(); // the date chip
+  });
+
+  it("says so rather than guessing when the query means nothing", async () => {
+    render(<App />);
+    await addTask("something");
+    blurActive();
+
+    fireEvent.keyDown(document.body, { key: "s" });
+    const picker = await screen.findByRole("dialog", { name: "Schedule" });
+    fireEvent.change(within(picker).getByLabelText("When"), { target: { value: "zzz" } });
+
+    expect(within(picker).queryAllByRole("option")).toHaveLength(0);
+    expect(within(picker).getByText(/Nothing matches/)).toBeTruthy();
+  });
 });
 
 describe("Command palette", () => {

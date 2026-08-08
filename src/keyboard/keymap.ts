@@ -59,7 +59,7 @@ export const keymap: KeyBinding[] = [
   { key: "Meta+Enter", action: "task.toggle", context: ["normal", "editing"], displayKey: "⌘ ↵", description: "complete / uncomplete", section: "Tasks" },
   { key: "t", action: "task.scheduleLater", context: "normal", displayKey: "t", description: "schedule one step later (today → tomorrow → … → inbox, wraps)", section: "Tasks" },
   { key: "T", action: "task.scheduleEarlier", context: "normal", displayKey: "⇧ t", description: "schedule one step sooner (… → tomorrow → today → inbox)", section: "Tasks" },
-  { key: "s", action: "schedule.open", context: "normal", displayKey: "s", description: "schedule (this week, someday, a date…)", section: "Tasks" },
+  { key: "s", action: "schedule.open", context: "normal", displayKey: "s", description: "schedule — type when: “next week”, “friday”, “aug 20”…", section: "Tasks" },
   { key: "r", action: "recurrence.repeat", context: "normal", displayKey: "r", description: "set repeat (in Recurring)", section: "Tasks" },
   { key: "Tab", action: "task.indent", context: "normal", displayKey: "tab", description: "indent (make subtask) · edit notes when the panel is open", section: "Tasks" },
   { key: "Shift+Tab", action: "task.outdent", context: "normal", displayKey: "⇧ tab", description: "outdent", section: "Tasks" },
