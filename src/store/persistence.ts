@@ -8,6 +8,7 @@ import type {
   HorizonUnit,
   LogAction,
   LogEntry,
+  Presence,
   Project,
   ProjectId,
   Recurrence,
@@ -29,11 +30,13 @@ import {
   DEFAULT_PROJECT_ID,
   PROJECT_COLORS,
   SCHEMA_VERSION,
+  defaultPresence,
   defaultProject,
   emptyState,
 } from "../types";
 import { normalizeChildProjects } from "./tasks";
 import type { CalendarEventInput } from "./calendar";
+import type { PresenceSnapshot } from "./presence";
 
 // Bridge exposed by electron/preload.cjs. In the browser (pnpm dev) it's absent
 // and we fall back to localStorage, so the renderer runs either way.
@@ -55,6 +58,11 @@ interface ExecuteBridge {
   createCalendarEvent?: (
     input: CalendarEventInput,
   ) => Promise<{ ok: boolean; htmlLink: string | null }>;
+  // Presence (desktop only): push what's left today + the settings, so the shell
+  // can keep the menu bar, dock badge, login item and daily nudges honest.
+  updatePresence?: (snapshot: PresenceSnapshot) => Promise<boolean>;
+  /** Subscribe to the global capture shortcut. Returns an unsubscribe. */
+  onFocusCapture?: (fn: () => void) => () => void;
 }
 
 declare global {
@@ -294,6 +302,26 @@ function coerceLogEntry(raw: unknown): LogEntry {
   };
 }
 
+/** Clamp an hour-of-day to 0–23, falling back when it's absent or nonsense. */
+function coerceHour(x: unknown, fallback: number): number {
+  const n = Math.trunc(num(x, fallback));
+  return n >= 0 && n <= 23 ? n : fallback;
+}
+
+// v13: menu bar / login item / nudges. Pre-v13 data has none → the defaults,
+// which deliberately leave `openAtLogin` off (see defaultPresence).
+function coercePresence(raw: unknown): Presence {
+  const d = defaultPresence();
+  if (!isObject(raw)) return d;
+  return {
+    tray: bool(raw.tray, d.tray),
+    openAtLogin: bool(raw.openAtLogin, d.openAtLogin),
+    nudges: bool(raw.nudges, d.nudges),
+    morningHour: coerceHour(raw.morningHour, d.morningHour),
+    eveningHour: coerceHour(raw.eveningHour, d.eveningHour),
+  };
+}
+
 function coerceActionLogKind(raw: unknown): ActionLogKind {
   return raw === "undo" || raw === "redo" ? raw : "do";
 }
@@ -356,5 +384,6 @@ export function coerceState(raw: unknown): AppState {
     commandUsage: coerceCommandUsage(raw.commandUsage),
     // v11: the action history. Pre-v11 data has none → the log starts here.
     actionLog: coerceActionLog(raw.actionLog),
+    presence: coercePresence(raw.presence),
   };
 }

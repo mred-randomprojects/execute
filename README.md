@@ -66,6 +66,24 @@ In **the Reckoning** and at completion you can attach an optional **reason**;
 these are recorded in an event log (and shown in a task's History panel) so the
 data can later be analysed.
 
+## Presence (desktop)
+
+The loop above only runs if the app gets opened, so the app has a body while its
+window doesn't:
+
+- a **menu-bar count** of what's left today (`✓` at zero) — passive, pull not push;
+- a **dock badge** with the same number;
+- **`⌘⇧space`** from anywhere: shows the window with the cursor already in the
+  capture bar, so a stray thought never has to wait;
+- **two notifications a day** and only two — a morning "here's your day" (or
+  "nothing committed yet" — the one empty day worth interrupting for) and an
+  evening "N left, close the day?", silent at zero. Each fires only *during* its
+  hour, so a laptop opened at 3pm doesn't get a stale good-morning;
+- optional **launch at login**, off until you ask for it (`⌘k` → "launch at login").
+
+All of it toggles from the command palette; closing the window on macOS leaves
+the count and the shortcut alive, which is the point.
+
 ## Develop
 
 ```bash

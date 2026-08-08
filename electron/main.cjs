@@ -2,7 +2,17 @@ const fs = require("node:fs");
 const path = require("node:path");
 const http = require("node:http");
 const crypto = require("node:crypto");
-const { app, BrowserWindow, ipcMain, shell } = require("electron");
+const {
+  app,
+  BrowserWindow,
+  Menu,
+  Notification,
+  Tray,
+  globalShortcut,
+  ipcMain,
+  nativeImage,
+  shell,
+} = require("electron");
 
 if (require("electron-squirrel-startup")) {
   app.quit();
@@ -225,7 +235,213 @@ async function createCalendarEvent(input) {
   return { ok: true, htmlLink: j.htmlLink || null };
 }
 
+// ─── Presence: the app's body while its window isn't open ────────────
+//
+// Everything else in Execute assumes it gets opened. Closed, it had no menu-bar
+// item, no badge and no way to be reached, so the whole daily ritual depended on
+// the user remembering the thing whose job is to remember for them. This is the
+// fix, in four passive-to-active steps: a menu-bar count you can glance at, a
+// dock badge, a global key that jumps straight to capture, and exactly two
+// notifications a day.
+//
+// The renderer owns the truth (it does the counting); it pushes a snapshot here
+// on every change and this file only renders it.
+
+const CAPTURE_SHORTCUT = "CommandOrControl+Shift+Space";
+
+let tray = null;
+let presence = {
+  remaining: 0,
+  /** Titles of what's still open today, for the nudges — never more than a few. */
+  titles: [],
+  tray: true,
+  openAtLogin: false,
+  nudges: true,
+  morningHour: 9,
+  eveningHour: 18,
+};
+// Which nudges today has already spent. Reset when the local date rolls over, so
+// a machine left running for a week still gets one morning nudge per morning.
+let nudgedOn = { date: null, morning: false, evening: false };
+let nudgeTimer = null;
+
+function localDateISO(d) {
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+/** Show (creating if needed) and focus the main window. */
+function showMainWindow() {
+  if (mainWindow == null || mainWindow.isDestroyed()) {
+    createWindow();
+    return;
+  }
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.show();
+  mainWindow.focus();
+}
+
+/** Ask the renderer to put the cursor in the capture bar. */
+function focusCapture() {
+  showMainWindow();
+  const send = () => mainWindow?.webContents.send("capture:focus");
+  if (mainWindow != null && mainWindow.webContents.isLoading()) {
+    mainWindow.webContents.once("did-finish-load", send);
+  } else {
+    send();
+  }
+}
+
+function trayImage() {
+  // A text-only menu-bar item (the count) reads best, but Tray needs an image.
+  // Use the app icon scaled down; if it isn't there (unpackaged, pre-`pnpm
+  // icons`), an empty image still leaves the title visible.
+  try {
+    const img = nativeImage.createFromPath(path.join(__dirname, "..", "build", "icon.png"));
+    if (!img.isEmpty()) return img.resize({ width: 16, height: 16 });
+  } catch {
+    /* fall through */
+  }
+  return nativeImage.createEmpty();
+}
+
+function trayTitle() {
+  return presence.remaining > 0 ? ` ${presence.remaining}` : " ✓";
+}
+
+function updateTray() {
+  if (!presence.tray) {
+    tray?.destroy();
+    tray = null;
+    return;
+  }
+  if (tray == null) {
+    tray = new Tray(trayImage());
+    tray.on("click", showMainWindow);
+  }
+  tray.setTitle(trayTitle());
+  tray.setToolTip(
+    presence.remaining > 0
+      ? `Execute — ${presence.remaining} left today`
+      : "Execute — inbox zero",
+  );
+  tray.setContextMenu(
+    Menu.buildFromTemplate([
+      {
+        label: presence.remaining > 0 ? `${presence.remaining} left today` : "Inbox zero",
+        enabled: false,
+      },
+      { type: "separator" },
+      { label: "Open Execute", click: showMainWindow },
+      { label: "Capture a task…", accelerator: CAPTURE_SHORTCUT, click: focusCapture },
+      { type: "separator" },
+      { label: "Quit Execute", role: "quit" },
+    ]),
+  );
+}
+
+function updateBadge() {
+  if (typeof app.setBadgeCount !== "function") return;
+  try {
+    app.setBadgeCount(presence.remaining);
+  } catch {
+    /* unsupported platform — non-fatal */
+  }
+}
+
+function applyOpenAtLogin() {
+  // Never touch login items in dev: it would register the *electron* binary.
+  if (isDev || !app.isPackaged) return;
+  try {
+    const current = app.getLoginItemSettings().openAtLogin;
+    if (current !== presence.openAtLogin) {
+      app.setLoginItemSettings({ openAtLogin: presence.openAtLogin, openAsHidden: true });
+    }
+  } catch {
+    /* non-fatal */
+  }
+}
+
+/** "Draft memo, Call Ana +2 more" — a notification you can act on without opening. */
+function titleList(titles, max = 2) {
+  const named = titles.filter((t) => typeof t === "string" && t.trim() !== "").slice(0, max);
+  if (named.length === 0) return "";
+  const extra = presence.remaining - named.length;
+  return named.join(", ") + (extra > 0 ? ` +${extra} more` : "");
+}
+
+function notify(title, body) {
+  if (!Notification.isSupported()) return;
+  const n = new Notification({ title, body, silent: false });
+  n.on("click", showMainWindow);
+  n.show();
+}
+
+/**
+ * The two nudges. Fired only *during* their hour, so an app launched at 3pm
+ * doesn't immediately deliver a stale "good morning" — a nudge about a moment
+ * that has passed is exactly the kind that gets notifications turned off.
+ */
+function checkNudges() {
+  if (!presence.nudges) return;
+  const now = new Date();
+  const date = localDateISO(now);
+  if (nudgedOn.date !== date) nudgedOn = { date, morning: false, evening: false };
+  const hour = now.getHours();
+
+  if (!nudgedOn.morning && hour === presence.morningHour) {
+    nudgedOn.morning = true;
+    if (presence.remaining > 0) {
+      notify(`${presence.remaining} committed for today`, titleList(presence.titles));
+    } else {
+      // The one case where an empty day is worth interrupting for: nothing is
+      // committed yet, which is a plan that hasn't been made rather than a day
+      // already won.
+      notify("Nothing committed for today", "Plan the day while it's still yours.");
+    }
+  }
+
+  if (!nudgedOn.evening && hour === presence.eveningHour) {
+    nudgedOn.evening = true;
+    // At zero there is nothing to say, and saying it anyway is how an app
+    // teaches you to ignore it.
+    if (presence.remaining > 0) {
+      notify(
+        `${presence.remaining} left today — close the day?`,
+        titleList(presence.titles),
+      );
+    }
+  }
+}
+
+function applyPresence(next) {
+  presence = { ...presence, ...next };
+  updateTray();
+  updateBadge();
+  applyOpenAtLogin();
+}
+
+function startPresence() {
+  updateTray();
+  updateBadge();
+  if (nudgeTimer != null) clearInterval(nudgeTimer);
+  // Once a minute: cheap, and fine-grained enough that the nudge lands inside
+  // its hour no matter when the app started.
+  nudgeTimer = setInterval(checkNudges, 60_000);
+  checkNudges();
+
+  if (!globalShortcut.register(CAPTURE_SHORTCUT, focusCapture)) {
+    // Another app already owns it. Not worth surfacing — every other path to
+    // capture still works.
+    console.warn(`Could not register the global capture shortcut (${CAPTURE_SHORTCUT}).`);
+  }
+}
+
 function registerIpc() {
+  ipcMain.handle("presence:update", (_event, next) => {
+    applyPresence(next ?? {});
+    return true;
+  });
   ipcMain.handle("store:load", () => readStore());
   ipcMain.handle("store:save", (_event, data) => {
     writeStore(data);
@@ -302,11 +518,20 @@ if (!gotLock) {
     }
     registerIpc();
     createWindow();
+    startPresence();
     app.on("activate", () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow();
     });
   });
 
+  app.on("will-quit", () => {
+    globalShortcut.unregisterAll();
+    if (nudgeTimer != null) clearInterval(nudgeTimer);
+  });
+
+  // On macOS the app deliberately outlives its window: closing it leaves the
+  // menu-bar count and the capture shortcut alive, which is the whole point of
+  // having a presence at all.
   app.on("window-all-closed", () => {
     if (process.platform !== "darwin") app.quit();
   });

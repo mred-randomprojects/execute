@@ -181,6 +181,46 @@ export const BLOCK_MINUTES = 20;
 /** Default daily capacity, in blocks (~4h of estimated task-work). Editable. */
 export const DEFAULT_CAPACITY_BLOCKS = 12;
 
+/**
+ * How present the app is while its window isn't.
+ *
+ * The Reckoning, the capacity meter and the deferral ledger all assume the app
+ * gets opened. Nothing in the product made that happen: closed, Execute had no
+ * menu-bar item, no badge, no way to be reached — the entire ritual was
+ * conditional on remembering a thing whose job is to be remembered *for* you.
+ *
+ * Desktop-only and per-device (writer wins on cloud merge): a menu bar and a
+ * login item belong to a machine, not to an account.
+ */
+export interface Presence {
+  /** Menu-bar item showing what's left today (`✓` at zero). Passive — pull, not push. */
+  tray: boolean;
+  /** Launch Execute at login. Off by default: it adds a system-level login item. */
+  openAtLogin: boolean;
+  /**
+   * The two daily nudges — and only two. A notification you didn't need costs
+   * more than one you missed, because the third one gets the whole app muted.
+   */
+  nudges: boolean;
+  /** Local hour (0–23) for the morning "here's your day" nudge. */
+  morningHour: number;
+  /** Local hour (0–23) for the evening "close the day" nudge. */
+  eveningHour: number;
+}
+
+export function defaultPresence(): Presence {
+  return {
+    tray: true,
+    // Off by default. Everything else here lives inside the app and is undone by
+    // flipping it back; a login item shows up in the OS's own settings, and
+    // adding one uninvited is the kind of thing that gets an app deleted.
+    openAtLogin: false,
+    nudges: true,
+    morningHour: 9,
+    eveningHour: 18,
+  };
+}
+
 /** A task removed from the tree, retained in the Trash so deletes are reversible. */
 export interface TrashedTask {
   task: Task;
@@ -275,9 +315,11 @@ export interface AppState {
    * across devices, so the log reads as one trail.
    */
   actionLog: ActionLogEntry[];
+  /** Menu bar / login item / daily nudges — see {@link Presence}. Per-device. */
+  presence: Presence;
 }
 
-export const SCHEMA_VERSION = 12;
+export const SCHEMA_VERSION = 13;
 export const DEFAULT_PROJECT_ID = "project-inbox" as ProjectId;
 export const PROJECT_ROW_PREFIX = "project:";
 
@@ -329,5 +371,6 @@ export function emptyState(): AppState {
     boardPreferred: false,
     commandUsage: {},
     actionLog: [],
+    presence: defaultPresence(),
   };
 }

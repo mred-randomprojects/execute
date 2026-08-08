@@ -7,6 +7,7 @@ import type {
   ISODate,
   LogAction,
   LogEntry,
+  Presence,
   ProjectId,
   Recurrence,
   RecurrenceId,
@@ -446,6 +447,15 @@ export function setDailyCapacityBlocks(blocks: number): void {
 /** Choose how the reckoning renders (board vs. card review). Not undoable. */
 export function setBoardPreferred(preferred: boolean): void {
   update((s) => ({ ...s, boardPreferred: preferred }), null);
+}
+
+/**
+ * Change how present the app is when its window isn't (menu bar, login item,
+ * nudges). A per-device preference like the theme — not undoable, and writer-wins
+ * on cloud merge.
+ */
+export function setPresence(patch: Partial<Presence>): void {
+  update((s) => ({ ...s, presence: { ...s.presence, ...patch } }), null);
 }
 
 /** Set (or clear, with null) the "right now" task. A focus pointer, not undoable. */

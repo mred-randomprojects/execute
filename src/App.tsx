@@ -58,6 +58,7 @@ import {
   setHorizonMany,
   setNotes,
   setPlannedForMany,
+  setPresence,
   setProjectForMany,
   setPriority,
   setScheduledAt,
@@ -122,6 +123,7 @@ import {
 } from "./selectors";
 import { minutesFromBlocks } from "./store/estimate";
 import { willPromptOnKeep, willPromptOnPostpone } from "./store/deferral";
+import { presenceSnapshot } from "./store/presence";
 import {
   emptySelection,
   moveSelection,
@@ -516,6 +518,20 @@ export function App() {
 
   const progress = useMemo(() => todayProgress(state.tasks, today), [state.tasks, today]);
   const backlog = useMemo(() => backlogCount(state.tasks), [state.tasks]);
+
+  // ── Presence (desktop shell) ──────────────────────────────────────
+  // Push what's left today down to the main process, which turns it into a
+  // menu-bar count, a dock badge and the two daily nudges. Renderer counts,
+  // shell renders — so there is exactly one definition of "left today".
+  useEffect(() => {
+    if (!ready) return;
+    void window.execute?.updatePresence?.(
+      presenceSnapshot(state.presence, todayOpenLeaves)
+    );
+  }, [ready, state.presence, todayOpenLeaves]);
+  // The global capture shortcut lands here: the window is already shown by the
+  // main process, all that's left is to put the cursor where a thought can go.
+  useEffect(() => window.execute?.onFocusCapture?.(() => captureRef.current?.focus()), []);
   const focusedTask =
     focusedTaskId != null ? findById(state.tasks, focusedTaskId) ?? null : null;
   // The "right now" task, resolved from its id. Shown only while it exists and is
@@ -2142,6 +2158,35 @@ export function App() {
       hint: "⌘y",
       run: openHistory,
     },
+    // Presence — desktop only; on the web companion there's no menu bar to own.
+    ...(window.execute?.isElectron === true
+      ? [
+          {
+            id: "presence-tray",
+            label: state.presence.tray
+              ? "Menu bar count: hide"
+              : "Menu bar count: show what's left today",
+            aliases: ["menu bar", "menubar", "tray", "status", "presence"],
+            run: () => setPresence({ tray: !state.presence.tray }),
+          },
+          {
+            id: "presence-nudges",
+            label: state.presence.nudges
+              ? `Daily nudges: off (now ${state.presence.morningHour}:00 and ${state.presence.eveningHour}:00)`
+              : "Daily nudges: on (a morning plan, an evening close)",
+            aliases: ["nudge", "notification", "remind", "reminder", "alert", "notify"],
+            run: () => setPresence({ nudges: !state.presence.nudges }),
+          },
+          {
+            id: "presence-login",
+            label: state.presence.openAtLogin
+              ? "Launch at login: off"
+              : "Launch at login: on (the ritual can't run if it never opens)",
+            aliases: ["login", "startup", "start up", "autostart", "launch", "boot"],
+            run: () => setPresence({ openAtLogin: !state.presence.openAtLogin }),
+          },
+        ]
+      : []),
     { id: "help", label: "Keyboard help", hint: "?", run: () => setShowHelp(true) },
     { id: "theme-slate", label: "Theme: Slate", run: () => setTheme("slate") },
     { id: "theme-ivory", label: "Theme: Ivory", run: () => setTheme("ivory") },

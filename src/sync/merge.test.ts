@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import type { AppState, Task, TaskId } from "../types";
-import { DEFAULT_PROJECT_ID } from "../types";
+import { DEFAULT_PROJECT_ID, defaultPresence } from "../types";
 import { jsonEqual, mergeStates } from "./merge";
 
 function task(id: string, over: Partial<Task> = {}): Task {
@@ -45,6 +45,7 @@ function state(over: Partial<AppState> = {}): AppState {
     boardPreferred: false,
     commandUsage: {},
     actionLog: [],
+    presence: defaultPresence(),
     ...over,
   };
 }

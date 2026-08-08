@@ -102,6 +102,67 @@ describe("App integration", () => {
   });
 });
 
+describe("Presence (the desktop shell)", () => {
+  /**
+   * Stub only the presence half of the bridge. `isElectron: false` keeps
+   * persistence on its localStorage path, so the store still behaves as it does
+   * in the browser — we're testing the wiring, not the shell.
+   */
+  function stubBridge() {
+    const updates: Array<{ remaining: number; titles: string[] }> = [];
+    let fire: (() => void) | null = null;
+    window.execute = {
+      isElectron: false,
+      loadStore: async () => null,
+      saveStore: async () => true,
+      updatePresence: async (snap) => {
+        updates.push({ remaining: snap.remaining, titles: snap.titles });
+        return true;
+      },
+      onFocusCapture: (fn) => {
+        fire = fn;
+        return () => {
+          fire = null;
+        };
+      },
+    };
+    return { updates, focusCapture: () => fire?.() };
+  }
+
+  afterEach(() => {
+    delete window.execute;
+  });
+
+  it("tells the shell what's left today, so the menu bar can say so", async () => {
+    const { updates } = stubBridge();
+    render(<App />);
+    await addTask("water the plants");
+
+    await waitFor(() => {
+      const last = updates[updates.length - 1];
+      expect(last.remaining).toBe(1);
+      expect(last.titles).toEqual(["water the plants"]);
+    });
+
+    // Finishing it is what makes the count fall — the whole point of the badge.
+    fireEvent.click(screen.getByLabelText("Mark complete"));
+    await waitFor(() =>
+      expect(updates[updates.length - 1].remaining).toBe(0)
+    );
+  });
+
+  it("the global capture shortcut lands the cursor in the capture bar", async () => {
+    const { focusCapture } = stubBridge();
+    render(<App />);
+    const capture = await screen.findByPlaceholderText("Add a task for today…");
+    blurActive();
+    expect(document.activeElement).not.toBe(capture);
+
+    act(() => focusCapture());
+    expect(document.activeElement).toBe(capture);
+  });
+});
+
 describe("The Reckoning (rollover ritual)", () => {
   async function seedTodayTaskThenRollOver(text: string) {
     render(<App />);

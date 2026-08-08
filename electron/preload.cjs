@@ -14,4 +14,15 @@ contextBridge.exposeInMainWorld("execute", {
   // silently. The key never crosses this bridge — only these calls do.
   calendarStatus: () => ipcRenderer.invoke("calendar:status"),
   createCalendarEvent: (input) => ipcRenderer.invoke("calendar:createEvent", input),
+  // Presence: the renderer owns the counting, the main process owns the menu bar,
+  // the dock badge, the login item and the two daily nudges. This pushes a
+  // snapshot down whenever what's-left-today (or a setting) changes.
+  updatePresence: (snapshot) => ipcRenderer.invoke("presence:update", snapshot),
+  // The global capture shortcut fires in the main process; this is how it reaches
+  // the capture bar. Returns an unsubscribe so React effects can clean up.
+  onFocusCapture: (fn) => {
+    const handler = () => fn();
+    ipcRenderer.on("capture:focus", handler);
+    return () => ipcRenderer.removeListener("capture:focus", handler);
+  },
 });
