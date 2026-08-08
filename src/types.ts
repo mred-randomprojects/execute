@@ -125,6 +125,19 @@ export interface Task {
    */
   carriedCount: number;
   /**
+   * How many times this task has been deliberately *pushed to another day* — the
+   * Reckoning's postpone, and the board's "push to later".
+   *
+   * The counterpart to {@link carriedCount}, and the more important of the two:
+   * keeping a task for today at least keeps the commitment, while postponing is
+   * the cheap exit — one keystroke, and until this existed, invisible. A task
+   * could go to the backlog fifteen times over four months and the app would
+   * never once mention it. Postponing stays allowed (a mindful "not today" beats
+   * a silent overrun) but it is now *counted*, so chronic deferral has to answer
+   * for itself. Monotonic, never reset.
+   */
+  postponedCount: number;
+  /**
    * If this task was materialized from a recurrence, the source recurrence id
    * (set on the instance root only) — used to suppress re-suggesting while the
    * instance is still open. `null` for ordinary tasks.
@@ -264,7 +277,7 @@ export interface AppState {
   actionLog: ActionLogEntry[];
 }
 
-export const SCHEMA_VERSION = 11;
+export const SCHEMA_VERSION = 12;
 export const DEFAULT_PROJECT_ID = "project-inbox" as ProjectId;
 export const PROJECT_ROW_PREFIX = "project:";
 

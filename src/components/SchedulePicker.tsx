@@ -17,6 +17,7 @@ export function SchedulePicker({
   today,
   count,
   current,
+  verb = "Schedule",
   onPick,
   onClose,
 }: {
@@ -24,6 +25,12 @@ export function SchedulePicker({
   count: number;
   /** The task's present rung, dotted in the list. Null for a concrete date. */
   current: string | null;
+  /**
+   * What picking a day *means* here. "Postpone" when the Reckoning (or the
+   * board) opened it, because that path counts the deferral — the header and
+   * footer say so, so the extra weight isn't a silent side effect.
+   */
+  verb?: "Schedule" | "Postpone";
   onPick: (choice: ScheduleChoice) => void;
   onClose: () => void;
 }) {
@@ -39,9 +46,20 @@ export function SchedulePicker({
   }, []);
 
   // Typing re-ranks the list under the cursor; land back on the best match.
+  //
+  // …except on an empty query when postponing, where the best match would be
+  // "Today" — and `s ↵` must not quietly mean `t`. This picker replaced a one-key
+  // "send to backlog", so a stale reflex lands on whatever sits here; it had
+  // better not be a re-commitment. "Today" stays in the list (typing it is an
+  // explicit choice, and the store records it as a carry), just never by default.
   useEffect(() => {
+    if (verb === "Postpone" && query.trim() === "") {
+      const i = opts.findIndex((o) => o.key === "tomorrow");
+      setSel(i > 0 ? i : 0);
+      return;
+    }
     setSel(0);
-  }, [query]);
+  }, [query, verb, opts]);
 
   useEffect(() => {
     selRef.current?.scrollIntoView?.({ block: "nearest" });
@@ -59,12 +77,15 @@ export function SchedulePicker({
     >
       <div
         role="dialog"
-        aria-label="Schedule"
+        aria-label={verb}
         className="w-full max-w-sm overflow-hidden rounded border border-line bg-surface shadow-lg outline-none"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mono flex items-center justify-between border-b border-line px-4 py-2.5 text-[11px] uppercase tracking-[0.14em] text-ink-faint">
-          <span>Schedule{count > 1 ? ` · ${count} tasks` : ""}</span>
+          <span>
+            {verb}
+            {count > 1 ? ` · ${count} tasks` : ""}
+          </span>
         </div>
 
         <input
@@ -127,7 +148,9 @@ export function SchedulePicker({
         </div>
 
         <div className="border-t border-line px-4 py-1.5 text-[11px] text-ink-faint">
-          Type a day or a date · ↑↓ to choose · ↵ to schedule
+          {verb === "Postpone"
+            ? "Name the day you'll actually do it · ↵ to postpone"
+            : "Type a day or a date · ↑↓ to choose · ↵ to schedule"}
         </div>
       </div>
     </div>

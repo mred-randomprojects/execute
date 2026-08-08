@@ -13,7 +13,7 @@ const RECKONING_HINTS: Array<[string, string]> = [
   ["j / k", "select"],
   ["e", "done"],
   ["b", "break down"],
-  ["s", "backlog"],
+  ["s", "postpone"],
   ["d", "drop"],
   ["?", "help"],
 ];

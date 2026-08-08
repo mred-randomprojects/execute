@@ -177,6 +177,7 @@ function sameOwnFields(a: Task, b: Task): boolean {
     a.plannedFor === b.plannedFor &&
     a.estimatedMinutes === b.estimatedMinutes &&
     a.carriedCount === b.carriedCount &&
+    a.postponedCount === b.postponedCount &&
     a.recurrenceId === b.recurrenceId &&
     a.occurrenceDate === b.occurrenceDate &&
     a.scheduledAt === b.scheduledAt &&
@@ -785,40 +786,84 @@ export function setWontDoReason(id: TaskId, reason: string): void {
   }, `Give a reason for not doing ${quote(findById(state.tasks, id))}`);
 }
 
-/** Unplan a task (back to the Inbox) and log it as a postponement. */
-export function postponeToBacklog(id: TaskId, reason: string | null = null): void {
-  update((s) => {
-    const t = findById(s.tasks, id);
-    if (t == null) return s;
-    return {
-      ...s,
-      tasks: mapById(s.tasks, id, (x) => ({ ...x, plannedFor: null, horizon: null })),
-      log: [makeLog(s, t, "postponed", reason), ...s.log],
-    };
-  }, `Send ${quote(findById(state.tasks, id))} to the backlog`);
+/**
+ * Where a postponement sends a task. Exactly one of the two is meaningful at a
+ * time (a concrete date and a fuzzy horizon are mutually exclusive); both null
+ * is the undated backlog.
+ */
+export interface PostponeTarget {
+  plannedFor: ISODate | null;
+  horizon: Horizon | null;
+}
+
+/** "to tomorrow" / "to next week" / "to the backlog" — for the history line. */
+function postponeWords(target: PostponeTarget, today: ISODate): string {
+  if (target.plannedFor != null) return `to ${target.plannedFor}`;
+  if (target.horizon != null) return `to ${horizonWords(target.horizon, today)}`;
+  return "to the backlog";
 }
 
 /**
- * Re-commit a leftover to today, unchanged — the Reckoning's "Keep for today".
- * Bumps `carriedCount` (the deliberate-dodge counter behind the "carried N×"
- * badge) and logs it. Setting `plannedFor = today` lifts it out of the gate.
+ * Push tasks to another day (or into the undated backlog) as a *deliberate
+ * postponement*: bumps {@link Task.postponedCount}, logs each one, and lands the
+ * whole batch in a single undo step.
+ *
+ * The counter is the point. Plain rescheduling (`s` in the outline, the panel's
+ * chips) stays uncounted — moving a plan around before its day arrives is just
+ * planning. This is the path taken when a task *already came due and didn't get
+ * done*, which is the only postponement worth holding someone to.
  */
-export function keepForToday(id: TaskId, reason: string | null = null): void {
+export function postponeManyTo(
+  ids: TaskId[],
+  target: PostponeTarget,
+  reason: string | null = null
+): void {
   update((s) => {
-    const t = findById(s.tasks, id);
-    if (t == null) return s;
-    return {
-      ...s,
-      tasks: mapById(s.tasks, id, (x) => ({
+    let tasks = s.tasks;
+    const logs: LogEntry[] = [];
+    for (const id of ids) {
+      const t = findById(tasks, id);
+      if (t == null) continue;
+      tasks = mapById(tasks, id, (x) => ({
+        ...x,
+        plannedFor: target.plannedFor,
+        horizon: target.plannedFor != null ? null : target.horizon,
+        postponedCount: x.postponedCount + 1,
+      }));
+      logs.push(makeLog(s, t, "postponed", reason));
+    }
+    if (logs.length === 0) return s;
+    return { ...s, tasks, log: [...logs, ...s.log] };
+  }, `Postpone ${subject(ids)} ${postponeWords(target, todayISO(state.devDateOverride))}`);
+}
+
+
+/**
+ * Re-commit leftovers to today, unchanged — the Reckoning's "Keep for today".
+ * Bumps `carriedCount` (the deliberate-dodge counter behind the "carried N×"
+ * badge) and logs each one. Setting `plannedFor = today` lifts them out of the
+ * gate. One update, so a batch is a single undo step.
+ */
+export function keepManyForToday(ids: TaskId[], reason: string | null = null): void {
+  update((s) => {
+    let tasks = s.tasks;
+    const logs: LogEntry[] = [];
+    for (const id of ids) {
+      const t = findById(tasks, id);
+      if (t == null) continue;
+      tasks = mapById(tasks, id, (x) => ({
         ...x,
         plannedFor: todayISO(s.devDateOverride),
         horizon: null,
         carriedCount: x.carriedCount + 1,
-      })),
-      log: [makeLog(s, t, "kept", reason), ...s.log],
-    };
-  }, `Keep ${quote(findById(state.tasks, id))} for today`);
+      }));
+      logs.push(makeLog(s, t, "kept", reason));
+    }
+    if (logs.length === 0) return s;
+    return { ...s, tasks, log: [...logs, ...s.log] };
+  }, `Keep ${subject(ids)} for today`);
 }
+
 
 export function logBreakdown(id: TaskId): void {
   update((s) => {
@@ -905,21 +950,6 @@ export function trashMany(ids: TaskId[]): void {
     }
     return { ...s, tasks, trash: [...trashed, ...s.trash] };
   }, `Trash ${subject(ids)}`);
-}
-
-/** Reckoning "Backlog all": unplan a batch of leftovers, each logged as postponed. */
-export function postponeManyToBacklog(ids: TaskId[], reason: string | null = null): void {
-  update((s) => {
-    let tasks = s.tasks;
-    const logs: LogEntry[] = [];
-    for (const id of ids) {
-      const t = findById(tasks, id);
-      if (t == null) continue;
-      tasks = mapById(tasks, id, (x) => ({ ...x, plannedFor: null, horizon: null }));
-      logs.push(makeLog(s, t, "postponed", reason));
-    }
-    return { ...s, tasks, log: [...logs, ...s.log] };
-  }, `Send ${subject(ids)} to the backlog`);
 }
 
 /** Reckoning "Drop all": trash a batch of leftovers, each logged as dropped. */

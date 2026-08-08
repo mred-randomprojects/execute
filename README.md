@@ -20,9 +20,19 @@ forward. The smallest version of a task is the one that gets done.
 5. **The Reckoning** — open the app on a new day with unfinished commitments and
    a gate blocks Today until each leftover is resolved:
    - **`e` done** — it was actually finished
+   - **`t` keep for today** — re-commit to it unchanged
    - **`b` break down** — split it; the small step you'll finish today goes to Today
-   - **`s` backlog** — a deliberate "not today"
+   - **`s` postpone** — a deliberate "not today" that has to **name the day**
    - **`d` drop** — delete it
+
+   Deferring is allowed — that's the whole point of a mindful postpone — but it
+   is **counted**. Keeping bumps `carried N×`; postponing bumps `postponed N×`,
+   and both badges follow the task around the app, not just inside the gate. Past
+   a threshold the gate stops taking the cheap answer for free: the third keep
+   offers to break the task down instead, and the fourth postpone asks whether
+   it's ever going to happen (with "won't do" as the default answer). Neither is
+   a block — the escape is always one deliberate key away, because a gate you
+   can't pass just moves the dodge somewhere the app can't see.
 
 ## Keyboard
 

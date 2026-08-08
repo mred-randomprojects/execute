@@ -193,6 +193,10 @@ function coerceTask(raw: unknown): Task {
     estimatedMinutes: numOrNull(o.estimatedMinutes),
     // v4: pre-v4 tasks have no carry history → 0. Clamp to a non-negative int.
     carriedCount: Math.max(0, Math.trunc(num(o.carriedCount, 0))),
+    // v12: pre-v12 tasks were postponed without anyone counting → 0. The history
+    // is genuinely lost (the old `s` wrote no counter), so a long-deferred task
+    // starts its tally today rather than pretending to know.
+    postponedCount: Math.max(0, Math.trunc(num(o.postponedCount, 0))),
     // v5: recurrence instance link. Legacy tasks aren't from recurrences → null.
     recurrenceId: strOrNull(o.recurrenceId) as RecurrenceId | null,
     occurrenceDate: strOrNull(o.occurrenceDate),

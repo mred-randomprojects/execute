@@ -6,6 +6,7 @@ import { relativeLabel } from "../store/dates";
 import { clockLabelFromMs, isOnDay } from "../store/calendar";
 import { horizonLabel } from "../selectors";
 import { BlockPips } from "./BlockPips";
+import { DeferralBadges } from "./DeferralBadges";
 import { useEditor, type DropPos } from "../ui/editor";
 import { renderBlock, renderInline } from "../ui/markdown";
 import { NO_SPELLCHECK } from "../ui/noSpellcheck";
@@ -399,6 +400,11 @@ export function TaskRow({ task, depth }: { task: Task; depth: number }) {
             {progress.done}/{progress.total}
           </span>
         )}
+
+        {/* The deferral ledger, in the ordinary list — not just inside the gate.
+            Only while the task is still open: once it's resolved the history is
+            a curiosity, and the row has enough on it already. */}
+        {isOpen(task) && !editing && <DeferralBadges task={task} />}
 
         {task.estimatedMinutes != null && isOpen(task) && !editing && (
           <BlockPips minutes={task.estimatedMinutes} className="opacity-80" />

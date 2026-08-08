@@ -5,6 +5,7 @@ import type { ReckoningCard, ReckoningLeaf } from "../selectors";
 import { countAll } from "../store/tasks";
 import { relativeLabel } from "../store/dates";
 import { CaptureBar } from "../components/CaptureBar";
+import { DeferralBadges } from "../components/DeferralBadges";
 import { NO_SPELLCHECK } from "../ui/noSpellcheck";
 
 function ActionChip({
@@ -39,22 +40,6 @@ function ActionChip({
       {label}
       <span className="kbd">{hint}</span>
     </button>
-  );
-}
-
-/** "carried 2×" — visible only once a task has been kept-forward at least once. */
-function CarriedBadge({ count }: { count: number }) {
-  if (count < 1) return null;
-  // Escalate the tone the more often this has been dodged.
-  const tone =
-    count >= 3 ? "border-bad/40 text-bad" : "border-line-strong text-ink-faint";
-  return (
-    <span
-      title={`Kept for today ${count} time${count === 1 ? "" : "s"} without finishing`}
-      className={`mono shrink-0 rounded-sm border px-1.5 py-[1px] text-[10px] ${tone}`}
-    >
-      carried {count}×
-    </span>
   );
 }
 
@@ -157,7 +142,7 @@ function LeafActions({
   onReasonChange,
   onComplete,
   onKeep,
-  onBacklog,
+  onPostpone,
   onDrop,
   onStartBreakdown,
 }: {
@@ -165,7 +150,7 @@ function LeafActions({
   onReasonChange: (v: string) => void;
   onComplete: () => void;
   onKeep: () => void;
-  onBacklog: () => void;
+  onPostpone: () => void;
   onDrop: () => void;
   onStartBreakdown: () => void;
 }) {
@@ -175,7 +160,7 @@ function LeafActions({
         <ActionChip label="Done" hint="e" tone="good" onClick={onComplete} />
         <ActionChip label="Keep for today" hint="t" tone="today" onClick={onKeep} />
         <ActionChip label="Break down" hint="b" tone="accent" onClick={onStartBreakdown} />
-        <ActionChip label="Backlog" hint="s" tone="soft" onClick={onBacklog} />
+        <ActionChip label="Postpone…" hint="s" tone="soft" onClick={onPostpone} />
         <ActionChip label="Drop" hint="d" tone="bad" onClick={onDrop} />
       </div>
       <input
@@ -207,10 +192,10 @@ export function ReckoningView({
   onSelect,
   onComplete,
   onKeep,
-  onBacklog,
+  onPostpone,
   onDrop,
   onStartBreakdown,
-  onBacklogAll,
+  onPostponeAll,
   onDropAll,
   onPrevCard,
   onNextCard,
@@ -231,10 +216,10 @@ export function ReckoningView({
   onSelect: (id: TaskId) => void;
   onComplete: (id: TaskId) => void;
   onKeep: (id: TaskId) => void;
-  onBacklog: (id: TaskId) => void;
+  onPostpone: (id: TaskId) => void;
   onDrop: (id: TaskId) => void;
   onStartBreakdown: (id: TaskId) => void;
-  onBacklogAll: (card: ReckoningCard) => void;
+  onPostponeAll: (card: ReckoningCard) => void;
   onDropAll: (card: ReckoningCard) => void;
   onPrevCard: () => void;
   onNextCard: () => void;
@@ -280,7 +265,7 @@ export function ReckoningView({
       onReasonChange={onReasonChange}
       onComplete={() => onComplete(leafId)}
       onKeep={() => onKeep(leafId)}
-      onBacklog={() => onBacklog(leafId)}
+      onPostpone={() => onPostpone(leafId)}
       onDrop={() => onDrop(leafId)}
       onStartBreakdown={() => onStartBreakdown(leafId)}
     />
@@ -318,7 +303,7 @@ export function ReckoningView({
             </span>
           )}
           {!showText && <span className="flex-1" />}
-          <CarriedBadge count={leaf.task.carriedCount} />
+          <DeferralBadges task={leaf.task} />
         </div>
         {focused && leaf.task.notes.trim() !== "" && (
           <p className="mt-1.5 whitespace-pre-wrap text-[13px] leading-relaxed text-ink-soft">
@@ -353,8 +338,8 @@ export function ReckoningView({
           <p className="mt-2 max-w-xl text-[14px] text-ink-soft">
             {totalLeftovers} task{totalLeftovers === 1 ? "" : "s"} you committed to
             didn't get done{cards.length > 1 ? `, across ${cards.length} groups` : ""}.
-            Finish each, keep it for today, break it into something smaller, send it
-            to the backlog, or drop it. Today starts once this is clear.
+            Finish each, keep it for today, break it into something smaller, postpone
+            it to a day you name, or drop it. Today starts once this is clear.
           </p>
         </div>
         <button
@@ -429,10 +414,10 @@ export function ReckoningView({
             <div className="mt-3 flex items-center gap-1.5 border-t border-line pt-3 text-[11px] text-ink-faint">
               <span className="mr-1">Whole group:</span>
               <ActionChip
-                label="Backlog all"
+                label="Postpone all…"
                 hint="⇧S"
                 tone="soft"
-                onClick={() => onBacklogAll(card)}
+                onClick={() => onPostponeAll(card)}
               />
               <ActionChip
                 label="Drop all"

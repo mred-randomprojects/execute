@@ -21,6 +21,7 @@ function task(text: string, over: Partial<Task> = {}): Task {
     labels: [],
     estimatedMinutes: null,
     carriedCount: 0,
+    postponedCount: 0,
     recurrenceId: null,
     occurrenceDate: null,
     scheduledAt: null,

@@ -29,7 +29,7 @@ import {
   indentRecurrenceNode,
   dropManyWithLog,
   initStore,
-  keepForToday,
+  keepManyForToday,
   logBreakdown,
   markOpened,
   markWontDo,
@@ -40,8 +40,7 @@ import {
   clearWontDo,
   outdent,
   outdentRecurrenceNode,
-  postponeManyToBacklog,
-  postponeToBacklog,
+  postponeManyTo,
   purgeFromTrash,
   recordCommandUse,
   removeRecurrenceNode,
@@ -80,6 +79,7 @@ import {
   getRedoSteps,
   undoDepth,
   useStore,
+  type PostponeTarget,
 } from "./store/store";
 import { findById, findParentId, isOpen, walk } from "./store/tasks";
 import { addDays, monthKey, monthKeyOffset, todayISO, weekKey, weekKeyOffset } from "./store/dates";
@@ -121,6 +121,7 @@ import {
   type ZoomTarget,
 } from "./selectors";
 import { minutesFromBlocks } from "./store/estimate";
+import { willPromptOnKeep, willPromptOnPostpone } from "./store/deferral";
 import {
   emptySelection,
   moveSelection,
@@ -229,9 +230,14 @@ export function App() {
   // The reckoning gate's two-panel skin (leftovers ↔ today + capacity). Opt-in
   // and persisted (state.boardPreferred); `v` toggles it and the card review.
   const boardMode = state.boardPreferred;
-  // When the board's "push to later" opens the schedule picker, the task it
-  // targets (the picker otherwise reads the outline selection, stale mid-gate).
-  const [boardScheduleId, setBoardScheduleId] = useState<TaskId | null>(null);
+  // A pending *postponement*: the schedule picker opened from the Reckoning (`s`
+  // / ⇧s) or the board's "push to later". Distinct from the ordinary `s` picker
+  // because these tasks already came due and didn't get done — picking a day here
+  // bumps postponedCount and logs it, where plain rescheduling doesn't. `card` is
+  // set for a whole-group postpone, so the cursor jumps to the next card after.
+  const [postponeReq, setPostponeReq] = useState<
+    { ids: TaskId[]; card: ReckoningCard | null } | null
+  >(null);
   // Which board column the cursor is in, and the cursor within the Today column
   // (the leftovers column reuses reckCursorId). Lets → pull and ← send back.
   const [boardColumn, setBoardColumn] = useState<"left" | "right">("left");
@@ -776,27 +782,53 @@ export function App() {
         : [];
 
   // ── Scheduling (the `s` picker + the detail panel's chips) ────────
-  const applyScheduleTo = (ids: TaskId[], choice: ScheduleChoice) => {
-    if (ids.length === 0) return;
-    if (typeof choice === "object") return setPlannedForMany(ids, choice.date);
+  /** A picker choice as the two mutually-exclusive fields it actually sets. */
+  const scheduleFieldsFor = (choice: ScheduleChoice): PostponeTarget => {
+    if (typeof choice === "object") return { plannedFor: choice.date, horizon: null };
     switch (choice) {
       case "today":
-        return setPlannedForMany(ids, today);
+        return { plannedFor: today, horizon: null };
       case "tomorrow":
-        return setPlannedForMany(ids, addDays(today, 1));
+        return { plannedFor: addDays(today, 1), horizon: null };
       case "inbox":
-        return setHorizonMany(ids, null);
+        return { plannedFor: null, horizon: null };
       case "someday":
-        return setHorizonMany(ids, { unit: "someday", anchor: null });
+        return { plannedFor: null, horizon: { unit: "someday", anchor: null } };
       case "thisWeek":
-        return setHorizonMany(ids, { unit: "week", anchor: weekKey(today) });
+        return { plannedFor: null, horizon: { unit: "week", anchor: weekKey(today) } };
       case "nextWeek":
-        return setHorizonMany(ids, { unit: "week", anchor: weekKeyOffset(today, 1) });
+        return { plannedFor: null, horizon: { unit: "week", anchor: weekKeyOffset(today, 1) } };
       case "thisMonth":
-        return setHorizonMany(ids, { unit: "month", anchor: monthKey(today) });
+        return { plannedFor: null, horizon: { unit: "month", anchor: monthKey(today) } };
       case "nextMonth":
-        return setHorizonMany(ids, { unit: "month", anchor: monthKeyOffset(today, 1) });
+        return { plannedFor: null, horizon: { unit: "month", anchor: monthKeyOffset(today, 1) } };
     }
+  };
+
+  const applyScheduleTo = (ids: TaskId[], choice: ScheduleChoice) => {
+    if (ids.length === 0) return;
+    const { plannedFor, horizon } = scheduleFieldsFor(choice);
+    // setPlannedForMany / setHorizonMany each clear the other field, which is the
+    // invariant: a concrete date and a fuzzy horizon are mutually exclusive.
+    if (plannedFor != null) setPlannedForMany(ids, plannedFor);
+    else setHorizonMany(ids, horizon);
+  };
+
+  /**
+   * The same choice, applied as a *postponement* — the Reckoning's `s` and the
+   * board's "push to later". These tasks already came due and didn't get done, so
+   * the move is counted (postponedCount) and logged, unlike ordinary rescheduling.
+   *
+   * Picking "Today" here is not a postponement at all: it's the same
+   * re-commitment `t` makes, so it routes to the carry counter instead. Otherwise
+   * `s → Today` would be a laundering path — a free way to keep a task for today
+   * without the carry showing up on it.
+   */
+  const applyPostponeTo = (ids: TaskId[], choice: ScheduleChoice) => {
+    if (ids.length === 0) return;
+    const target = scheduleFieldsFor(choice);
+    if (target.plannedFor === today) keepManyForToday(ids, reckReason || null);
+    else postponeManyTo(ids, target, reckReason || null);
   };
 
   // Deliberate schedule sets (picker, palette, panel) on a task with subtasks
@@ -879,14 +911,17 @@ export function App() {
           : focusedTask.plannedFor != null
             ? null
             : taskBucket(focusedTask, today);
-  // Who the schedule picker acts on: a board leftover when pushing from the
-  // board, otherwise the normal outline selection/cursor.
+  // Who the schedule picker acts on: a pending postponement's targets while one
+  // is open, otherwise the normal outline selection/cursor.
   const scheduleTargetIds =
-    boardScheduleId != null
-      ? findById(state.tasks, boardScheduleId) != null
-        ? [boardScheduleId]
-        : []
+    postponeReq != null
+      ? postponeReq.ids.filter((id) => findById(state.tasks, id) != null)
       : actionTargets();
+  const openPostponePicker = (ids: TaskId[], card: ReckoningCard | null = null) => {
+    if (ids.length === 0) return;
+    setPostponeReq({ ids, card });
+    setShowSchedule(true);
+  };
 
   // ── Filing under a project (the ⇧p picker + the palette's set-project) ──
   // The cursor can be sitting on a recurrence *template* rather than a task —
@@ -1296,7 +1331,7 @@ export function App() {
       else if (showPalette) setShowPalette(false);
       else if (showSchedule) {
         setShowSchedule(false);
-        setBoardScheduleId(null);
+        setPostponeReq(null);
       } else if (showProject) setShowProject(false);
       else if (showEstimate) setShowEstimate(false);
       else if (showCalendar) {
@@ -1321,17 +1356,50 @@ export function App() {
       advanceReckCursorPast(target);
       setCompleted(target, true, reckReason || null);
     },
+    // Keeping a task for today is legitimate — until it becomes the answer every
+    // day. Past the threshold the gate interrupts with the honest alternative as
+    // the *default* (Enter breaks it down) and the keep one deliberate key away.
+    // Never a block: a gate you can't pass just moves the dodge out of sight.
     reckKeep: (id?: TaskId) => {
       const target = id ?? reckCursorId;
       if (target == null) return;
-      advanceReckCursorPast(target);
-      keepForToday(target, reckReason || null);
+      const doKeep = () => {
+        advanceReckCursorPast(target);
+        keepManyForToday([target], reckReason || null);
+      };
+      const t = findById(state.tasks, target);
+      if (t == null || !willPromptOnKeep(t)) return doKeep();
+      setConfirm({
+        title: `Kept for today ${t.carriedCount} times already`,
+        body: "Re-committing to it unchanged hasn't worked yet. Break it into the smallest piece you'd actually finish today.",
+        confirmLabel: "Break it down",
+        cancelLabel: "Keep it anyway",
+        tone: "neutral",
+        onConfirm: () => cmd.reckBreakdown(target),
+        onCancel: doKeep,
+      });
     },
-    reckBacklog: (id?: TaskId) => {
+    // `s` no longer drops the task into an undated void — it opens the picker, so
+    // a postponement has to name a day. Past the threshold it first asks whether
+    // this is ever happening, with "won't do" as the default answer (reversible,
+    // and a decision either way beats a fifth silent deferral).
+    reckPostpone: (id?: TaskId) => {
       const target = id ?? reckCursorId;
       if (target == null) return;
-      advanceReckCursorPast(target);
-      postponeToBacklog(target, reckReason || null);
+      const t = findById(state.tasks, target);
+      if (t == null || !willPromptOnPostpone(t)) return openPostponePicker([target]);
+      setConfirm({
+        title: `Postponed ${t.postponedCount} times already`,
+        body: "Pushing the date again is a decision too. If it isn't going to happen, saying so is the honest version — you can always reopen it.",
+        confirmLabel: "Won’t do",
+        cancelLabel: "Postpone anyway",
+        tone: "neutral",
+        onConfirm: () => {
+          advanceReckCursorPast(target);
+          markWontDo(target, reckReason || null);
+        },
+        onCancel: () => openPostponePicker([target]),
+      });
     },
     reckDrop: (id?: TaskId) => {
       const target = id ?? reckCursorId;
@@ -1343,9 +1411,8 @@ export function App() {
       const target = id ?? reckCursorId;
       if (target != null) setBreakingDownId(target);
     },
-    reckBacklogAll: (card: ReckoningCard) => {
-      advanceReckCursorPastCard(card);
-      postponeManyToBacklog(card.leaves.map((l) => l.task.id), reckReason || null);
+    reckPostponeAll: (card: ReckoningCard) => {
+      openPostponePicker(card.leaves.map((l) => l.task.id), card);
     },
     reckDropAll: (card: ReckoningCard) => {
       advanceReckCursorPastCard(card);
@@ -1371,7 +1438,7 @@ export function App() {
   };
   const boardPull = (id: TaskId) => {
     advanceBoardCursorPast(id);
-    keepForToday(id, reckReason || null); // leftover → today (bumps carried, logs "kept")
+    keepManyForToday([id], reckReason || null); // → today (bumps carried, logs "kept")
   };
   const boardSendBack = (id: TaskId) => {
     advanceBoardCursorPast(id);
@@ -1387,10 +1454,10 @@ export function App() {
     advanceBoardCursorPast(id);
     trashTask(id, { reason: reckReason || null, log: true });
   };
-  const boardPushToLater = (id: TaskId) => {
-    setBoardScheduleId(id);
-    setShowSchedule(true);
-  };
+  // The board's "push to later" is a postponement like the card review's `s` —
+  // same picker, same counter. (Both columns qualify: a today task pushed away
+  // is still a commitment being deferred.)
+  const boardPushToLater = (id: TaskId) => openPostponePicker([id]);
   const boardSetEstimate = (id: TaskId, blocks: number) =>
     setEstimatedMinutesMany([id], minutesFromBlocks(blocks));
 
@@ -1535,13 +1602,13 @@ export function App() {
     "reck.complete": () => cmd.reckComplete(),
     "reck.keep": () => cmd.reckKeep(),
     "reck.breakdown": () => cmd.reckBreakdown(),
-    "reck.backlog": () => cmd.reckBacklog(),
+    "reck.postpone": () => cmd.reckPostpone(),
     "reck.drop": () => cmd.reckDrop(),
     "reck.nextCard": () => moveReckCard("next"),
     "reck.prevCard": () => moveReckCard("prev"),
-    "reck.backlogAll": () => {
+    "reck.postponeAll": () => {
       const c = currentReckCard();
-      if (c != null) cmd.reckBacklogAll(c);
+      if (c != null) cmd.reckPostponeAll(c);
     },
     "reck.dropAll": () => {
       const c = currentReckCard();
@@ -2184,10 +2251,10 @@ export function App() {
                 onSelect={setReckCursorId}
                 onComplete={cmd.reckComplete}
                 onKeep={cmd.reckKeep}
-                onBacklog={cmd.reckBacklog}
+                onPostpone={cmd.reckPostpone}
                 onDrop={cmd.reckDrop}
                 onStartBreakdown={cmd.reckBreakdown}
-                onBacklogAll={cmd.reckBacklogAll}
+                onPostponeAll={cmd.reckPostponeAll}
                 onDropAll={cmd.reckDropAll}
                 onPrevCard={() => moveReckCard("prev")}
                 onNextCard={() => moveReckCard("next")}
@@ -2349,21 +2416,22 @@ export function App() {
         <SchedulePicker
           today={today}
           count={scheduleTargetIds.length}
-          current={boardScheduleId != null ? null : scheduleTag}
+          current={postponeReq != null ? null : scheduleTag}
+          verb={postponeReq != null ? "Postpone" : "Schedule"}
           onPick={(choice) => {
-            if (boardScheduleId != null) {
-              // Board "push to later": act on the targeted task, then move the
-              // cursor forward (in its column) so the triage keeps flowing.
-              advanceBoardCursorPast(boardScheduleId);
-              applyScheduleTo([boardScheduleId], choice);
-              setBoardScheduleId(null);
-            } else {
-              applySchedule(choice);
-            }
+            if (postponeReq == null) return applySchedule(choice);
+            // A postponement: move the cursor forward first (past the whole card
+            // for a group postpone, else past the one task) so the triage keeps
+            // flowing, then apply — counted and logged, unlike plain scheduling.
+            const { ids, card } = postponeReq;
+            if (card != null) advanceReckCursorPastCard(card);
+            else advanceBoardCursorPast(ids[0]);
+            applyPostponeTo(ids, choice);
+            setPostponeReq(null);
           }}
           onClose={() => {
             setShowSchedule(false);
-            setBoardScheduleId(null);
+            setPostponeReq(null);
           }}
         />
       )}

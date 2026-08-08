@@ -7,6 +7,7 @@ import { relativeLabel } from "../store/dates";
 import { blocksFromMinutes, formatMinutes, MAX_ESTIMATE_BLOCKS } from "../store/estimate";
 import { BlockPips } from "../components/BlockPips";
 import { CaptureBar } from "../components/CaptureBar";
+import { DeferralBadges } from "../components/DeferralBadges";
 import { renderBlock } from "../ui/markdown";
 
 /** One leftover to triage, with the nearest ancestor's text for context. */
@@ -212,19 +213,6 @@ function ActionChip({
   );
 }
 
-function CarriedBadge({ count }: { count: number }) {
-  if (count < 1) return null;
-  const tone = count >= 3 ? "border-bad/40 text-bad" : "border-line-strong text-ink-faint";
-  return (
-    <span
-      title={`Kept for today ${count} time${count === 1 ? "" : "s"} without finishing`}
-      className={`mono shrink-0 rounded-sm border px-1.5 py-[1px] text-[10px] ${tone}`}
-    >
-      carried {count}×
-    </span>
-  );
-}
-
 export function ReckoningBoard({
   leftovers,
   todayOpen,
@@ -284,7 +272,7 @@ export function ReckoningBoard({
       ) : (
         <ActionChip label="Back" hint="←" tone="accent" onClick={() => onSendBack(task.id)} />
       )}
-      <ActionChip label="Later" hint="s" tone="soft" onClick={() => onPush(task.id)} />
+      <ActionChip label="Postpone…" hint="s" tone="soft" onClick={() => onPush(task.id)} />
       <ActionChip label="Done" hint="e" tone="good" onClick={() => onComplete(task.id)} />
       <ActionChip label="Drop" hint="d" tone="bad" onClick={() => onDrop(task.id)} />
       <span className="mx-1 h-4 w-px bg-line" />
@@ -367,7 +355,7 @@ export function ReckoningBoard({
                           {task.text === "" ? "Untitled" : task.text}
                         </span>
                         {!focused && <BlockPips minutes={task.estimatedMinutes} />}
-                        <CarriedBadge count={task.carriedCount} />
+                        <DeferralBadges task={task} />
                       </div>
                       {focused && <TaskNotes task={task} />}
                       {focused && <FocusedActions task={task} side="left" />}
@@ -408,7 +396,7 @@ export function ReckoningBoard({
                           {task.text === "" ? "Untitled" : task.text}
                         </span>
                         {!focused && <BlockPips minutes={task.estimatedMinutes} />}
-                        <CarriedBadge count={task.carriedCount} />
+                        <DeferralBadges task={task} />
                       </div>
                       {focused && <TaskNotes task={task} />}
                       {focused && <FocusedActions task={task} side="right" />}
@@ -426,7 +414,7 @@ export function ReckoningBoard({
           ["→", "to today"],
           ["←", "back to leftovers"],
           ["tab", "switch column"],
-          ["s", "later"],
+          ["s", "postpone"],
           ["e", "done"],
           ["d", "drop"],
           ["1 – 8", "estimate"],

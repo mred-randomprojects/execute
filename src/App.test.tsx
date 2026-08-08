@@ -143,9 +143,121 @@ describe("The Reckoning (rollover ritual)", () => {
     expect(await screen.findByText("write chapter 1 outline")).toBeTruthy();
   });
 
-  it("can send a leftover to the backlog to clear the gate", async () => {
+  it("postponing a leftover makes you name a day rather than dropping it in a void", async () => {
     await seedTodayTaskThenRollOver("maybe later task");
-    fireEvent.click(screen.getByLabelText("Backlog"));
+    fireEvent.click(screen.getByLabelText("Postpone…"));
+
+    // `s` used to unplan the task in one keystroke, uncounted. Now it asks when.
+    const when = await screen.findByLabelText("When");
+    fireEvent.change(when, { target: { value: "next week" } });
+    fireEvent.keyDown(when, { key: "Enter" });
+
+    await waitFor(() =>
+      expect(screen.queryByText("Unfinished from before today")).toBeNull()
+    );
+    // …and it landed on the named rung, not in the undated backlog.
+    fireEvent.keyDown(document.body, { key: "2" });
+    expect(await screen.findByText("Next week")).toBeTruthy();
+  });
+
+  it("the undated backlog is still reachable — as a named choice", async () => {
+    await seedTodayTaskThenRollOver("someday maybe");
+    fireEvent.click(screen.getByLabelText("Postpone…"));
+    const when = await screen.findByLabelText("When");
+    fireEvent.change(when, { target: { value: "inbox" } });
+    fireEvent.keyDown(when, { key: "Enter" });
+    await waitFor(() =>
+      expect(screen.queryByText("Unfinished from before today")).toBeNull()
+    );
+  });
+
+  it("does not let a stale `s ↵` reflex quietly mean 'keep for today'", async () => {
+    // `s` used to be a one-key backlog. It's a picker now, so whatever sits
+    // under Enter inherits that reflex — and "Today" must not be it.
+    await seedTodayTaskThenRollOver("old reflex");
+    fireEvent.click(screen.getByLabelText("Postpone…"));
+    const when = await screen.findByLabelText("When");
+    fireEvent.keyDown(when, { key: "Enter" });
+
+    await waitFor(() =>
+      expect(screen.queryByText("Unfinished from before today")).toBeNull()
+    );
+    // Landed on Tomorrow: out of Today, and not counted as a carry.
+    expect(screen.queryByText("old reflex")).toBeNull();
+    expect(screen.queryByText(/carried/)).toBeNull();
+  });
+
+  it("postponing to Today is recorded as a carry, not a postponement", async () => {
+    // Otherwise `s → Today` would launder a keep: same outcome as `t`, but with
+    // the carry counter left untouched.
+    await seedTodayTaskThenRollOver("sneaky keep");
+    fireEvent.click(screen.getByLabelText("Postpone…"));
+    const when = await screen.findByLabelText("When");
+    fireEvent.change(when, { target: { value: "today" } });
+    fireEvent.keyDown(when, { key: "Enter" });
+    await waitFor(() =>
+      expect(screen.queryByText("Unfinished from before today")).toBeNull()
+    );
+    expect(await screen.findByText(/carried 1×/)).toBeTruthy();
+  });
+
+  it("asks you to break a task down once it has been kept twice already", async () => {
+    await seedTodayTaskThenRollOver("vague big thing");
+    fireEvent.click(screen.getByLabelText("Keep for today"));
+    await waitFor(() =>
+      expect(screen.queryByText("Unfinished from before today")).toBeNull()
+    );
+
+    act(() => setDevDateOverride(addDays(todayISO(null), 2)));
+    await screen.findByText("Unfinished from before today");
+    fireEvent.click(screen.getByLabelText("Keep for today"));
+    await waitFor(() =>
+      expect(screen.queryByText("Unfinished from before today")).toBeNull()
+    );
+
+    // Third time: the bare keep is no longer free.
+    act(() => setDevDateOverride(addDays(todayISO(null), 3)));
+    await screen.findByText("Unfinished from before today");
+    fireEvent.click(screen.getByLabelText("Keep for today"));
+    expect(await screen.findByText("Kept for today 2 times already")).toBeTruthy();
+
+    // …but it's a prompt, never a block: declining keeps it anyway.
+    fireEvent.click(screen.getByText("Keep it anyway"));
+    await waitFor(() =>
+      expect(screen.queryByText("Unfinished from before today")).toBeNull()
+    );
+    expect(await screen.findByText(/carried 3×/)).toBeTruthy();
+  });
+
+  it("asks whether it's ever happening once a task has been postponed three times", async () => {
+    await seedTodayTaskThenRollOver("chase the invoice");
+    const postponeToTomorrow = async () => {
+      fireEvent.click(screen.getByLabelText("Postpone…"));
+      const when = await screen.findByLabelText("When");
+      fireEvent.change(when, { target: { value: "tomorrow" } });
+      fireEvent.keyDown(when, { key: "Enter" });
+      await waitFor(() =>
+        expect(screen.queryByText("Unfinished from before today")).toBeNull()
+      );
+    };
+    // Each round: postpone to tomorrow, then let that day pass unfinished.
+    for (const day of [1, 3, 5]) {
+      if (day > 1) {
+        act(() => setDevDateOverride(addDays(todayISO(null), day)));
+        await screen.findByText("Unfinished from before today");
+      }
+      await postponeToTomorrow();
+    }
+
+    act(() => setDevDateOverride(addDays(todayISO(null), 7)));
+    await screen.findByText("Unfinished from before today");
+    expect(screen.getByText(/postponed 3×/)).toBeTruthy();
+
+    fireEvent.click(screen.getByLabelText("Postpone…"));
+    expect(await screen.findByText("Postponed 3 times already")).toBeTruthy();
+
+    // Accepting resolves it as "won't do" — a decision, and a reversible one.
+    fireEvent.click(screen.getByText("Won’t do"));
     await waitFor(() =>
       expect(screen.queryByText("Unfinished from before today")).toBeNull()
     );
@@ -216,7 +328,7 @@ describe("The Reckoning (rollover ritual)", () => {
     );
   });
 
-  it("backlogs a whole over-committed group in one move", async () => {
+  it("postpones a whole over-committed group in one move", async () => {
     render(<App />);
     await addTask("trip");
     await addTask("book flights");
@@ -235,7 +347,13 @@ describe("The Reckoning (rollover ritual)", () => {
     expect(screen.getByText("book flights")).toBeTruthy();
     expect(screen.getByText("reserve hotel")).toBeTruthy();
 
-    fireEvent.click(screen.getByLabelText("Backlog all"));
+    // The bulk escape still exists — it just can't be an unnamed dump any more.
+    fireEvent.click(screen.getByLabelText("Postpone all…"));
+    const when = await screen.findByLabelText("When");
+    expect(within(screen.getByRole("dialog")).getByText(/2 tasks/)).toBeTruthy();
+    fireEvent.change(when, { target: { value: "next week" } });
+    fireEvent.keyDown(when, { key: "Enter" });
+
     await waitFor(() =>
       expect(screen.queryByText("Unfinished from before today")).toBeNull()
     );

@@ -25,6 +25,7 @@ export function makeTask(
     labels: [],
     estimatedMinutes: null,
     carriedCount: 0,
+    postponedCount: 0,
     recurrenceId: null,
     occurrenceDate: null,
     scheduledAt: null,

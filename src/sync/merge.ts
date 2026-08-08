@@ -20,7 +20,8 @@ import { ACTION_LOG_LIMIT } from "../types";
 //     same task edited on both sides within one sync window loses the older edit
 //     (rare, and real-time onSnapshot makes it rarer still).
 //   • labels: UNION (a set — adding a tag on each device keeps both).
-//   • carriedCount: MAX (a monotonic counter — never goes backwards).
+//   • carriedCount / postponedCount: MAX (monotonic counters — never go
+//     backwards, so deferring on one device can't be erased by the other).
 //   • Deletes: `trash` entries are tombstones. A delete wins iff its deletedAt is
 //     ≥ the newest live copy's updatedAt (edit-after-delete resurrects; ties →
 //     deleted, which keeps the merge idempotent). No zombie resurrection.
@@ -81,6 +82,7 @@ function mergeOwnFields(base: Task, other: Task | undefined): Task {
     occurrenceDate: newer.occurrenceDate,
     scheduledAt: newer.scheduledAt,
     carriedCount: Math.max(base.carriedCount, other.carriedCount),
+    postponedCount: Math.max(base.postponedCount, other.postponedCount),
     labels: labelsUnion(base.labels, other.labels),
     updatedAt: Math.max(base.updatedAt, other.updatedAt),
   };
