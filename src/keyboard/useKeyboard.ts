@@ -39,6 +39,8 @@ export function getActiveContext(state: ContextState): KeyContext {
   // The schedule picker owns the keyboard while open (it has no app bindings),
   // so normal/editing shortcuts stay dormant beneath it.
   if (state.showSchedule) return "schedule";
+  // Likewise the project picker.
+  if (state.showProject) return "project";
   // Likewise the estimate picker.
   if (state.showEstimate) return "estimate";
   // Likewise the "add to calendar" picker.

@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import type { RefObject } from "react";
-import type { RecurrenceId, RecurrenceRule, Task, TaskId } from "../types";
+import type { Project, RecurrenceId, RecurrenceRule, Task, TaskId } from "../types";
 import type { RecurrenceGroup } from "../selectors";
 import { endsLabel } from "../store/recurrence";
 import { countAll } from "../store/tasks";
@@ -45,16 +45,42 @@ function RepeatIcon() {
   );
 }
 
+/** Where an accepted occurrence will land — the recurrence's project, in miniature. */
+function ProjectChip({ project, onClick }: { project: Project; onClick?: () => void }) {
+  return (
+    <button
+      tabIndex={-1}
+      onClick={(e) => {
+        e.stopPropagation();
+        e.currentTarget.blur();
+        onClick?.();
+      }}
+      className="mono flex shrink-0 items-center gap-1.5 rounded-sm px-1.5 py-[1px] text-[10px] text-ink-faint transition-colors hover:text-ink-soft"
+      title={`Filed under ${project.name} — ⇧p to change`}
+    >
+      <span
+        className="h-[6px] w-[6px] shrink-0 rounded-full"
+        style={{ backgroundColor: project.color }}
+      />
+      <span className="max-w-[120px] truncate">{project.name}</span>
+    </button>
+  );
+}
+
 function RecurrenceRow({
   task,
   depth,
   rule,
+  project,
   onEditRule,
+  onEditProject,
 }: {
   task: Task;
   depth: number;
   rule?: RecurrenceRule;
+  project?: Project | null;
   onEditRule?: () => void;
+  onEditProject?: () => void;
 }) {
   const ed = useEditor();
   const isRoot = rule != null;
@@ -130,6 +156,8 @@ function RecurrenceRow({
           </span>
         )}
 
+        {isRoot && project != null && <ProjectChip project={project} onClick={onEditProject} />}
+
         {ends != null && (
           <span className="mono shrink-0 rounded-sm bg-surface-2 px-1.5 py-[1px] text-[10px] text-ink-faint">
             {ends}
@@ -164,18 +192,22 @@ function RecurrenceRow({
 
 export function RecurringView({
   groups,
+  projects,
   captureRef,
   onAdd,
   onCaptureArrowDown,
   onCaptureFocus,
   onEditRule,
+  onEditProject,
 }: {
   groups: RecurrenceGroup[];
+  projects: Project[];
   captureRef: RefObject<HTMLInputElement>;
   onAdd: (raw: string) => void;
   onCaptureArrowDown: () => void;
   onCaptureFocus: () => void;
   onEditRule: (recId: RecurrenceId, taskId: TaskId) => void;
+  onEditProject: (recId: RecurrenceId, taskId: TaskId) => void;
 }) {
   return (
     <div className="mx-auto flex h-full w-full max-w-3xl flex-col px-10 py-8">
@@ -185,7 +217,8 @@ export function RecurringView({
         </h1>
         <p className="mt-2 text-[14px] text-ink-soft">
           Tasks that come back on a schedule. They surface in Today when due — you decide whether to
-          take them on. Press <span className="kbd">r</span> to set the repeat.
+          take them on. Press <span className="kbd">r</span> to set the repeat,{" "}
+          <span className="kbd">⇧p</span> to file it under a project.
         </p>
       </header>
 
@@ -223,7 +256,9 @@ export function RecurringView({
                   task={rec.template}
                   depth={0}
                   rule={rec.rule}
+                  project={projects.find((p) => p.id === rec.template.projectId) ?? null}
                   onEditRule={() => onEditRule(rec.id, rec.template.id)}
+                  onEditProject={() => onEditProject(rec.id, rec.template.id)}
                 />
               ))}
             </section>

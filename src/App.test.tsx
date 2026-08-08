@@ -1581,6 +1581,61 @@ describe("Recurring tasks", () => {
     await waitFor(() => expect(screen.queryByText("Every day")).toBeNull());
     expect(screen.getByText("Every weekend day")).toBeTruthy();
   });
+
+  it("files a recurrence under a project, and its occurrences land there", async () => {
+    render(<App />);
+    await screen.findByPlaceholderText("Add a task for today…");
+    blurActive();
+    act(() => createProject("Health"));
+
+    fireEvent.keyDown(document.body, { key: "5" }); // Recurring
+    const cap = await screen.findByPlaceholderText(/New recurring task/);
+    fireEvent.change(cap, { target: { value: "Stretch" } });
+    fireEvent.keyDown(cap, { key: "Enter" });
+    await screen.findByText("Stretch");
+
+    // ⇧p files whatever the cursor is on — here, the recurrence template.
+    blurActive();
+    fireEvent.keyDown(document.body, { key: "P", shiftKey: true });
+    const picker = await screen.findByRole("dialog", { name: "Project" });
+    const name = within(picker).getByLabelText("Project name");
+    fireEvent.change(name, { target: { value: "heal" } });
+    fireEvent.keyDown(name, { key: "Enter" });
+
+    // The row now says where it's filed.
+    expect(await screen.findByTitle(/Filed under Health/)).toBeTruthy();
+
+    // In Today the suggestion advertises where taking it on will put it…
+    blurActive();
+    fireEvent.keyDown(document.body, { key: "1" });
+    await screen.findByText("Recurring today");
+    expect(screen.getByTitle("Lands in Health")).toBeTruthy();
+
+    // …and accepting it files the real task under that project, not the Inbox.
+    fireEvent.keyDown(document.body, { key: "ArrowDown" });
+    fireEvent.keyDown(document.body, { key: "t" });
+    await waitFor(() => expect(screen.queryByText("Recurring today")).toBeNull());
+    expect(screen.getByText("Health")).toBeTruthy(); // its project group header
+    expect(screen.queryByText("Inbox")).toBeNull(); // nothing landed there
+  });
+
+  it("keeps ⇧p on a task filing the task, not the recurrence", async () => {
+    render(<App />);
+    await screen.findByPlaceholderText("Add a task for today…");
+    blurActive();
+    act(() => createProject("Errands"));
+    await addTask("post the parcel");
+    blurActive();
+
+    fireEvent.keyDown(document.body, { key: "P", shiftKey: true });
+    const picker = await screen.findByRole("dialog", { name: "Project" });
+    fireEvent.click(within(picker).getByText("Errands"));
+
+    // It moves out of the Inbox group and under Errands.
+    expect(await screen.findByText("Errands")).toBeTruthy();
+    await waitFor(() => expect(screen.queryByText("Inbox")).toBeNull());
+    expect(screen.getByText("post the parcel")).toBeTruthy();
+  });
 });
 
 describe("Current (focus) task", () => {

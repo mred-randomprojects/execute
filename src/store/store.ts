@@ -24,6 +24,7 @@ import {
   emptyState,
 } from "../types";
 import {
+  assignProjectDeep,
   cloneWithNewIds,
   findById,
   findParentId,
@@ -1112,10 +1113,11 @@ function mapRecurrenceOfNode(
 /** Create a recurrence with a one-line template. Returns both ids for focus/edit. */
 export function createRecurrence(
   text: string,
-  rule: RecurrenceRule
+  rule: RecurrenceRule,
+  projectId: ProjectId = DEFAULT_PROJECT_ID
 ): { id: RecurrenceId; taskId: TaskId } {
   const id = nanoid() as RecurrenceId;
-  const template = makeTask(text, DEFAULT_PROJECT_ID);
+  const template = makeTask(text, projectId);
   update((s) => ({
     ...s,
     recurrences: [...s.recurrences, { id, template, rule: normalizeRule(rule), createdAt: Date.now() }],
@@ -1128,6 +1130,25 @@ export function setRecurrenceRule(id: RecurrenceId, rule: RecurrenceRule): void 
     ...s,
     recurrences: s.recurrences.map((r) => (r.id === id ? { ...r, rule: normalizeRule(rule) } : r)),
   }), "Change a repeat schedule");
+}
+
+/**
+ * File a recurrence under a project. The whole template moves together (root and
+ * steps), because that's what {@link materialize} clones into a real task — an
+ * accepted occurrence lands in this project, at the top of it.
+ */
+export function setRecurrenceProject(id: RecurrenceId, projectId: ProjectId): void {
+  const rec = state.recurrences.find((r) => r.id === id);
+  const project = state.projects.find((p) => p.id === projectId);
+  update(
+    (s) => ({
+      ...s,
+      recurrences: s.recurrences.map((r) =>
+        r.id === id ? { ...r, template: assignProjectDeep(r.template, projectId) } : r
+      ),
+    }),
+    `Move the recurring task ${quote(rec?.template)} to ${quoteText(project?.name ?? "another project")}`
+  );
 }
 
 export function deleteRecurrence(id: RecurrenceId): void {

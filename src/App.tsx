@@ -62,6 +62,7 @@ import {
   setProjectForMany,
   setPriority,
   setScheduledAt,
+  setRecurrenceProject,
   setRecurrenceRule,
   setRecurrenceText,
   setText,
@@ -152,6 +153,7 @@ import { DevControls } from "./components/DevControls";
 import { StatusBar } from "./components/StatusBar";
 import { CommandPalette, type Command } from "./components/CommandPalette";
 import { SchedulePicker, type ScheduleChoice } from "./components/SchedulePicker";
+import { ProjectPicker } from "./components/ProjectPicker";
 import { EstimatePicker } from "./components/EstimatePicker";
 import { CalendarPicker } from "./components/CalendarPicker";
 import { gcalTemplateUrl } from "./store/calendar";
@@ -214,6 +216,7 @@ export function App() {
   const [historySel, setHistorySel] = useState(0);
   const [showPalette, setShowPalette] = useState(false);
   const [showSchedule, setShowSchedule] = useState(false);
+  const [showProject, setShowProject] = useState(false);
   const [showEstimate, setShowEstimate] = useState(false);
   const [showCalendar, setShowCalendar] = useState(false);
   // The task the calendar picker is acting on — captured at open so it can't
@@ -885,6 +888,26 @@ export function App() {
         : []
       : actionTargets();
 
+  // ── Filing under a project (the ⇧p picker + the palette's set-project) ──
+  // The cursor can be sitting on a recurrence *template* rather than a task —
+  // in the Recurring view, or on a "Recurring today" suggestion. Filing there
+  // moves the whole definition, so every occurrence it spawns lands in that
+  // project too. Everywhere else it files the selected tasks.
+  const filingRecurrence = focusedRecurrence ?? focusedRecurringToday;
+  const filingTargetCount = filingRecurrence != null ? 1 : actionTargets().length;
+  const filingCurrentProjectId =
+    filingRecurrence != null
+      ? filingRecurrence.template.projectId
+      : focusedTask?.projectId ?? null;
+  const fileUnderProject = (projectId: ProjectId) => {
+    if (filingRecurrence != null) {
+      setRecurrenceProject(filingRecurrence.id, projectId);
+      return;
+    }
+    const ids = actionTargets();
+    if (ids.length > 0) setProjectForMany(ids, projectId);
+  };
+
   // ── Commands ──────────────────────────────────────────────────────
   const moveReckCursor = (dir: "up" | "down") => {
     const ids = leftovers.map((t) => t.id);
@@ -1247,6 +1270,9 @@ export function App() {
       if (view === "recurring" || focusedRecurringToday != null) return openRepeatFocused();
       if (actionTargets().length > 0) setShowSchedule(true);
     },
+    projectOpen: () => {
+      if (filingTargetCount > 0) setShowProject(true);
+    },
     repeatOpen: openRepeatFocused,
     // Toggle the Later view's grouping (by date / by project). No-op elsewhere,
     // since the layout only exists in the Later (backlog) view.
@@ -1271,7 +1297,8 @@ export function App() {
       else if (showSchedule) {
         setShowSchedule(false);
         setBoardScheduleId(null);
-      } else if (showEstimate) setShowEstimate(false);
+      } else if (showProject) setShowProject(false);
+      else if (showEstimate) setShowEstimate(false);
       else if (showCalendar) {
         setShowCalendar(false);
         setCalendarTargetId(null);
@@ -1439,6 +1466,7 @@ export function App() {
     showPalette,
     showHistory,
     showSchedule,
+    showProject,
     showEstimate,
     showCalendar,
     showRepeat: repeatTarget != null,
@@ -1491,6 +1519,7 @@ export function App() {
     },
     "palette.open": cmd.paletteOpen,
     "schedule.open": cmd.scheduleOpen,
+    "project.open": cmd.projectOpen,
     "estimate.open": openEstimatePicker,
     "recurrence.repeat": cmd.repeatOpen,
     "later.toggleLayout": cmd.toggleLaterLayout,
@@ -2021,13 +2050,17 @@ export function App() {
         if (currentProjectId != null) cycleProjectColor(currentProjectId);
       },
     },
+    {
+      id: "project-set",
+      label: "File under a project…",
+      aliases: ["project", "move to project", "file"],
+      hint: "⇧p",
+      run: cmd.projectOpen,
+    },
     ...state.projects.map((project) => ({
       id: `project-set-${project.id}`,
       label: `Set project: ${project.name}`,
-      run: () => {
-        const ids = actionTargets();
-        if (ids.length > 0) setProjectForMany(ids, project.id);
-      },
+      run: () => fileUnderProject(project.id),
     })),
     { id: "p1", label: "Priority: Urgent", run: () => focusedTaskId && setPriority(focusedTaskId, 1) },
     { id: "p2", label: "Priority: High", run: () => focusedTaskId && setPriority(focusedTaskId, 2) },
@@ -2215,11 +2248,16 @@ export function App() {
               <EditorProvider value={recurrenceEditor}>
                 <RecurringView
                   groups={recurrenceGroups}
+                  projects={state.projects}
                   captureRef={captureRef}
                   onAdd={onCapture}
                   onCaptureArrowDown={() => flatIds[0] != null && setFocus(flatIds[0])}
                   onCaptureFocus={() => setSelection(emptySelection)}
                   onEditRule={openRepeatFor}
+                  onEditProject={(_recId, taskId) => {
+                    setFocus(taskId); // the picker files whatever the cursor is on
+                    setShowProject(true);
+                  }}
                 />
               </EditorProvider>
             ) : (
@@ -2230,6 +2268,7 @@ export function App() {
                   period={period}
                   onPeriod={setPeriod}
                   groups={displayGroups}
+                  projects={state.projects}
                   suggested={suggestedTasks}
                   recurring={recurringToday}
                   onAcceptRecurring={(recId) => acceptRecurrence(recId, today)}
@@ -2326,6 +2365,16 @@ export function App() {
             setShowSchedule(false);
             setBoardScheduleId(null);
           }}
+        />
+      )}
+      {showProject && filingTargetCount > 0 && (
+        <ProjectPicker
+          projects={state.projects}
+          count={filingTargetCount}
+          current={filingCurrentProjectId}
+          subject={filingRecurrence != null ? "recurring task" : undefined}
+          onPick={fileUnderProject}
+          onClose={() => setShowProject(false)}
         />
       )}
       {showEstimate && actionTargets().length > 0 && (

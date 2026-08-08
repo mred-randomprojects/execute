@@ -531,11 +531,13 @@ function RecurringPreviewTree({ task, depth }: { task: Task; depth: number }) {
 
 function RecurringSuggestions({
   recurring,
+  projects,
   focusedId,
   onSelect,
   onAccept,
 }: {
   recurring: Recurrence[];
+  projects: Project[];
   focusedId: OutlineId | null;
   onSelect: (id: OutlineId) => void;
   onAccept: (recId: RecurrenceId) => void;
@@ -554,6 +556,8 @@ function RecurringSuggestions({
       {recurring.map((rec) => {
         const focused = focusedId === rec.template.id;
         const count = rec.template.children.length;
+        // Where taking it on will file it — the recurrence's own project.
+        const project = projects.find((p) => p.id === rec.template.projectId) ?? null;
         return (
           <div key={rec.id}>
             <div
@@ -587,6 +591,18 @@ function RecurringSuggestions({
                   {count} {count === 1 ? "step" : "steps"}
                 </span>
               )}
+              {project != null && (
+                <span
+                  className="mono flex shrink-0 items-center gap-1.5 text-[10px] text-ink-faint"
+                  title={`Lands in ${project.name}`}
+                >
+                  <span
+                    className="h-[6px] w-[6px] shrink-0 rounded-full"
+                    style={{ backgroundColor: project.color }}
+                  />
+                  <span className="max-w-[110px] truncate">{project.name}</span>
+                </span>
+              )}
               <button
                 onClick={(e) => {
                   e.stopPropagation();
@@ -614,6 +630,7 @@ export function OutlineView({
   period,
   onPeriod,
   groups,
+  projects,
   suggested,
   recurring,
   onAcceptRecurring,
@@ -652,6 +669,8 @@ export function OutlineView({
   period: Period;
   onPeriod: (p: Period) => void;
   groups: ProjectTaskGroup[];
+  /** Every project — the grouped `groups` only carry the ones with tasks in view. */
+  projects: Project[];
   suggested: Task[];
   recurring: Recurrence[];
   onAcceptRecurring: (recId: RecurrenceId) => void;
@@ -861,6 +880,7 @@ export function OutlineView({
         {zoom == null && view === "today" && recurring.length > 0 && (
           <RecurringSuggestions
             recurring={recurring}
+            projects={projects}
             focusedId={focusedId}
             onSelect={onSelectRow}
             onAccept={onAcceptRecurring}
