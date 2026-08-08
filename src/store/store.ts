@@ -3,6 +3,7 @@ import { nanoid } from "nanoid";
 import type {
   ActionLogEntry,
   AppState,
+  DayRecord,
   Horizon,
   ISODate,
   LogAction,
@@ -21,6 +22,7 @@ import type {
 import {
   ACTION_LOG_LIMIT,
   DEFAULT_PROJECT_ID,
+  MAX_DAY_RECORDS,
   PROJECT_COLORS,
   emptyState,
 } from "../types";
@@ -436,6 +438,46 @@ export function setDevDateOverride(date: ISODate | null): void {
 
 export function markOpened(date: ISODate): void {
   update((s) => ({ ...s, lastOpenedDate: date }), null);
+}
+
+/**
+ * Upsert today's {@link DayRecord} — the streak's raw material. Called from a
+ * render effect on every change, so it MUST return the state untouched when
+ * nothing actually moved: `update()` bails on an identical object, and that bail
+ * is the only thing standing between this and an infinite render loop.
+ *
+ * `closedAt` is write-once. The day was closed at the moment it first reached
+ * zero; taking on something new afterwards is new work, not a retraction.
+ */
+export function recordDay(
+  date: ISODate,
+  tally: { committed: number; done: number; skipped: number },
+  closed: boolean
+): void {
+  update((s) => {
+    const prev = s.days.find((d) => d.date === date);
+    const next: DayRecord = {
+      date,
+      committed: tally.committed,
+      done: tally.done,
+      skipped: tally.skipped,
+      closedAt: prev?.closedAt ?? (closed ? Date.now() : null),
+    };
+    if (
+      prev != null &&
+      prev.committed === next.committed &&
+      prev.done === next.done &&
+      prev.skipped === next.skipped &&
+      prev.closedAt === next.closedAt
+    ) {
+      return s;
+    }
+    const others = s.days.filter((d) => d.date !== date);
+    const days = [...others, next]
+      .sort((a, b) => a.date.localeCompare(b.date))
+      .slice(-MAX_DAY_RECORDS);
+    return { ...s, days };
+  }, null);
 }
 
 /** Set the daily capacity budget, in blocks (clamped to ≥ 1). Not undoable. */

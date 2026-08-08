@@ -18,6 +18,7 @@ export function Sidebar({
   onSelect,
   onOpenHelp,
   onCycleTheme,
+  streak,
   children,
 }: {
   view: ViewKind;
@@ -29,6 +30,8 @@ export function Sidebar({
   onSelect: (v: ViewKind) => void;
   onOpenHelp: () => void;
   onCycleTheme: () => void;
+  /** The closing streak + heatmap, under the nav. Passive — never asked for. */
+  streak?: ReactNode;
   children?: ReactNode;
 }) {
   const items: NavDef[] = [
@@ -78,6 +81,8 @@ export function Sidebar({
           );
         })}
       </nav>
+
+      {streak}
 
       <div className="mt-auto flex flex-col gap-1 border-t border-line pt-3">
         <button

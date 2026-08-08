@@ -37,6 +37,7 @@ import { CaptureBar } from "../components/CaptureBar";
 import { CurrentBanner } from "../components/CurrentBanner";
 import { TaskRow } from "../components/TaskRow";
 import { InboxZero } from "../components/InboxZero";
+import type { Run } from "../store/streak";
 import { Donut } from "../components/Donut";
 import { NO_SPELLCHECK } from "../ui/noSpellcheck";
 
@@ -648,6 +649,7 @@ export function OutlineView({
   selectedIds,
   editingProjectId,
   progress,
+  run,
   captureRef,
   onAdd,
   onCaptureArrowDown,
@@ -688,6 +690,8 @@ export function OutlineView({
   selectedIds: OutlineId[];
   editingProjectId: ProjectId | null;
   progress: TodayProgress;
+  /** The closing streak, so reaching zero can name the run it just extended. */
+  run: Run;
   captureRef: RefObject<HTMLInputElement>;
   onAdd: (raw: string) => void;
   onCaptureArrowDown: () => void;
@@ -785,7 +789,7 @@ export function OutlineView({
 
       {zoom == null && view === "today" && period === "today" && progress.total > 0 && progress.remaining === 0 && (
         <div className="mb-4">
-          <InboxZero total={progress.total} />
+          <InboxZero total={progress.total} run={run} />
         </div>
       )}
 

@@ -46,6 +46,7 @@ function state(over: Partial<AppState> = {}): AppState {
     commandUsage: {},
     actionLog: [],
     presence: defaultPresence(),
+    days: [],
     ...over,
   };
 }

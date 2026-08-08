@@ -66,6 +66,28 @@ In **the Reckoning** and at completion you can attach an optional **reason**;
 these are recorded in an event log (and shown in a task's History panel) so the
 data can later be analysed.
 
+## Closing the day
+
+Inbox zero is the goal; **closing** is the habit. A day is closed when every
+commitment it carried has an outcome — finished, consciously declined, or faced
+in the Reckoning and moved on purpose. Deliberately *not* "you did everything":
+that's unreachable on a bad day, and a target you miss by having a bad day is one
+you stop looking at.
+
+The sidebar keeps a run counter and ten weeks of squares. Green is a closed day,
+shaded by how much actually got **done** — so a day closed by declining
+everything stays visibly paler than one you cleared. Red is a day left
+unresolved. Grey asked nothing of you.
+
+Two rules keep the number honest rather than merely flattering:
+
+- **An empty day earns nothing.** If days with no commitments counted, the safest
+  way to grow a run would be to stop committing to anything — the exact opposite
+  of the point.
+- **Absence is neutral, and one missed day doesn't end a run** (two in a row do).
+  The grace is shown, never hidden: "11 days running · 1 missed". Coming back
+  after a week away to a broken streak is a reason not to come back.
+
 ## Presence (desktop)
 
 The loop above only runs if the app gets opened, so the app has a body while its

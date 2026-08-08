@@ -43,6 +43,7 @@ import {
   postponeManyTo,
   purgeFromTrash,
   recordCommandUse,
+  recordDay,
   removeRecurrenceNode,
   renameProject,
   reorderAcrossProjects,
@@ -111,6 +112,7 @@ import {
   todayCapacity,
   todayLeaves,
   todayProgress,
+  todayTally,
   viewPredicate,
   viewTasks,
   VIEW_TITLES,
@@ -124,6 +126,8 @@ import {
 import { minutesFromBlocks } from "./store/estimate";
 import { willPromptOnKeep, willPromptOnPostpone } from "./store/deferral";
 import { presenceSnapshot } from "./store/presence";
+import { currentRun } from "./store/streak";
+import { DayStreak } from "./components/DayStreak";
 import {
   emptySelection,
   moveSelection,
@@ -518,6 +522,21 @@ export function App() {
 
   const progress = useMemo(() => todayProgress(state.tasks, today), [state.tasks, today]);
   const backlog = useMemo(() => backlogCount(state.tasks), [state.tasks]);
+
+  // ── The closing streak ────────────────────────────────────────────
+  // A day is *closed* when every commitment it carried has an outcome and
+  // nothing is overdue — not when everything got finished. Recorded as the day
+  // is lived, because it can't be reconstructed afterwards: once a leftover is
+  // postponed to next Tuesday, nothing left in the tree remembers it was ever
+  // promised to today.
+  const tally = useMemo(() => todayTally(state.tasks, today), [state.tasks, today]);
+  const dayClosed = !reckoningActive && tally.committed > 0 && tally.open === 0;
+  useEffect(() => {
+    // recordDay is a no-op when nothing moved — which is what keeps this effect
+    // from re-triggering itself forever through the store.
+    if (ready) recordDay(today, tally, dayClosed);
+  }, [ready, today, tally, dayClosed]);
+  const run = useMemo(() => currentRun(state.days, today), [state.days, today]);
 
   // ── Presence (desktop shell) ──────────────────────────────────────
   // Push what's left today down to the main process, which turns it into a
@@ -2239,6 +2258,7 @@ export function App() {
         onSelect={setView}
         onOpenHelp={() => setShowHelp(true)}
         onCycleTheme={cycleTheme}
+        streak={<DayStreak days={state.days} today={today} />}
       >
         {import.meta.env.DEV && (
           <DevControls today={today} override={state.devDateOverride} onSet={setDevDateOverride} />
@@ -2400,6 +2420,7 @@ export function App() {
                   selectedIds={selection.selectedIds}
                   editingProjectId={editingProjectId}
                   progress={progress}
+                  run={run}
                   captureRef={captureRef}
                   onAdd={onCapture}
                   onCaptureArrowDown={() => flatIds[0] != null && setFocus(flatIds[0])}

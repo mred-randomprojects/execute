@@ -1,6 +1,8 @@
 import type {
   ActionLogEntry,
   AppState,
+  DayRecord,
+  ISODate,
   LogEntry,
   Project,
   Recurrence,
@@ -8,7 +10,7 @@ import type {
   TaskId,
   TrashedTask,
 } from "../types";
-import { ACTION_LOG_LIMIT } from "../types";
+import { ACTION_LOG_LIMIT, MAX_DAY_RECORDS } from "../types";
 
 // ─── Two-way merge (per-task last-write-wins) ────────────────────────
 //
@@ -110,6 +112,37 @@ function mergeActionLog(a: ActionLogEntry[], b: ActionLogEntry[]): ActionLogEntr
   const byId = new Map<string, ActionLogEntry>();
   for (const e of [...a, ...b]) if (!byId.has(e.id)) byId.set(e.id, e);
   return [...byId.values()].sort((x, y) => y.at - x.at).slice(0, ACTION_LOG_LIMIT);
+}
+
+/**
+ * Day records merge per date, generously: the larger count on each side (a device
+ * that saw more of the day saw more of the truth) and the *earliest* non-null
+ * `closedAt` (you closed the day at the first moment you reached zero, whichever
+ * machine was watching). Commutative and idempotent, so repeated syncs converge.
+ */
+function mergeDays(a: DayRecord[], b: DayRecord[]): DayRecord[] {
+  const byDate = new Map<ISODate, DayRecord>();
+  for (const d of [...a, ...b]) {
+    const prev = byDate.get(d.date);
+    byDate.set(
+      d.date,
+      prev == null
+        ? d
+        : {
+            date: d.date,
+            committed: Math.max(prev.committed, d.committed),
+            done: Math.max(prev.done, d.done),
+            skipped: Math.max(prev.skipped, d.skipped),
+            closedAt:
+              prev.closedAt == null
+                ? d.closedAt
+                : d.closedAt == null
+                  ? prev.closedAt
+                  : Math.min(prev.closedAt, d.closedAt),
+          }
+    );
+  }
+  return [...byDate.values()].sort((x, y) => x.date.localeCompare(y.date)).slice(-MAX_DAY_RECORDS);
 }
 
 function maxDate(a: string | null, b: string | null): string | null {
@@ -225,6 +258,7 @@ export function mergeStates(local: AppState, remote: AppState): AppState {
     commandUsage: local.commandUsage, // writer wins (per-device palette rankings)
     actionLog: mergeActionLog(local.actionLog, remote.actionLog),
     presence: local.presence, // writer wins (a menu bar / login item is per-machine)
+    days: mergeDays(local.days, remote.days),
   };
 }
 

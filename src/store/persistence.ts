@@ -4,6 +4,7 @@ import type {
   ActionLogKind,
   AppState,
   CommandUsage,
+  DayRecord,
   Horizon,
   HorizonUnit,
   LogAction,
@@ -28,6 +29,7 @@ import {
   ACTION_LOG_LIMIT,
   DEFAULT_CAPACITY_BLOCKS,
   DEFAULT_PROJECT_ID,
+  MAX_DAY_RECORDS,
   PROJECT_COLORS,
   SCHEMA_VERSION,
   defaultPresence,
@@ -302,6 +304,30 @@ function coerceLogEntry(raw: unknown): LogEntry {
   };
 }
 
+// v14: day records (the closing streak + heatmap). Anything without a usable
+// date is dropped — a record that can't say which day it is says nothing. Sorted
+// and de-duplicated on read so the streak walk can trust the shape.
+function coerceDays(raw: unknown): DayRecord[] {
+  if (!Array.isArray(raw)) return [];
+  const byDate = new Map<string, DayRecord>();
+  for (const entry of raw) {
+    const o = isObject(entry) ? entry : {};
+    const date = str(o.date);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) continue;
+    const count = (x: unknown) => Math.max(0, Math.trunc(num(x, 0)));
+    byDate.set(date, {
+      date,
+      committed: count(o.committed),
+      done: count(o.done),
+      skipped: count(o.skipped),
+      closedAt: numOrNull(o.closedAt),
+    });
+  }
+  return [...byDate.values()]
+    .sort((a, b) => a.date.localeCompare(b.date))
+    .slice(-MAX_DAY_RECORDS);
+}
+
 /** Clamp an hour-of-day to 0–23, falling back when it's absent or nonsense. */
 function coerceHour(x: unknown, fallback: number): number {
   const n = Math.trunc(num(x, fallback));
@@ -385,5 +411,6 @@ export function coerceState(raw: unknown): AppState {
     // v11: the action history. Pre-v11 data has none → the log starts here.
     actionLog: coerceActionLog(raw.actionLog),
     presence: coercePresence(raw.presence),
+    days: coerceDays(raw.days),
   };
 }

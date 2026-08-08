@@ -102,6 +102,50 @@ describe("App integration", () => {
   });
 });
 
+describe("The closing streak", () => {
+  it("starts a run only once the day's commitments are all resolved", async () => {
+    render(<App />);
+    expect(await screen.findByText("Close today to start a run.")).toBeTruthy();
+
+    await addTask("one thing");
+    // Committed but unresolved — nothing earned yet.
+    expect(screen.getByText("Close today to start a run.")).toBeTruthy();
+
+    fireEvent.click(screen.getByLabelText("Mark complete"));
+    expect(await screen.findByText("1 day running")).toBeTruthy();
+  });
+
+  it("counts a conscious 'won't do' as closing the day, not as a failure", async () => {
+    render(<App />);
+    await addTask("not doing this after all");
+    blurActive();
+    fireEvent.keyDown(document.body, { key: "Backspace" }); // open → won't do
+
+    expect(await screen.findByText("1 day running")).toBeTruthy();
+  });
+
+  it("hands out nothing for a day that asked nothing — no run from avoiding work", async () => {
+    render(<App />);
+    await screen.findByPlaceholderText("Add a task for today…");
+    // The incentive that matters: if empty days counted, the safest way to grow
+    // a streak would be to stop committing to anything.
+    expect(screen.getByText("Close today to start a run.")).toBeTruthy();
+  });
+
+  it("re-opens the day's work without retracting the close it already earned", async () => {
+    render(<App />);
+    await addTask("one thing");
+    fireEvent.click(screen.getByLabelText("Mark complete"));
+    await screen.findByText("1 day running");
+
+    // Taking something back on is new work, not a retraction of the moment you
+    // reached zero.
+    fireEvent.click(screen.getByLabelText("Mark incomplete"));
+    await waitFor(() => expect(screen.getByLabelText("Mark complete")).toBeTruthy());
+    expect(screen.getByText("1 day running")).toBeTruthy();
+  });
+});
+
 describe("Presence (the desktop shell)", () => {
   /**
    * Stub only the presence half of the bridge. `isElectron: false` keeps

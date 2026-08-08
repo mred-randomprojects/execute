@@ -386,6 +386,32 @@ export function todayLeaves(tasks: Task[], today: ISODate): Task[] {
   return out;
 }
 
+/**
+ * Today's ledger for the closing streak. Distinct from {@link TodayProgress},
+ * which is the progress *bar* and so leaves won't-do work out: here a conscious
+ * "won't do" is a resolution like any other, because closing the day means every
+ * commitment got an outcome — not that every commitment got finished.
+ */
+export interface DayTally {
+  /** Commitments the day carries, including the ones already declined. */
+  committed: number;
+  done: number;
+  skipped: number;
+  /** Still unresolved — what stops the day being closed. */
+  open: number;
+}
+
+export function todayTally(tasks: Task[], today: ISODate): DayTally {
+  const leaves = todayLeaves(tasks, today);
+  let done = 0;
+  let skipped = 0;
+  for (const t of leaves) {
+    if (t.completed) done++;
+    else if (t.wontDo != null) skipped++;
+  }
+  return { committed: leaves.length, done, skipped, open: leaves.length - done - skipped };
+}
+
 export interface TodayProgress {
   done: number;
   total: number;

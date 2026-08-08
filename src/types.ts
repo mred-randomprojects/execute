@@ -182,6 +182,37 @@ export const BLOCK_MINUTES = 20;
 export const DEFAULT_CAPACITY_BLOCKS = 12;
 
 /**
+ * What one day amounted to. Sealed as the day is lived (upserted while the app is
+ * open on that date), because it can't be reconstructed later: once a leftover is
+ * postponed to next Tuesday, nothing in the task tree remembers it was ever
+ * promised to a Thursday in March.
+ *
+ * `closedAt` is the whole point. A day is **closed** when every commitment it
+ * carried has an outcome — finished, consciously declined, or faced in the
+ * Reckoning and moved on purpose. Not "you did everything": that is unreachable
+ * on a bad day, and a target you can miss by having a bad day is a target that
+ * teaches you to stop looking. Closing is achievable every single day, and it
+ * rewards exactly what the app is for — a mindful postpone over a silent overrun.
+ */
+export interface DayRecord {
+  date: ISODate;
+  /** Commitments the day carried — today-leaves, including won't-do ones. */
+  committed: number;
+  done: number;
+  /** Consciously declined ("won't do") — a resolution, not a failure. */
+  skipped: number;
+  /**
+   * When the day FIRST reached "nothing open, nothing overdue". Stamped once and
+   * never cleared: committing to something new at 6pm is new work, and it doesn't
+   * un-earn the moment you got to zero.
+   */
+  closedAt: number | null;
+}
+
+/** Roughly thirteen months of day records — enough for a year-long heatmap. */
+export const MAX_DAY_RECORDS = 400;
+
+/**
  * How present the app is while its window isn't.
  *
  * The Reckoning, the capacity meter and the deferral ledger all assume the app
@@ -317,9 +348,15 @@ export interface AppState {
   actionLog: ActionLogEntry[];
   /** Menu bar / login item / daily nudges — see {@link Presence}. Per-device. */
   presence: Presence;
+  /**
+   * One record per day the app has seen, oldest first, capped at
+   * {@link MAX_DAY_RECORDS}. The spine of the closing streak and the heatmap —
+   * see {@link DayRecord} for why this is stored rather than derived.
+   */
+  days: DayRecord[];
 }
 
-export const SCHEMA_VERSION = 13;
+export const SCHEMA_VERSION = 14;
 export const DEFAULT_PROJECT_ID = "project-inbox" as ProjectId;
 export const PROJECT_ROW_PREFIX = "project:";
 
@@ -372,5 +409,6 @@ export function emptyState(): AppState {
     commandUsage: {},
     actionLog: [],
     presence: defaultPresence(),
+    days: [],
   };
 }
