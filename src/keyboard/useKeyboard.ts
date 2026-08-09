@@ -58,6 +58,7 @@ export function getActiveContext(state: ContextState): KeyContext {
   // Shutdown sits *below* the gate on purpose: you can't close tonight while
   // yesterday is still unresolved, so the Reckoning always wins the keyboard.
   if (state.shutdownActive) return "shutdown";
+  if (state.planActive) return "plan";
   if (state.mode === "move") return "move";
   return "normal";
 }

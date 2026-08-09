@@ -118,6 +118,7 @@ import {
   resolveZoom,
   scheduleStep,
   stepSchedule,
+  planCandidates,
   suggestedForToday,
   waitingOnOthers,
   taskBucket,
@@ -130,6 +131,7 @@ import {
   VIEW_TITLES,
   zoomParent,
   type Period,
+  type PlanCandidate,
   type ReckoningCard,
   type ScheduleStep,
   type ViewKind,
@@ -165,6 +167,7 @@ import { RecurringView } from "./views/RecurringView";
 import { ReckoningView } from "./views/ReckoningView";
 import { ReckoningBoard, type BoardLeftover } from "./views/ReckoningBoard";
 import { ShutdownView } from "./views/ShutdownView";
+import { PlanView } from "./views/PlanView";
 import { TrashView } from "./views/TrashView";
 import { RepeatPicker } from "./components/RepeatPicker";
 import { DetailPanel, type DetailHandlers } from "./components/DetailPanel";
@@ -293,6 +296,9 @@ export function App() {
   // evening nudge) — never sprung on you, unlike the gate.
   const [shutdownOpen, setShutdownOpen] = useState(false);
   const [shutCursorId, setShutCursorId] = useState<TaskId | null>(null);
+  // The morning half of the pair: shutdown closes the day, this opens it.
+  const [planOpen, setPlanOpen] = useState(false);
+  const [planCursorId, setPlanCursorId] = useState<TaskId | null>(null);
 
   const captureRef = useRef<HTMLInputElement>(null);
   const focusedId = selection.focusedId;
@@ -665,6 +671,24 @@ export function App() {
   // The desktop's evening notification opens straight into the ritual — a nudge
   // that only says "you should" wastes the interruption it just spent.
   useEffect(() => window.execute?.onOpenShutdown?.(() => setShutdownOpen(true)), []);
+
+  // ── Plan (the morning ritual) ─────────────────────────────────────
+  // Same rule as shutdown: never while the gate is up. Everything asking for
+  // today in one place, with the capacity meter filling as you accept — the
+  // point being that the cost of the next "yes" is visible when you say it.
+  const planActive = planOpen && !reckoningActive && !shutdownActive;
+  const planList = useMemo(
+    () => (planActive ? planCandidates(state.tasks, state.recurrences, today) : []),
+    [planActive, state.tasks, state.recurrences, today]
+  );
+  useEffect(() => {
+    if (!planActive) {
+      if (planCursorId !== null) setPlanCursorId(null);
+      return;
+    }
+    const ids = planList.map((c) => c.id);
+    if (planCursorId === null || !ids.includes(planCursorId)) setPlanCursorId(ids[0] ?? null);
+  }, [planActive, planList, planCursorId]);
 
   // ── Presence (desktop shell) ──────────────────────────────────────
   // Push what's left today down to the main process, which turns it into a
@@ -1144,6 +1168,19 @@ export function App() {
     if (i === -1) return;
     setShutCursorId(ids[i + 1] ?? ids[i - 1] ?? null);
   };
+  const movePlanCursor = (dir: "up" | "down") => {
+    const ids = planList.map((c) => c.id);
+    if (ids.length === 0) return;
+    const i = planCursorId == null ? -1 : ids.indexOf(planCursorId);
+    const next = i < 0 ? 0 : Math.min(Math.max(i + (dir === "down" ? 1 : -1), 0), ids.length - 1);
+    setPlanCursorId(ids[next]);
+  };
+  const advancePlanCursorPast = (id: TaskId) => {
+    const ids = planList.map((c) => c.id);
+    const i = ids.indexOf(id);
+    if (i === -1) return;
+    setPlanCursorId(ids[i + 1] ?? ids[i - 1] ?? null);
+  };
   const moveShutCursor = (dir: "up" | "down") => {
     const ids = todayOpenLeaves.map((t) => t.id);
     if (ids.length === 0) return;
@@ -1170,6 +1207,7 @@ export function App() {
     cursorDown: () => {
       if (reckoningActive) return moveReckCursor("down");
       if (shutdownActive) return moveShutCursor("down");
+      if (planActive) return movePlanCursor("down");
       if (
         view !== "projects" &&
         focusedProjectId != null &&
@@ -1190,6 +1228,7 @@ export function App() {
     cursorUp: () => {
       if (reckoningActive) return moveReckCursor("up");
       if (shutdownActive) return moveShutCursor("up");
+      if (planActive) return movePlanCursor("up");
       const i = focusedId == null ? -1 : flatIds.indexOf(focusedId);
       if (i <= 0) {
         captureRef.current?.focus(); // at the top → jump up to the capture bar
@@ -1547,6 +1586,7 @@ export function App() {
       } else if (mode === "move") exitMove();
       else if (breakingDownId != null && shutdownActive) setBreakingDownId(null);
       else if (shutdownOpen) setShutdownOpen(false);
+      else if (planOpen) setPlanOpen(false);
       else if (waitingEditId != null) setWaitingEditId(null);
       else if (reasonEditId != null) setReasonEditId(null);
       else if (editingProjectId != null) setEditingProjectId(null);
@@ -1630,6 +1670,25 @@ export function App() {
     // (and bumps the same carry counter — the task really has been promised
     // twice, whichever hour you admit it); `w` declines, which the Reckoning
     // never had an explicit key for and which is now how most days end.
+    planOpen: () => {
+      if (reckoningActive) return; // clear yesterday before choosing today
+      setPlanOpen(true);
+    },
+    planAccept: (c?: PlanCandidate) => {
+      const target = c ?? planList.find((x) => x.id === planCursorId) ?? null;
+      if (target == null) return;
+      advancePlanCursorPast(target.id);
+      // A fresh commitment, not a carry: this work was never due, so nothing is
+      // being dodged and no counter moves.
+      if (target.recurrence != null) acceptRecurrence(target.recurrence.id, today);
+      else setPlannedForMany([target.id], today);
+    },
+    planPush: (c?: PlanCandidate) => {
+      const target = c ?? planList.find((x) => x.id === planCursorId) ?? null;
+      if (target == null || target.recurrence != null) return; // a rule isn't rescheduled here
+      setFocus(target.id);
+      setShowSchedule(true);
+    },
     shutOpen: () => {
       if (reckoningActive) return; // clear yesterday before closing tonight
       setShutdownOpen(true);
@@ -1801,6 +1860,7 @@ export function App() {
     reckoningActive,
     boardMode,
     shutdownActive,
+    planActive,
     mode,
   };
   const actionMap: Record<string, () => void> = {
@@ -1872,6 +1932,9 @@ export function App() {
       const c = currentReckCard();
       if (c != null) cmd.reckPostponeAll(c);
     },
+    "plan.open": cmd.planOpen,
+    "plan.accept": () => cmd.planAccept(),
+    "plan.push": () => cmd.planPush(),
     "shutdown.open": cmd.shutOpen,
     "shut.complete": () => cmd.shutComplete(),
     "shut.carry": () => cmd.shutCarry(),
@@ -2382,6 +2445,13 @@ export function App() {
       run: () => copyView(true),
     },
     {
+      id: "plan",
+      label: "Plan the day…",
+      aliases: ["plan", "plan today", "morning", "commit", "start the day"],
+      hint: "⇧q",
+      run: cmd.planOpen,
+    },
+    {
       id: "review",
       label: "Review your week",
       aliases: ["review", "week", "weekly", "digest", "reasons", "why", "stats", "report"],
@@ -2616,6 +2686,18 @@ export function App() {
                 }}
               />
               )
+            ) : planActive ? (
+              <PlanView
+                candidates={planList}
+                cursorId={planCursorId}
+                committed={tally.open}
+                capacity={capacity}
+                projects={state.projects}
+                onSelect={setPlanCursorId}
+                onAccept={cmd.planAccept}
+                onPush={cmd.planPush}
+                onDone={() => setPlanOpen(false)}
+              />
             ) : shutdownActive ? (
               <ShutdownView
                 open={todayOpenLeaves}

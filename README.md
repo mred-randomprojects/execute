@@ -126,6 +126,17 @@ of your last two weeks. It stays silent until there are at least three usable
 days, and silent when your setting is already about right — an app that always
 has a correction for you gets tuned out.
 
+## Plan — decide what today is
+
+**`⇧q`** opens the day. Everything asking for it in one place — work you put on
+*this week* but never gave a day, and the recurrences firing today — with `t` to
+take one on and `s` to name a different day.
+
+The capacity meter sits **above** the list, not below it. That's the whole point:
+a day nobody chose is the day that over-commits, because one more yes costs
+nothing when you can't see the total. Work you already dated isn't re-offered —
+re-asking a decision you've made is how a ritual becomes a chore.
+
 ## Shutdown — decide tonight, not tomorrow morning
 
 Press **`q`** when you stop working. Shutdown walks today's still-open

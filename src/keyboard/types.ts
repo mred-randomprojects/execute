@@ -21,6 +21,7 @@ export type KeyContext =
   | "reckoning"
   | "board"
   | "shutdown"
+  | "plan"
   | "editing"
   | "move"
   | "normal";
@@ -44,6 +45,8 @@ export interface ContextState {
   boardMode: boolean;
   /** The evening shutdown ritual is open (never while the gate is up). */
   shutdownActive: boolean;
+  /** The morning plan ritual is open (never while the gate is up). */
+  planActive: boolean;
   mode: AppMode;
 }
 

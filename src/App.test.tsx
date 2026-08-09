@@ -102,6 +102,68 @@ describe("App integration", () => {
   });
 });
 
+describe("The morning plan", () => {
+  const openPlan = () => {
+    blurActive();
+    fireEvent.keyDown(document.body, { key: "Q", shiftKey: true });
+  };
+
+  it("offers this week's undated work, and commits it with one key", async () => {
+    render(<App />);
+    await addTask("draft the memo");
+    blurActive();
+    // Push it to "this week" — chosen for the week, but given no day.
+    fireEvent.keyDown(document.body, { key: "s" });
+    const when = await screen.findByLabelText("When");
+    fireEvent.change(when, { target: { value: "this week" } });
+    fireEvent.keyDown(when, { key: "Enter" });
+    await waitFor(() => expect(screen.queryByLabelText("When")).toBeNull());
+
+    openPlan();
+    expect(await screen.findByText("What is today?")).toBeTruthy();
+    expect(screen.getByText("draft the memo")).toBeTruthy();
+
+    fireEvent.keyDown(document.body, { key: "t" }); // take it on
+    expect(await screen.findByText("Nothing waiting to be planned.")).toBeTruthy();
+
+    fireEvent.keyDown(document.body, { key: "Escape" });
+    expect(await screen.findByText("1 to go · 0/1 done")).toBeTruthy();
+  });
+
+  it("shows the cost of the next yes while you're saying it", async () => {
+    render(<App />);
+    await addTask("draft the memo");
+    blurActive();
+    fireEvent.keyDown(document.body, { key: "s" });
+    const when = await screen.findByLabelText("When");
+    fireEvent.change(when, { target: { value: "this week" } });
+    fireEvent.keyDown(when, { key: "Enter" });
+    await waitFor(() => expect(screen.queryByLabelText("When")).toBeNull());
+
+    openPlan();
+    // The meter is the point of the ritual, so it's above the list.
+    expect(await screen.findByText(/0 \/ 12 blocks/)).toBeTruthy();
+  });
+
+  it("doesn't re-offer work you already gave a day to", async () => {
+    render(<App />);
+    await addTask("already chosen"); // capture lands it on today
+    openPlan();
+    expect(await screen.findByText("Nothing waiting to be planned.")).toBeTruthy();
+  });
+
+  it("refuses to open while the gate is up — clear yesterday before choosing today", async () => {
+    render(<App />);
+    await addTask("yesterday's problem");
+    act(() => setDevDateOverride(addDays(todayISO(null), 1)));
+    await screen.findByText("Unfinished from before today");
+
+    openPlan();
+    expect(screen.getByText("Unfinished from before today")).toBeTruthy();
+    expect(screen.queryByText("What is today?")).toBeNull();
+  });
+});
+
 describe("The weekly review", () => {
   it("reads back the reasons it has been collecting all along", async () => {
     render(<App />);

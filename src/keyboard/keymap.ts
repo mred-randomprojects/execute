@@ -74,6 +74,17 @@ export const keymap: KeyBinding[] = [
   { key: "Alt+Enter", action: "zoom.in", context: "normal", displayKey: "⌥ ↵", description: "zoom in / focus (esc backs out)", section: "Tasks" },
   { key: "m", action: "move.enter", context: "normal", displayKey: "m", description: "move mode (re-parent)", section: "Tasks" },
   { key: "q", action: "shutdown.open", context: "normal", displayKey: "q", description: "close the day — decide tonight, not tomorrow morning", section: "Tasks" },
+  { key: "Q", action: "plan.open", context: "normal", displayKey: "⇧ q", description: "plan the day — what's asking for today, against your capacity", section: "Tasks" },
+
+  // ── plan (the morning ritual; shutdown's other half) ─────────────
+  { key: "ArrowDown", action: "cursor.down", context: "plan", displayKey: "↑ / ↓", description: "next / previous", section: "Plan" },
+  { key: "j", action: "cursor.down", context: "plan" },
+  { key: "ArrowUp", action: "cursor.up", context: "plan" },
+  { key: "k", action: "cursor.up", context: "plan" },
+  { key: "t", action: "plan.accept", context: "plan", displayKey: "t / ↵", description: "take it on today", section: "Plan" },
+  { key: "Enter", action: "plan.accept", context: "plan" },
+  { key: "s", action: "plan.push", context: "plan", displayKey: "s", description: "not today — pick another day", section: "Plan" },
+  { key: "Q", action: "dismiss", context: "plan" },
 
   // ── shutdown (the evening ritual) ─────────────────────────────────
   { key: "ArrowDown", action: "cursor.down", context: "shutdown", displayKey: "↑ / ↓", description: "next / previous task", section: "Shutdown" },
