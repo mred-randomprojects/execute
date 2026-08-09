@@ -91,6 +91,7 @@ describe("getActiveContext", () => {
     reckoningActive: false,
     boardMode: false,
     shutdownActive: false,
+    showReview: false,
     mode: "normal" as const,
   };
 
@@ -163,6 +164,7 @@ describe("getActiveContext — focus zones", () => {
     reckoningActive: false,
     boardMode: false,
     shutdownActive: false,
+    showReview: false,
     mode: "normal" as const,
   };
 

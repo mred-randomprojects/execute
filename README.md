@@ -66,6 +66,22 @@ In **the Reckoning** and at completion you can attach an optional **reason**;
 these are recorded in an event log (and shown in a task's History panel) so the
 data can later be analysed.
 
+## Your week, read back to you
+
+Click the heatmap (or `⌘k` → "review"). Everything in there was already being
+recorded and shown nowhere: days closed, finished, declined, deferred — and the
+**reasons**.
+
+Reasons are the most interesting data the app holds and were the least looked at.
+One at a time they're a shrug; in aggregate they're a diagnosis. *"no time ×9"*
+is a capacity problem — calibrate the budget. *"waiting on Ana ×4"* is a
+dependency problem — that's what `b` is for. Opposite fixes, and you can't tell
+which you have from inside a single bad day. Spellings are folded, so *"No time"*
+and *"no time"* stop hiding the pattern by splitting it.
+
+It also names the tasks you keep putting off (carried + postponed) and what
+you've been blocked on longest.
+
 ## Waiting on someone else
 
 Press **`b`** on a task that's blocked, and name who you're waiting on. It stays

@@ -170,6 +170,8 @@ import { RepeatPicker } from "./components/RepeatPicker";
 import { DetailPanel, type DetailHandlers } from "./components/DetailPanel";
 import { HelpOverlay } from "./components/HelpOverlay";
 import { HistoryPanel, buildHistoryRows, type HistoryRow } from "./components/HistoryPanel";
+import { ReviewPanel } from "./components/ReviewPanel";
+import { buildReview } from "./store/review";
 import { DevControls } from "./components/DevControls";
 import { StatusBar } from "./components/StatusBar";
 import { CommandPalette, type Command } from "./components/CommandPalette";
@@ -245,6 +247,8 @@ export function App() {
   // The history panel's cursor lives here, like every other list's: the keymap's
   // "history" context drives it, the panel just renders it.
   const [showHistory, setShowHistory] = useState(false);
+  // The weekly review — everything the app already knew and never told you.
+  const [showReview, setShowReview] = useState(false);
   const [historySel, setHistorySel] = useState(0);
   const [showPalette, setShowPalette] = useState(false);
   const [showSchedule, setShowSchedule] = useState(false);
@@ -1530,6 +1534,7 @@ export function App() {
       else if (repeatTarget != null) setRepeatTarget(null);
       else if (showHelp) setShowHelp(false);
       else if (showHistory) setShowHistory(false);
+      else if (showReview) setShowReview(false);
       else if (showPalette) setShowPalette(false);
       else if (showSchedule) {
         setShowSchedule(false);
@@ -1786,6 +1791,7 @@ export function App() {
     showHelp,
     showPalette,
     showHistory,
+    showReview,
     showSchedule,
     showProject,
     showEstimate,
@@ -2376,6 +2382,12 @@ export function App() {
       run: () => copyView(true),
     },
     {
+      id: "review",
+      label: "Review your week",
+      aliases: ["review", "week", "weekly", "digest", "reasons", "why", "stats", "report"],
+      run: () => setShowReview(true),
+    },
+    {
       id: "shutdown",
       label: "Close the day (shutdown)…",
       aliases: ["shutdown", "close the day", "end of day", "evening", "wrap up", "eod"],
@@ -2522,7 +2534,7 @@ export function App() {
         onSelect={setView}
         onOpenHelp={() => setShowHelp(true)}
         onCycleTheme={cycleTheme}
-        streak={<DayStreak days={state.days} today={today} />}
+        streak={<DayStreak days={state.days} today={today} onOpenReview={() => setShowReview(true)} />}
       >
         {import.meta.env.DEV && (
           <DevControls today={today} override={state.devDateOverride} onSet={setDevDateOverride} />
@@ -2756,6 +2768,13 @@ export function App() {
       </main>
 
       {showHelp && <HelpOverlay onClose={() => setShowHelp(false)} />}
+      {showReview && (
+        <ReviewPanel
+          review={buildReview(state, today)}
+          today={today}
+          onClose={() => setShowReview(false)}
+        />
+      )}
       {showHistory && (
         <HistoryPanel
           rows={historyRows}

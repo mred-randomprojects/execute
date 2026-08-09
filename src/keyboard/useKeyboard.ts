@@ -35,6 +35,9 @@ export function getActiveContext(state: ContextState): KeyContext {
   // The history panel is modal like the help overlay: it owns the keyboard while
   // it's up, so ↑/↓/↵ walk and rewind the history rather than the outline.
   if (state.showHistory) return "history";
+  // The review is a read-only panel; it owns the keyboard so esc closes it
+  // rather than unwinding whatever sits beneath.
+  if (state.showReview) return "review";
   if (state.showPalette) return "palette";
   // The schedule picker owns the keyboard while open (it has no app bindings),
   // so normal/editing shortcuts stay dormant beneath it.

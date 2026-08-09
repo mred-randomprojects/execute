@@ -102,6 +102,52 @@ describe("App integration", () => {
   });
 });
 
+describe("The weekly review", () => {
+  it("reads back the reasons it has been collecting all along", async () => {
+    render(<App />);
+    await addTask("chase the invoice");
+    // Decline it with a reason — the app has always recorded these and never
+    // shown them anywhere but one task's own history.
+    blurActive();
+    fireEvent.keyDown(document.body, { key: "w" });
+    const why = await screen.findByPlaceholderText(/why\?/);
+    fireEvent.change(why, { target: { value: "waiting on finance" } });
+    fireEvent.keyDown(why, { key: "Enter" });
+
+    fireEvent.click(screen.getByTitle("Review your week"));
+    const dialog = await screen.findByRole("dialog", { name: "Review" });
+    expect(within(dialog).getByText("Why things didn't happen")).toBeTruthy();
+    expect(within(dialog).getByText("waiting on finance")).toBeTruthy();
+  });
+
+  it("names the tasks you keep putting off", async () => {
+    render(<App />);
+    await addTask("vague big thing");
+    // Two rounds of keeping it for today → carried 2×.
+    for (const day of [1, 2]) {
+      act(() => setDevDateOverride(addDays(todayISO(null), day)));
+      await screen.findByText("Unfinished from before today");
+      fireEvent.click(screen.getByLabelText("Keep for today"));
+      await waitFor(() =>
+        expect(screen.queryByText("Unfinished from before today")).toBeNull()
+      );
+    }
+
+    fireEvent.click(screen.getByTitle("Review your week"));
+    const dialog = await screen.findByRole("dialog", { name: "Review" });
+    expect(within(dialog).getByText("Kept putting off")).toBeTruthy();
+    expect(within(dialog).getByText("vague big thing")).toBeTruthy();
+  });
+
+  it("says so plainly when there's nothing to review yet", async () => {
+    render(<App />);
+    await screen.findByPlaceholderText("Add a task for today…");
+    fireEvent.click(screen.getByTitle("Review your week"));
+    const dialog = await screen.findByRole("dialog", { name: "Review" });
+    expect(within(dialog).getByText(/Nothing to review yet/)).toBeTruthy();
+  });
+});
+
 describe("Waiting on someone else", () => {
   it("lets the day close — it isn't work you failed to do", async () => {
     render(<App />);

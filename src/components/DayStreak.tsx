@@ -60,7 +60,16 @@ function tooltip(day: HeatDay): string {
  * be seen without being asked for — a passive reminder that days get closed,
  * next to the counts you already glance at.
  */
-export function DayStreak({ days, today }: { days: DayRecord[]; today: ISODate }) {
+export function DayStreak({
+  days,
+  today,
+  onOpenReview,
+}: {
+  days: DayRecord[];
+  today: ISODate;
+  /** The squares show the shape of the week; the review shows why it's that shape. */
+  onOpenReview: () => void;
+}) {
   const grid = useMemo(() => heatmap(days, today, WEEKS), [days, today]);
   const run = useMemo(() => currentRun(days, today), [days, today]);
   const rate = useMemo(() => recentRate(days, today, 30), [days, today]);
@@ -70,7 +79,11 @@ export function DayStreak({ days, today }: { days: DayRecord[]; today: ISODate }
   for (let i = 0; i < grid.length; i += 7) columns.push(grid.slice(i, i + 7));
 
   return (
-    <div className="px-2.5 pb-1 pt-2">
+    <button
+      onClick={onOpenReview}
+      title="Review your week"
+      className="w-full rounded-sm px-2.5 pb-1 pt-2 text-left transition-colors hover:bg-surface-2/60"
+    >
       <div className="mb-1.5 flex items-baseline justify-between">
         <span className="eyebrow">Closed</span>
         <span className="mono text-[11px] text-ink-faint" title="Days closed, of the days that asked something of you">
@@ -115,6 +128,6 @@ export function DayStreak({ days, today }: { days: DayRecord[]; today: ISODate }
           </>
         )}
       </div>
-    </div>
+    </button>
   );
 }
