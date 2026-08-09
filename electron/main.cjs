@@ -370,10 +370,21 @@ function titleList(titles, max = 2) {
   return named.join(", ") + (extra > 0 ? ` +${extra} more` : "");
 }
 
-function notify(title, body) {
+/** Ask the renderer to open the evening shutdown ritual. */
+function openShutdown() {
+  showMainWindow();
+  const send = () => mainWindow?.webContents.send("shutdown:open");
+  if (mainWindow != null && mainWindow.webContents.isLoading()) {
+    mainWindow.webContents.once("did-finish-load", send);
+  } else {
+    send();
+  }
+}
+
+function notify(title, body, onClick = showMainWindow) {
   if (!Notification.isSupported()) return;
   const n = new Notification({ title, body, silent: false });
-  n.on("click", showMainWindow);
+  n.on("click", onClick);
   n.show();
 }
 
@@ -406,9 +417,12 @@ function checkNudges() {
     // At zero there is nothing to say, and saying it anyway is how an app
     // teaches you to ignore it.
     if (presence.remaining > 0) {
+      // Straight into the ritual, not just into the app: a nudge that only says
+      // "you should" wastes the interruption it just spent.
       notify(
         `${presence.remaining} left today — close the day?`,
         titleList(presence.titles),
+        openShutdown,
       );
     }
   }

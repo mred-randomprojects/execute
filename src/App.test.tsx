@@ -102,6 +102,93 @@ describe("App integration", () => {
   });
 });
 
+describe("The evening shutdown", () => {
+  const openShutdown = () => {
+    blurActive();
+    fireEvent.keyDown(document.body, { key: "q" });
+  };
+
+  it("carries an unfinished task to tomorrow, closing today", async () => {
+    render(<App />);
+    await addTask("finish the deck");
+    openShutdown();
+    expect(await screen.findByText("Close the day")).toBeTruthy();
+
+    fireEvent.keyDown(document.body, { key: "t" }); // → tomorrow
+    expect(await screen.findByText("The day is closed.")).toBeTruthy();
+
+    // Today is closed, so the run starts…
+    fireEvent.keyDown(document.body, { key: "Escape" });
+    expect(await screen.findByText("1 day running")).toBeTruthy();
+    // …and the task is waiting on tomorrow, not overdue.
+    fireEvent.keyDown(document.body, { key: "]" });
+    expect(await screen.findByText("finish the deck")).toBeTruthy();
+  });
+
+  it("means the morning gate has nothing left to catch", async () => {
+    // The whole bargain: the Reckoning doesn't go away, you earn your way past
+    // it the night before.
+    render(<App />);
+    await addTask("write the memo");
+    openShutdown();
+    fireEvent.keyDown(document.body, { key: "t" });
+    await screen.findByText("The day is closed.");
+    fireEvent.keyDown(document.body, { key: "Escape" });
+
+    act(() => setDevDateOverride(addDays(todayISO(null), 1)));
+    await waitFor(() =>
+      expect(screen.queryByText("Unfinished from before today")).toBeNull()
+    );
+    expect(await screen.findByText("write the memo")).toBeTruthy();
+  });
+
+  it("counts a carry to tomorrow the same as a carry to today", async () => {
+    // Facing it at 6pm is better behaviour, and it's rewarded by closing the day
+    // — but the task really has been promised twice, whichever hour you admit it.
+    render(<App />);
+    await addTask("chase the quote");
+    openShutdown();
+    fireEvent.keyDown(document.body, { key: "t" });
+    await screen.findByText("The day is closed.");
+    fireEvent.keyDown(document.body, { key: "Escape" });
+
+    fireEvent.keyDown(document.body, { key: "]" }); // tomorrow's tab
+    expect(await screen.findByText(/carried 1×/)).toBeTruthy();
+  });
+
+  it("declines a task outright with w — a decision, not a failure", async () => {
+    render(<App />);
+    await addTask("that thing I never wanted");
+    openShutdown();
+    fireEvent.keyDown(document.body, { key: "w" });
+    expect(await screen.findByText("The day is closed.")).toBeTruthy();
+  });
+
+  it("refuses to open while the gate is up — clear yesterday first", async () => {
+    render(<App />);
+    await addTask("yesterday's problem");
+    act(() => setDevDateOverride(addDays(todayISO(null), 1)));
+    await screen.findByText("Unfinished from before today");
+
+    openShutdown();
+    // Still the gate: two full-screen rituals fighting over the keyboard is
+    // worse than either.
+    expect(screen.getByText("Unfinished from before today")).toBeTruthy();
+    expect(screen.queryByText("Close the day")).toBeNull();
+  });
+
+  it("carries everything left in one move", async () => {
+    render(<App />);
+    await addTask("one");
+    await addTask("two");
+    openShutdown();
+    await screen.findByText("Close the day");
+
+    fireEvent.keyDown(document.body, { key: "T", shiftKey: true }); // ⇧t — carry all
+    expect(await screen.findByText("The day is closed.")).toBeTruthy();
+  });
+});
+
 describe("The closing streak", () => {
   it("starts a run only once the day's commitments are all resolved", async () => {
     render(<App />);

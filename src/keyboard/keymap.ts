@@ -72,6 +72,21 @@ export const keymap: KeyBinding[] = [
   { key: "c", action: "task.current", context: "normal", displayKey: "c", description: "set / clear current (focus) task", section: "Tasks" },
   { key: "Alt+Enter", action: "zoom.in", context: "normal", displayKey: "⌥ ↵", description: "zoom in / focus (esc backs out)", section: "Tasks" },
   { key: "m", action: "move.enter", context: "normal", displayKey: "m", description: "move mode (re-parent)", section: "Tasks" },
+  { key: "q", action: "shutdown.open", context: "normal", displayKey: "q", description: "close the day — decide tonight, not tomorrow morning", section: "Tasks" },
+
+  // ── shutdown (the evening ritual) ─────────────────────────────────
+  { key: "ArrowDown", action: "cursor.down", context: "shutdown", displayKey: "↑ / ↓", description: "next / previous task", section: "Shutdown" },
+  { key: "j", action: "cursor.down", context: "shutdown" },
+  { key: "ArrowUp", action: "cursor.up", context: "shutdown" },
+  { key: "k", action: "cursor.up", context: "shutdown" },
+  { key: "e", action: "shut.complete", context: "shutdown", displayKey: "e", description: "mark it done", section: "Shutdown" },
+  { key: "t", action: "shut.carry", context: "shutdown", displayKey: "t", description: "carry it to tomorrow", section: "Shutdown" },
+  { key: "b", action: "shut.breakdown", context: "shutdown", displayKey: "b", description: "break it into something you'd actually do tomorrow", section: "Shutdown" },
+  { key: "s", action: "shut.postpone", context: "shutdown", displayKey: "s", description: "postpone — name the day", section: "Shutdown" },
+  { key: "w", action: "shut.wontDo", context: "shutdown", displayKey: "w", description: "won’t do — a decision, not a failure", section: "Shutdown" },
+  { key: "d", action: "shut.drop", context: "shutdown", displayKey: "d", description: "drop it", section: "Shutdown", noRepeat: true },
+  { key: "T", action: "shut.carryAll", context: "shutdown", displayKey: "⇧ t", description: "carry everything left to tomorrow", section: "Shutdown" },
+  { key: "q", action: "dismiss", context: "shutdown" },
 
   // ── move mode ─────────────────────────────────────────────────────
   { key: "ArrowDown", action: "cursor.down", context: "move", displayKey: "↑ / ↓", description: "choose position", section: "Move mode" },

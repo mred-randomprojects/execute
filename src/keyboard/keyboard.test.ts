@@ -90,11 +90,27 @@ describe("getActiveContext", () => {
     showConfirm: false,
     reckoningActive: false,
     boardMode: false,
+    shutdownActive: false,
     mode: "normal" as const,
   };
 
   it("defaults to normal", () => {
     expect(getActiveContext(base)).toBe("normal");
+  });
+  it("shutdown owns the keyboard when it's open", () => {
+    expect(getActiveContext({ ...base, shutdownActive: true })).toBe("shutdown");
+  });
+  it("the gate outranks shutdown — clear yesterday before closing tonight", () => {
+    expect(
+      getActiveContext({ ...base, shutdownActive: true, reckoningActive: true })
+    ).toBe("reckoning");
+  });
+  it("typing still beats shutdown, so a breakdown step isn't eaten by its verbs", () => {
+    const input = document.createElement("input");
+    document.body.appendChild(input);
+    input.focus();
+    expect(getActiveContext({ ...base, shutdownActive: true })).toBe("editing");
+    input.remove();
   });
   it("reckoning shows the board when boardMode is on", () => {
     expect(getActiveContext({ ...base, reckoningActive: true, boardMode: true })).toBe("board");
@@ -146,6 +162,7 @@ describe("getActiveContext — focus zones", () => {
     showConfirm: false,
     reckoningActive: false,
     boardMode: false,
+    shutdownActive: false,
     mode: "normal" as const,
   };
 

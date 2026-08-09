@@ -446,8 +446,16 @@ export function markOpened(date: ISODate): void {
  * nothing actually moved: `update()` bails on an identical object, and that bail
  * is the only thing standing between this and an infinite render loop.
  *
- * `closedAt` is write-once. The day was closed at the moment it first reached
- * zero; taking on something new afterwards is new work, not a retraction.
+ * Every field is a HIGH-WATER MARK, which is the whole reason this is stored
+ * rather than counted from the tree on demand. The live tally shrinks as tasks
+ * leave the day: carry your last task to tomorrow and today suddenly looks like
+ * a day that asked nothing of you — so the record would forget the commitment
+ * existed, and the day would read as empty instead of closed. Monotonic counts
+ * remember what the day was actually asked to carry.
+ *
+ * `closedAt` is write-once for the same reason: the day was closed at the moment
+ * it first reached zero, and taking on something new at 6pm is new work rather
+ * than a retraction.
  */
 export function recordDay(
   date: ISODate,
@@ -458,9 +466,9 @@ export function recordDay(
     const prev = s.days.find((d) => d.date === date);
     const next: DayRecord = {
       date,
-      committed: tally.committed,
-      done: tally.done,
-      skipped: tally.skipped,
+      committed: Math.max(prev?.committed ?? 0, tally.committed),
+      done: Math.max(prev?.done ?? 0, tally.done),
+      skipped: Math.max(prev?.skipped ?? 0, tally.skipped),
       closedAt: prev?.closedAt ?? (closed ? Date.now() : null),
     };
     if (
@@ -891,12 +899,22 @@ export function postponeManyTo(
 
 
 /**
- * Re-commit leftovers to today, unchanged — the Reckoning's "Keep for today".
- * Bumps `carriedCount` (the deliberate-dodge counter behind the "carried N×"
- * badge) and logs each one. Setting `plannedFor = today` lifts them out of the
- * gate. One update, so a batch is a single undo step.
+ * Re-commit unfinished tasks to a day, unchanged — the Reckoning's "Keep for
+ * today" and the evening shutdown's "→ Tomorrow". Bumps `carriedCount` (the
+ * counter behind the "carried N×" badge) and logs each one. One update, so a
+ * batch is a single undo step.
+ *
+ * Both callers bump the same counter on purpose. Facing a task at 6pm rather
+ * than 9am the next morning is better *behaviour*, and it's rewarded where
+ * rewards belong — the day closes, the streak grows, the morning gate never
+ * fires. The counter isn't measuring virtue, it's measuring the task: this
+ * really is the third day running that you've promised to do it.
  */
-export function keepManyForToday(ids: TaskId[], reason: string | null = null): void {
+export function carryManyTo(
+  ids: TaskId[],
+  date: ISODate,
+  reason: string | null = null
+): void {
   update((s) => {
     let tasks = s.tasks;
     const logs: LogEntry[] = [];
@@ -905,7 +923,7 @@ export function keepManyForToday(ids: TaskId[], reason: string | null = null): v
       if (t == null) continue;
       tasks = mapById(tasks, id, (x) => ({
         ...x,
-        plannedFor: todayISO(s.devDateOverride),
+        plannedFor: date,
         horizon: null,
         carriedCount: x.carriedCount + 1,
       }));
@@ -913,7 +931,12 @@ export function keepManyForToday(ids: TaskId[], reason: string | null = null): v
     }
     if (logs.length === 0) return s;
     return { ...s, tasks, log: [...logs, ...s.log] };
-  }, `Keep ${subject(ids)} for today`);
+  }, `Carry ${subject(ids)} to ${date}`);
+}
+
+/** {@link carryManyTo}, aimed at today — the Reckoning's "Keep for today". */
+export function keepManyForToday(ids: TaskId[], reason: string | null = null): void {
+  carryManyTo(ids, todayISO(state.devDateOverride), reason);
 }
 
 

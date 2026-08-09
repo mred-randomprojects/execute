@@ -25,4 +25,10 @@ contextBridge.exposeInMainWorld("execute", {
     ipcRenderer.on("capture:focus", handler);
     return () => ipcRenderer.removeListener("capture:focus", handler);
   },
+  // Clicking the evening nudge opens the shutdown ritual itself, not just the app.
+  onOpenShutdown: (fn) => {
+    const handler = () => fn();
+    ipcRenderer.on("shutdown:open", handler);
+    return () => ipcRenderer.removeListener("shutdown:open", handler);
+  },
 });

@@ -66,6 +66,26 @@ In **the Reckoning** and at completion you can attach an optional **reason**;
 these are recorded in an event log (and shown in a task's History panel) so the
 data can later be analysed.
 
+## Shutdown — decide tonight, not tomorrow morning
+
+Press **`q`** when you stop working. Shutdown walks today's still-open
+commitments one at a time, with the Reckoning's verbs pointed at tomorrow:
+`e` done · `t` carry to tomorrow · `b` break it into something you'd actually do
+· `s` postpone to a named day · `w` won't do · `d` drop. `⇧t` carries everything
+left in one move.
+
+The Reckoning hasn't moved or softened — it just has nothing to catch when you've
+been here first. That's the trade: the gate stays, and you earn your way past it
+the night before. It sits at the worst hour of the day (cold, before you've
+started, wanting to *begin*) and it asks you at 9am why yesterday went the way it
+did, when at 6pm you still remember. Shutdown is the same accounting at the hour
+you can actually answer it.
+
+Carrying to tomorrow still bumps `carried N×`. Facing a task at 6pm is better
+behaviour and it's rewarded where rewards belong — the day closes, the run grows,
+the morning gate never fires — but the counter measures the task, not your
+virtue: it really is the third day running that you've promised to do it.
+
 ## Closing the day
 
 Inbox zero is the goal; **closing** is the habit. A day is closed when every

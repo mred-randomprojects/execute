@@ -29,6 +29,7 @@ import {
   indentRecurrenceNode,
   dropManyWithLog,
   initStore,
+  carryManyTo,
   keepManyForToday,
   logBreakdown,
   markOpened,
@@ -151,6 +152,7 @@ import { ProjectsView } from "./views/ProjectsView";
 import { RecurringView } from "./views/RecurringView";
 import { ReckoningView } from "./views/ReckoningView";
 import { ReckoningBoard, type BoardLeftover } from "./views/ReckoningBoard";
+import { ShutdownView } from "./views/ShutdownView";
 import { TrashView } from "./views/TrashView";
 import { RepeatPicker } from "./components/RepeatPicker";
 import { DetailPanel, type DetailHandlers } from "./components/DetailPanel";
@@ -260,6 +262,10 @@ export function App() {
   const [reckCursorId, setReckCursorId] = useState<TaskId | null>(null);
   const [breakingDownId, setBreakingDownId] = useState<TaskId | null>(null);
   const [reckReason, setReckReason] = useState("");
+  // The evening shutdown ritual. Opened deliberately (`q`, the palette, or the
+  // evening nudge) — never sprung on you, unlike the gate.
+  const [shutdownOpen, setShutdownOpen] = useState(false);
+  const [shutCursorId, setShutCursorId] = useState<TaskId | null>(null);
 
   const captureRef = useRef<HTMLInputElement>(null);
   const focusedId = selection.focusedId;
@@ -530,13 +536,52 @@ export function App() {
   // postponed to next Tuesday, nothing left in the tree remembers it was ever
   // promised to today.
   const tally = useMemo(() => todayTally(state.tasks, today), [state.tasks, today]);
-  const dayClosed = !reckoningActive && tally.committed > 0 && tally.open === 0;
+  const tomorrow = addDays(today, 1);
+  const tomorrowCount = useMemo(
+    () => todayLeaves(state.tasks, tomorrow).filter(isOpen).length,
+    [state.tasks, tomorrow]
+  );
+  // "Did today ask anything of you" has to read the *recorded* high-water mark,
+  // not the live tally: shutdown's whole job is to move the day's remaining work
+  // off today, which empties the live count. Reading it live would mean the more
+  // thoroughly you closed the day, the less it looked like you'd had one.
+  const everCommitted = Math.max(
+    tally.committed,
+    state.days.find((d) => d.date === today)?.committed ?? 0
+  );
+  const dayClosed = !reckoningActive && everCommitted > 0 && tally.open === 0;
   useEffect(() => {
     // recordDay is a no-op when nothing moved — which is what keeps this effect
     // from re-triggering itself forever through the store.
     if (ready) recordDay(today, tally, dayClosed);
   }, [ready, today, tally, dayClosed]);
   const run = useMemo(() => currentRun(state.days, today), [state.days, today]);
+
+  // ── Shutdown (the evening ritual) ─────────────────────────────────
+  // Never while the gate is up: you can't close tonight with yesterday still
+  // unresolved, and two full-screen rituals fighting over the keyboard is worse
+  // than either. It reviews exactly what the Reckoning would catch tomorrow.
+  const shutdownActive = shutdownOpen && !reckoningActive;
+  const shutdownBreakdownTask = shutdownActive ? breakdownTask : null;
+  // Past the evening hour with work still open — the in-app twin of the nudge,
+  // for when notifications are off (or there's no desktop shell at all).
+  const closingTime =
+    !shutdownActive &&
+    !reckoningActive &&
+    tally.open > 0 &&
+    new Date().getHours() >= state.presence.eveningHour;
+  useEffect(() => {
+    if (!shutdownActive) {
+      if (shutCursorId !== null) setShutCursorId(null);
+      return;
+    }
+    const ids = todayOpenLeaves.map((t) => t.id);
+    if (shutCursorId === null || !ids.includes(shutCursorId)) setShutCursorId(ids[0] ?? null);
+  }, [shutdownActive, todayOpenLeaves, shutCursorId]);
+  useEffect(() => setReckReason(""), [shutCursorId]);
+  // The desktop's evening notification opens straight into the ritual — a nudge
+  // that only says "you should" wastes the interruption it just spent.
+  useEffect(() => window.execute?.onOpenShutdown?.(() => setShutdownOpen(true)), []);
 
   // ── Presence (desktop shell) ──────────────────────────────────────
   // Push what's left today down to the main process, which turns it into a
@@ -1000,6 +1045,22 @@ export function App() {
     const nextCard = reckCards[idx + 1] ?? reckCards[idx - 1] ?? null;
     setReckCursorId(nextCard?.leaves[0]?.task.id ?? null);
   };
+  // Resolving a task removes it from the list; land on the next one so the
+  // review keeps flowing without a keystroke.
+  const advanceShutCursorPast = (resolvedId: TaskId) => {
+    const ids = todayOpenLeaves.map((t) => t.id);
+    const i = ids.indexOf(resolvedId);
+    if (i === -1) return;
+    setShutCursorId(ids[i + 1] ?? ids[i - 1] ?? null);
+  };
+  const moveShutCursor = (dir: "up" | "down") => {
+    const ids = todayOpenLeaves.map((t) => t.id);
+    if (ids.length === 0) return;
+    const i = shutCursorId == null ? -1 : ids.indexOf(shutCursorId);
+    const next = i < 0 ? 0 : Math.min(Math.max(i + (dir === "down" ? 1 : -1), 0), ids.length - 1);
+    setShutCursorId(ids[next]);
+  };
+
   const currentReckCard = (): ReckoningCard | null =>
     reckCards.find((c) => c.leaves.some((l) => l.task.id === reckCursorId)) ??
     reckCards[0] ??
@@ -1017,6 +1078,7 @@ export function App() {
   const cmd = {
     cursorDown: () => {
       if (reckoningActive) return moveReckCursor("down");
+      if (shutdownActive) return moveShutCursor("down");
       if (
         view !== "projects" &&
         focusedProjectId != null &&
@@ -1036,6 +1098,7 @@ export function App() {
     },
     cursorUp: () => {
       if (reckoningActive) return moveReckCursor("up");
+      if (shutdownActive) return moveShutCursor("up");
       const i = focusedId == null ? -1 : flatIds.indexOf(focusedId);
       if (i <= 0) {
         captureRef.current?.focus(); // at the top → jump up to the capture bar
@@ -1373,6 +1436,8 @@ export function App() {
         setShowCalendar(false);
         setCalendarTargetId(null);
       } else if (mode === "move") exitMove();
+      else if (breakingDownId != null && shutdownActive) setBreakingDownId(null);
+      else if (shutdownOpen) setShutdownOpen(false);
       else if (reasonEditId != null) setReasonEditId(null);
       else if (editingProjectId != null) setEditingProjectId(null);
       else if (editingId != null) setEditingId(null);
@@ -1448,6 +1513,55 @@ export function App() {
     },
     reckPostponeAll: (card: ReckoningCard) => {
       openPostponePicker(card.leaves.map((l) => l.task.id), card);
+    },
+
+    // ── Shutdown ──────────────────────────────────────────────────
+    // Same verbs as the gate, pointed at tomorrow instead of today. `t` carries
+    // (and bumps the same carry counter — the task really has been promised
+    // twice, whichever hour you admit it); `w` declines, which the Reckoning
+    // never had an explicit key for and which is now how most days end.
+    shutOpen: () => {
+      if (reckoningActive) return; // clear yesterday before closing tonight
+      setShutdownOpen(true);
+    },
+    shutComplete: (id?: TaskId) => {
+      const target = id ?? shutCursorId;
+      if (target == null) return;
+      advanceShutCursorPast(target);
+      setCompleted(target, true, reckReason || null);
+    },
+    shutCarry: (id?: TaskId) => {
+      const target = id ?? shutCursorId;
+      if (target == null) return;
+      advanceShutCursorPast(target);
+      carryManyTo([target], tomorrow, reckReason || null);
+    },
+    shutPostpone: (id?: TaskId) => {
+      const target = id ?? shutCursorId;
+      if (target == null) return;
+      openPostponePicker([target]);
+    },
+    shutWontDo: (id?: TaskId) => {
+      const target = id ?? shutCursorId;
+      if (target == null) return;
+      advanceShutCursorPast(target);
+      markWontDo(target, reckReason || null);
+    },
+    shutDrop: (id?: TaskId) => {
+      const target = id ?? shutCursorId;
+      if (target == null) return;
+      advanceShutCursorPast(target);
+      trashTask(target, { reason: reckReason || null, log: true });
+    },
+    shutBreakdown: (id?: TaskId) => {
+      const target = id ?? shutCursorId;
+      if (target != null) setBreakingDownId(target);
+    },
+    shutCarryAll: () => {
+      const ids = todayOpenLeaves.map((t) => t.id);
+      if (ids.length === 0) return;
+      setShutCursorId(null);
+      carryManyTo(ids, tomorrow, reckReason || null);
     },
     reckDropAll: (card: ReckoningCard) => {
       advanceReckCursorPastCard(card);
@@ -1575,6 +1689,7 @@ export function App() {
     showConfirm: confirm != null,
     reckoningActive,
     boardMode,
+    shutdownActive,
     mode,
   };
   const actionMap: Record<string, () => void> = {
@@ -1645,6 +1760,14 @@ export function App() {
       const c = currentReckCard();
       if (c != null) cmd.reckPostponeAll(c);
     },
+    "shutdown.open": cmd.shutOpen,
+    "shut.complete": () => cmd.shutComplete(),
+    "shut.carry": () => cmd.shutCarry(),
+    "shut.postpone": () => cmd.shutPostpone(),
+    "shut.wontDo": () => cmd.shutWontDo(),
+    "shut.drop": () => cmd.shutDrop(),
+    "shut.breakdown": () => cmd.shutBreakdown(),
+    "shut.carryAll": cmd.shutCarryAll,
     "reck.dropAll": () => {
       const c = currentReckCard();
       if (c != null) cmd.reckDropAll(c);
@@ -2118,6 +2241,13 @@ export function App() {
       aliases: ["copy view suggested", "copy today suggested", "export view suggested"],
       run: () => copyView(true),
     },
+    {
+      id: "shutdown",
+      label: "Close the day (shutdown)…",
+      aliases: ["shutdown", "close the day", "end of day", "evening", "wrap up", "eod"],
+      hint: "q",
+      run: cmd.shutOpen,
+    },
     { id: "move", label: "Move task (re-parent)", hint: "m", run: cmd.moveEnter },
     { id: "zoom", label: "Zoom in / focus", hint: "⌥↵", run: cmd.zoomIn },
     {
@@ -2338,6 +2468,34 @@ export function App() {
                 }}
               />
               )
+            ) : shutdownActive ? (
+              <ShutdownView
+                open={todayOpenLeaves}
+                cursorId={shutCursorId}
+                tally={tally}
+                tomorrowCount={tomorrowCount}
+                projects={state.projects}
+                breakdownTask={shutdownBreakdownTask}
+                tomorrow={tomorrow}
+                reason={reckReason}
+                onReasonChange={setReckReason}
+                onSelect={setShutCursorId}
+                onComplete={cmd.shutComplete}
+                onCarry={cmd.shutCarry}
+                onPostpone={cmd.shutPostpone}
+                onWontDo={cmd.shutWontDo}
+                onDrop={cmd.shutDrop}
+                onStartBreakdown={cmd.shutBreakdown}
+                onCarryAll={cmd.shutCarryAll}
+                onAddStep={(parentId, text) =>
+                  addChild(parentId, parseCapture(text).text, tomorrow)
+                }
+                onFinishBreakdown={() => {
+                  if (breakingDownId != null) logBreakdown(breakingDownId);
+                  setBreakingDownId(null);
+                }}
+                onExit={() => setShutdownOpen(false)}
+              />
             ) : view === "trash" ? (
               <TrashView
                 trash={state.trash}
@@ -2421,6 +2579,8 @@ export function App() {
                   editingProjectId={editingProjectId}
                   progress={progress}
                   run={run}
+                  closingTime={closingTime}
+                  onShutdown={cmd.shutOpen}
                   captureRef={captureRef}
                   onAdd={onCapture}
                   onCaptureArrowDown={() => flatIds[0] != null && setFocus(flatIds[0])}
@@ -2454,7 +2614,7 @@ export function App() {
             />
           )}
         </div>
-        <StatusBar reckoning={reckoningActive} />
+        <StatusBar reckoning={reckoningActive} shutdown={shutdownActive} />
       </main>
 
       {showHelp && <HelpOverlay onClose={() => setShowHelp(false)} />}

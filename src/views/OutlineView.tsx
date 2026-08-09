@@ -650,6 +650,8 @@ export function OutlineView({
   editingProjectId,
   progress,
   run,
+  closingTime,
+  onShutdown,
   captureRef,
   onAdd,
   onCaptureArrowDown,
@@ -692,6 +694,9 @@ export function OutlineView({
   progress: TodayProgress;
   /** The closing streak, so reaching zero can name the run it just extended. */
   run: Run;
+  /** Past the evening hour with work still open — offer the shutdown ritual. */
+  closingTime: boolean;
+  onShutdown: () => void;
   captureRef: RefObject<HTMLInputElement>;
   onAdd: (raw: string) => void;
   onCaptureArrowDown: () => void;
@@ -791,6 +796,23 @@ export function OutlineView({
         <div className="mb-4">
           <InboxZero total={progress.total} run={run} />
         </div>
+      )}
+
+      {/* The in-app twin of the evening notification, for when notifications are
+          off — or there's no desktop shell at all (the web companion). */}
+      {zoom == null && view === "today" && period === "today" && closingTime && (
+        <button
+          onClick={onShutdown}
+          className="mb-4 flex w-full items-center justify-between rounded border border-accent/40 bg-accent-soft px-4 py-2.5 text-left transition-colors hover:border-accent/70"
+        >
+          <span className="text-[13px] text-ink">
+            <span className="font-medium">Closing time.</span>{" "}
+            <span className="text-ink-soft">
+              Decide the rest tonight, while you still remember why.
+            </span>
+          </span>
+          <span className="kbd shrink-0">q</span>
+        </button>
       )}
 
       <div className="-mx-2 flex-1 overflow-auto">

@@ -19,6 +19,7 @@ export type KeyContext =
   | "confirm"
   | "reckoning"
   | "board"
+  | "shutdown"
   | "editing"
   | "move"
   | "normal";
@@ -39,6 +40,8 @@ export interface ContextState {
   reckoningActive: boolean;
   /** During a reckoning, render the two-panel planning board instead of cards. */
   boardMode: boolean;
+  /** The evening shutdown ritual is open (never while the gate is up). */
+  shutdownActive: boolean;
   mode: AppMode;
 }
 

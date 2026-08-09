@@ -65,6 +65,8 @@ interface ExecuteBridge {
   updatePresence?: (snapshot: PresenceSnapshot) => Promise<boolean>;
   /** Subscribe to the global capture shortcut. Returns an unsubscribe. */
   onFocusCapture?: (fn: () => void) => () => void;
+  /** Subscribe to "open the shutdown ritual" (the evening nudge was clicked). */
+  onOpenShutdown?: (fn: () => void) => () => void;
 }
 
 declare global {

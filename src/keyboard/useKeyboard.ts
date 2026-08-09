@@ -52,6 +52,9 @@ export function getActiveContext(state: ContextState): KeyContext {
   // presentations share the gate but bind keys differently: the spatial board
   // has its own context ("board"), the card review the classic one.
   if (state.reckoningActive) return state.boardMode ? "board" : "reckoning";
+  // Shutdown sits *below* the gate on purpose: you can't close tonight while
+  // yesterday is still unresolved, so the Reckoning always wins the keyboard.
+  if (state.shutdownActive) return "shutdown";
   if (state.mode === "move") return "move";
   return "normal";
 }
