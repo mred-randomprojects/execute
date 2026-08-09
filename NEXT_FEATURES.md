@@ -54,14 +54,22 @@ each hinge on a decision only you can make. Numbered so we can refer to them.
    Today is an independent, edit-one task. See NEXT_FEATURES top item for the
    as-built summary and the small deferred list.
 
-4. **"Commit" / "shutdown" rituals (incl. the morning "pull from this-week").**
-   Items above about (i) choosing each morning which this-week tasks to do today
-   and (ii) the deck-of-cards shutdown breakdown are the *same* ritual pair. Open:
-   is **shutdown** a new evening ritual, or just the existing Reckoning re-skinned
-   as a one-card-at-a-time deck? Is **commit** a morning surface that lists
-   `this week` horizon tasks with a one-key "→ today"? I can prototype the deck UX
-   once you confirm the two rituals' scope and whether they replace or sit beside
-   the Reckoning.
+4. **"Commit" / "shutdown" rituals.** ✅ **Resolved & shipped.** Both halves
+   exist, and they **sit beside** the Reckoning rather than replacing it.
+   - **`⇧q` Plan** — the morning surface: this-week horizon tasks that were never
+     given a day, plus recurrences firing today, with `t` = "→ today". The
+     capacity meter sits *above* the list so the cost of the next yes is visible
+     as you say it. Already-dated work isn't re-offered.
+   - **`q` Shutdown** — the evening deck: today's still-open commitments one at a
+     time, with the gate's verbs pointed at tomorrow (done / carry / break down /
+     postpone / won't do / drop, `⇧t` to carry the rest).
+   - **The Reckoning is unchanged**, and that's the design: it simply has nothing
+     to catch when you've shut down the night before, so it becomes the safety
+     net for days you skipped rather than a toll booth you always pay. It still
+     outranks both rituals for the keyboard — you can't close tonight or plan
+     today while yesterday is unresolved.
+   - The breakdown deck the note asked for is shared by both rituals; only the
+     day the small step lands on differs (today vs. tomorrow).
 
 5. **"Everything for today is done" banner.** It fires when all today *leaves* are
    done — but an incomplete **container/scaffold** parent (whose today-children are
