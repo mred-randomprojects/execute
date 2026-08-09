@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { coerceState } from "./persistence";
+import { SCHEMA_VERSION } from "../types";
 
 // Minimal raw task shape (pre-v4 data has no `carriedCount` field at all).
 function rawTask(extra: Record<string, unknown> = {}) {
@@ -144,5 +145,30 @@ describe("persistence: v7 won't-do resolution", () => {
       log: [{ id: "l1", taskId: "t1", taskText: "a task", action: "skipped", at: 1, date: "2026-07-06" }],
     });
     expect(state.log[0].action).toBe("skipped");
+  });
+
+  it("stamps the CURRENT schema version, whatever the file claimed", () => {
+    // Coercion is what upgrades an old document, so once it returns, the state
+    // in hand IS the current shape. Echoing the stored number left real stores
+    // reporting v1 while carrying v16 data.
+    expect(coerceState({ schemaVersion: 1, tasks: [] }).schemaVersion).toBe(SCHEMA_VERSION);
+    expect(coerceState({}).schemaVersion).toBe(SCHEMA_VERSION);
+  });
+
+  it("brings a genuinely ancient document all the way up, without dropping its tasks", () => {
+    // A v1-era task: no wontDo, no counters, no waitingOn, no estimate.
+    const ancient = coerceState({
+      schemaVersion: 1,
+      tasks: [{ id: "t1", text: "from the before times", completed: false }],
+    });
+    const t = ancient.tasks[0];
+    expect(t.text).toBe("from the before times");
+    expect(t.wontDo).toBeNull();
+    expect(t.waitingOn).toBeNull();
+    expect(t.carriedCount).toBe(0);
+    expect(t.postponedCount).toBe(0);
+    expect(ancient.days).toEqual([]);
+    expect(ancient.presence.openAtLogin).toBe(false);
+    expect(ancient.schemaVersion).toBe(SCHEMA_VERSION);
   });
 });

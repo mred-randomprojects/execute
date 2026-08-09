@@ -402,7 +402,13 @@ export function coerceState(raw: unknown): AppState {
     : [];
 
   return {
-    schemaVersion: num(raw.schemaVersion, SCHEMA_VERSION),
+    // Always the CURRENT version, never the one on disk. Coercion is precisely
+    // the thing that brings an older document up to the present shape — every
+    // field above either survives or gets a documented default — so by the time
+    // this returns, the state in hand IS v{SCHEMA_VERSION}. Echoing the stored
+    // number instead left real stores reporting v1 while carrying v16 data,
+    // which made the field a lie and `mergeStates`' Math.max of it meaningless.
+    schemaVersion: SCHEMA_VERSION,
     projects,
     tasks: normalizeChildProjects(tasks.map(normalizeProject)),
     recurrences,
