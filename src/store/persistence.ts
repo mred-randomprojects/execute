@@ -22,6 +22,7 @@ import type {
   TaskPriority,
   ThemeName,
   TrashedTask,
+  WaitingOn,
   WontDo,
 } from "../types";
 import { normalizeRule } from "./recurrence";
@@ -171,6 +172,13 @@ function coerceWontDo(raw: unknown): WontDo | null {
   return { reason: strOrNull(raw.reason), at: num(raw.at, Date.now()) };
 }
 
+// v16: blocked on someone else. Cleared by completion/decline, which settle the
+// task — a resolved task is not waiting for anything.
+function coerceWaitingOn(raw: unknown): WaitingOn | null {
+  if (!isObject(raw)) return null;
+  return { who: strOrNull(raw.who), since: num(raw.since, Date.now()) };
+}
+
 function coerceTask(raw: unknown): Task {
   const o = isObject(raw) ? raw : {};
   const children = Array.isArray(o.children) ? o.children.map(coerceTask) : [];
@@ -185,6 +193,7 @@ function coerceTask(raw: unknown): Task {
   // v7: "won't do" resolution. Mutually exclusive with `completed` — completion
   // wins. Pre-v7 tasks have no field → null (open), a clean migration.
   const wontDo = completed ? null : coerceWontDo(o.wontDo);
+  const waitingOn = completed || wontDo != null ? null : coerceWaitingOn(o.waitingOn);
   return {
     id: (str(o.id) || nanoid()) as TaskId,
     projectId: (str(o.projectId) || DEFAULT_PROJECT_ID) as ProjectId,
@@ -193,6 +202,7 @@ function coerceTask(raw: unknown): Task {
     completed,
     completedAt: numOrNull(o.completedAt),
     wontDo,
+    waitingOn,
     children,
     createdAt: num(o.createdAt, Date.now()),
     // Pre-sync data has no updatedAt → baseline from createdAt so LWW has a sane

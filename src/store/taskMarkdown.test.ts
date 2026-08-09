@@ -12,6 +12,7 @@ function task(text: string, over: Partial<Task> = {}): Task {
     completed: false,
     completedAt: null,
     wontDo: null,
+    waitingOn: null,
     children: [],
     createdAt: 0,
     updatedAt: 0,

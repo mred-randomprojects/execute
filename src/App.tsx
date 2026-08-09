@@ -38,7 +38,9 @@ import {
   moveAfter,
   moveAsChild,
   moveBefore,
+  clearWaiting,
   clearWontDo,
+  markWaiting,
   outdent,
   outdentRecurrenceNode,
   postponeManyTo,
@@ -117,6 +119,7 @@ import {
   scheduleStep,
   stepSchedule,
   suggestedForToday,
+  waitingOnOthers,
   taskBucket,
   todayCapacity,
   todayLeaves,
@@ -220,6 +223,8 @@ export function App() {
   // Task whose "won't do" reason is being typed inline (empty field). Cleared when
   // the reason is saved/skipped, or when the row leaves the view.
   const [reasonEditId, setReasonEditId] = useState<TaskId | null>(null);
+  // Same idea for "waiting on whom?" — an inline field opened by `b`.
+  const [waitingEditId, setWaitingEditId] = useState<TaskId | null>(null);
   // In-place preview (`p`): the row unwraps its full title and shows its notes
   // inline — a lighter look than the side panel. Pinned to one task; moving the
   // cursor or Esc closes it.
@@ -492,6 +497,15 @@ export function App() {
         : [],
     [view, period, zoom, state.tasks, today]
   );
+  // Blocked work, trailing Today like the other passive groups. Kept visible so
+  // stepping out of the day's maths can't also mean stepping off the screen.
+  const waitingTasks = useMemo(
+    () =>
+      view === "today" && period === "today" && zoom == null
+        ? waitingOnOthers(state.tasks, today)
+        : [],
+    [view, period, zoom, state.tasks, today]
+  );
   // Recurrence definitions, grouped by pattern for the Recurring view.
   const recurrenceGroups = useMemo(
     () => (view === "recurring" ? groupRecurrencesByRule(state.recurrences) : []),
@@ -562,13 +576,17 @@ export function App() {
     for (const t of suggestedTasks) {
       rows.push({ kind: "task" as const, id: t.id, taskId: t.id });
     }
+    // …then the blocked ones, again matching render order.
+    for (const t of waitingTasks) {
+      rows.push({ kind: "task" as const, id: t.id, taskId: t.id });
+    }
     // Recurring-today suggestions trail those, again matching render order. Only
     // the template root is focusable (its steps render as a static preview).
     for (const rec of recurringToday) {
       rows.push({ kind: "task" as const, id: rec.template.id, taskId: rec.template.id });
     }
     return rows;
-  }, [zoomFocus, view, state.projects, displayGroups, usingBuckets, bucketGroups, collapsed, collapsedProjects, suggestedTasks, recurrenceGroups, recurringToday]);
+  }, [zoomFocus, view, state.projects, displayGroups, usingBuckets, bucketGroups, collapsed, collapsedProjects, suggestedTasks, waitingTasks, recurrenceGroups, recurringToday]);
   const flatIds = useMemo(() => outlineRows.map((r) => r.id), [outlineRows]);
   const flatKey = flatIds.join(",");
   // The task ids the view actually renders — so structural edits (reorder) act on
@@ -721,6 +739,14 @@ export function App() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [flatKey, state.tasks, reasonEditId]);
+  useEffect(() => {
+    if (waitingEditId === null) return;
+    const t = findById(state.tasks, waitingEditId);
+    if (t == null || t.waitingOn == null || !flatIds.includes(waitingEditId)) {
+      setWaitingEditId(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [flatKey, state.tasks, waitingEditId]);
   useEffect(() => {
     if (
       editingProjectId !== null &&
@@ -1429,6 +1455,23 @@ export function App() {
       setFocus(focusedTaskId);
       setReasonEditId(focusedTaskId);
     },
+    // `b` = blocked. On an open task it marks it waiting and opens the inline
+    // "on whom?" field; on an already-blocked one it unblocks. Inert on
+    // definitions, suggestions and resolved tasks — none of them can be waiting.
+    taskWaiting: () => {
+      if (view === "recurring" || focusedRecurringToday != null) return;
+      if (focusedTaskId == null) return;
+      const t = findById(state.tasks, focusedTaskId);
+      if (t == null || !isOpen(t)) return;
+      if (t.waitingOn != null) {
+        clearWaiting(focusedTaskId);
+        setWaitingEditId(null);
+        return;
+      }
+      setFocus(focusedTaskId);
+      markWaiting(focusedTaskId, null);
+      setWaitingEditId(focusedTaskId);
+    },
     zoomIn: () => {
       if (view === "recurring") return; // no zoom into recurrence definitions (v1)
       if (focusedProjectId != null) zoomInto({ kind: "project", id: focusedProjectId });
@@ -1499,6 +1542,7 @@ export function App() {
       } else if (mode === "move") exitMove();
       else if (breakingDownId != null && shutdownActive) setBreakingDownId(null);
       else if (shutdownOpen) setShutdownOpen(false);
+      else if (waitingEditId != null) setWaitingEditId(null);
       else if (reasonEditId != null) setReasonEditId(null);
       else if (editingProjectId != null) setEditingProjectId(null);
       else if (editingId != null) setEditingId(null);
@@ -1778,6 +1822,7 @@ export function App() {
     "task.collapse": cmd.taskCollapse,
     "task.current": cmd.taskCurrent,
     "task.reason": cmd.taskReason,
+    "task.waiting": cmd.taskWaiting,
     "zoom.in": cmd.zoomIn,
     "move.enter": cmd.moveEnter,
     "move.dropSibling": cmd.moveDropSibling,
@@ -1928,6 +1973,18 @@ export function App() {
       setFocus(id);
       setReasonEditId(id);
     },
+    waitingEditId,
+    startWaiting: (id) => {
+      setFocus(id);
+      markWaiting(id, null);
+      setWaitingEditId(id);
+    },
+    commitWaiting: (id, who) => {
+      const clean = who.trim();
+      markWaiting(id, clean === "" ? null : clean);
+      setWaitingEditId(null);
+    },
+    clearWaiting,
     commit: commitText,
     indentEditing: (id, raw) => {
       commitText(id, raw);
@@ -2014,6 +2071,10 @@ export function App() {
       setEditingId(id);
     },
     startReason: () => {},
+    waitingEditId: null, // recurrence templates are never blocked on anyone
+    startWaiting: () => {},
+    commitWaiting: () => {},
+    clearWaiting: () => {},
     commit: commitRecurrence,
     indentEditing: (id, raw) => {
       commitRecurrence(id, raw);
@@ -2635,6 +2696,7 @@ export function App() {
                   groups={displayGroups}
                   projects={state.projects}
                   suggested={suggestedTasks}
+                  waiting={waitingTasks}
                   recurring={recurringToday}
                   onAcceptRecurring={(recId) => acceptRecurrence(recId, today)}
                   current={activeCurrentTask}

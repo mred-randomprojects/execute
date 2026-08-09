@@ -102,6 +102,66 @@ describe("App integration", () => {
   });
 });
 
+describe("Waiting on someone else", () => {
+  it("lets the day close — it isn't work you failed to do", async () => {
+    render(<App />);
+    await addTask("hear back from Ana");
+    blurActive();
+    fireEvent.keyDown(document.body, { key: "b" });
+
+    const field = await screen.findByLabelText("Waiting on");
+    fireEvent.change(field, { target: { value: "Ana" } });
+    fireEvent.keyDown(field, { key: "Enter" });
+
+    expect(await screen.findByText(/waiting: Ana/)).toBeTruthy();
+    // Nothing left that's yours to do → the day closes.
+    expect(await screen.findByText("1 day running")).toBeTruthy();
+  });
+
+  it("never holds the morning gate shut", async () => {
+    // The whole point: being blocked on someone else must not become a debt the
+    // app collects from you tomorrow.
+    render(<App />);
+    await addTask("hear back from legal");
+    blurActive();
+    fireEvent.keyDown(document.body, { key: "b" });
+    fireEvent.keyDown(await screen.findByLabelText("Waiting on"), { key: "Enter" });
+    await screen.findByText(/waiting/);
+
+    act(() => setDevDateOverride(addDays(todayISO(null), 1)));
+    await waitFor(() =>
+      expect(screen.queryByText("Unfinished from before today")).toBeNull()
+    );
+    // Still there, still unresolved — visible, not forgotten.
+    expect(await screen.findByText("hear back from legal")).toBeTruthy();
+  });
+
+  it("unblocks with a second press, and the task counts again", async () => {
+    render(<App />);
+    await addTask("hear back from Ana");
+    blurActive();
+    fireEvent.keyDown(document.body, { key: "b" });
+    fireEvent.keyDown(await screen.findByLabelText("Waiting on"), { key: "Enter" });
+    await screen.findByText(/waiting/);
+
+    fireEvent.keyDown(document.body, { key: "b" });
+    await waitFor(() => expect(screen.queryByText(/waiting/)).toBeNull());
+    expect(screen.getByText("1 to go · 0/1 done")).toBeTruthy();
+  });
+
+  it("clears the wait when the task is finally done", async () => {
+    render(<App />);
+    await addTask("hear back from Ana");
+    blurActive();
+    fireEvent.keyDown(document.body, { key: "b" });
+    fireEvent.keyDown(await screen.findByLabelText("Waiting on"), { key: "Enter" });
+    await screen.findByText(/waiting/);
+
+    fireEvent.click(screen.getByLabelText("Mark complete"));
+    await waitFor(() => expect(screen.queryByText(/waiting/)).toBeNull());
+  });
+});
+
 describe("Coming back to a wall", () => {
   async function seedOverdue(n: number) {
     render(<App />);

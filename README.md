@@ -66,6 +66,24 @@ In **the Reckoning** and at completion you can attach an optional **reason**;
 these are recorded in an event log (and shown in a task's History panel) so the
 data can later be analysed.
 
+## Waiting on someone else
+
+Press **`b`** on a task that's blocked, and name who you're waiting on. It stays
+open and stays yours eventually — it just steps out of the Reckoning and out of
+the day's tally while the ball is in someone else's court.
+
+Before this existed, a task waiting on a reply had nowhere honest to go. It
+couldn't be finished, so it failed the day. It couldn't be declined, because you
+still want it. So it got postponed, again and again, until it was a zombie in the
+backlog with a `postponed 6×` badge blaming you for someone else's silence.
+Holding you to a deadline you don't control just teaches you to ignore deadlines.
+
+The obvious failure mode is a task that sits blocked forever — which is the
+zombie this replaces — so blocked work never disappears: overdue and undated ones
+trail Today under **Waiting on others**, oldest first, and the badge counts the
+days. Past a fortnight it turns red. `b` again unblocks it; finishing or
+declining clears it.
+
 ## Coming back after a while
 
 The gate exists to stop work carrying forward *silently* — not to punish

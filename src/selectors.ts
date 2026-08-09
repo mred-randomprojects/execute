@@ -17,6 +17,7 @@ import {
   findParentId,
   getAncestorPath,
   isLeaf,
+  isLive,
   isOpen,
   leavesWhere,
   walk,
@@ -399,7 +400,9 @@ export interface DayTally {
   /** Estimated minutes on the finished work — what a day of yours empirically holds. */
   doneMinutes: number;
   skipped: number;
-  /** Still unresolved — what stops the day being closed. */
+  /** Blocked on someone else — unresolved, but not something you can close. */
+  waiting: number;
+  /** Still unresolved AND yours to act on — what stops the day being closed. */
   open: number;
 }
 
@@ -408,18 +411,23 @@ export function todayTally(tasks: Task[], today: ISODate): DayTally {
   let done = 0;
   let doneMinutes = 0;
   let skipped = 0;
+  let waiting = 0;
   for (const t of leaves) {
     if (t.completed) {
       done++;
       if (t.estimatedMinutes != null && t.estimatedMinutes > 0) doneMinutes += t.estimatedMinutes;
     } else if (t.wontDo != null) skipped++;
+    else if (t.waitingOn != null) waiting++;
   }
   return {
     committed: leaves.length,
     done,
     doneMinutes,
     skipped,
-    open: leaves.length - done - skipped,
+    waiting,
+    // A day whose only leftovers are blocked CAN close: there is nothing further
+    // you could do about them today, and that is what closing means.
+    open: leaves.length - done - skipped - waiting,
   };
 }
 
@@ -432,8 +440,11 @@ export interface TodayProgress {
 export function todayProgress(tasks: Task[], today: ISODate): TodayProgress {
   // Count only what Today shows: a done sub-step of a branch that's no longer a
   // today commitment (and thus hidden) shouldn't inflate the tally. Skipped
-  // ("won't do") leaves also drop out — set aside, neither done nor remaining.
-  const leaves = todayLeaves(tasks, today).filter((t) => t.wontDo == null);
+  // ("won't do") leaves also drop out — set aside, neither done nor remaining —
+  // and so do blocked ones, which aren't work you failed to do.
+  const leaves = todayLeaves(tasks, today).filter(
+    (t) => t.wontDo == null && t.waitingOn == null
+  );
   const done = leaves.filter((t) => t.completed).length;
   return { done, total: leaves.length, remaining: leaves.length - done };
 }
@@ -464,7 +475,7 @@ export function todayCapacity(
   today: ISODate,
   capacityBlocks: number
 ): CapacityLoad {
-  const open = todayLeaves(tasks, today).filter(isOpen);
+  const open = todayLeaves(tasks, today).filter(isLive);
   let usedMinutes = 0;
   let unestimated = 0;
   for (const t of open) {
@@ -484,7 +495,7 @@ export function todayCapacity(
 export function backlogCount(tasks: Task[]): number {
   // Effective schedule: a leaf under a dated parent is already triaged (it's
   // implicitly due with the parent), so it doesn't count as backlog.
-  return effectiveLeavesWhere(tasks, (t) => t.plannedFor == null && isOpen(t)).length;
+  return effectiveLeavesWhere(tasks, (t) => t.plannedFor == null && isLive(t)).length;
 }
 
 /**
@@ -497,9 +508,14 @@ export function backlogCount(tasks: Task[]): number {
  * date — an open design question, not a filter tweak.
  */
 export function leftoverLeaves(tasks: Task[], today: ISODate): Task[] {
+  // `isLive`, not `isOpen`: a task blocked on someone else didn't get done
+  // because it couldn't, and gating the whole app on it would be the app
+  // blaming you for another person's silence. It stays unresolved and visible
+  // (and the weekly review lists it, oldest first) — it just never holds the
+  // door shut.
   return leavesWhere(
     tasks,
-    (t) => isOpen(t) && t.plannedFor != null && t.plannedFor < today
+    (t) => isLive(t) && t.plannedFor != null && t.plannedFor < today
   );
 }
 
@@ -668,6 +684,27 @@ export function suggestedDayFor(task: Task, today: ISODate): ISODate | null {
       ? [0, 1, 2, 3, 4].map((i) => addDays(weekStart(anchor), i)) // Mon–Fri
       : daysInclusive(monthStart(anchor), monthEnd(anchor));
   return pickSuggested(window, today);
+}
+
+/**
+ * Blocked tasks that would otherwise be nowhere: overdue or undated, so no tab
+ * shows them. Oldest wait first, because the whole risk of this state is a task
+ * quietly rotting in it.
+ *
+ * Excludes anything already on screen — a blocked task planned for *today*
+ * renders in its project group (dimmed, badged), and a future-dated one isn't
+ * due yet. Listing those again would double them in the outline, which is worse
+ * than a bad layout: two rows for one task means two focused inputs, and the
+ * second one's mount blurs the first out from under you.
+ */
+export function waitingOnOthers(tasks: Task[], today: ISODate): Task[] {
+  const out: Task[] = [];
+  walk(tasks, (t) => {
+    if (t.waitingOn == null || !isLeaf(t) || !isOpen(t)) return;
+    if (t.plannedFor != null && t.plannedFor >= today) return;
+    out.push(t);
+  });
+  return out.sort((a, b) => (a.waitingOn?.since ?? 0) - (b.waitingOn?.since ?? 0));
 }
 
 /** Incomplete horizon tasks whose suggested day is today — the "Suggested for today" surface. */

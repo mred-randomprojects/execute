@@ -16,6 +16,7 @@ export function makeTask(
     completed: false,
     completedAt: null,
     wontDo: null,
+    waitingOn: null,
     children: [],
     createdAt: Date.now(),
     updatedAt: Date.now(),
@@ -591,6 +592,22 @@ export function isResolved(t: Task): boolean {
 
 export function isOpen(t: Task): boolean {
   return !isResolved(t);
+}
+
+/** Blocked on someone else — open, but not yours to move today. */
+export function isWaiting(t: Task): boolean {
+  return t.waitingOn != null;
+}
+
+/**
+ * Open AND yours to act on. The distinction that keeps a blocked task from
+ * failing your day: it's unresolved (so it can't be forgotten) but it isn't work
+ * you could have done (so it doesn't count against you, and never reckons).
+ * Holding someone to a deadline they don't control teaches them to ignore
+ * deadlines.
+ */
+export function isLive(t: Task): boolean {
+  return isOpen(t) && !isWaiting(t);
 }
 
 export function countPending(tasks: Task[]): number {

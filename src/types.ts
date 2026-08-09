@@ -37,6 +37,31 @@ export interface WontDo {
   at: number;
 }
 
+/**
+ * Blocked on someone else. NOT a resolution — the task is still open and still
+ * yours eventually; it just isn't yours *today*.
+ *
+ * Before this existed, a task waiting on a reply had nowhere honest to go. It
+ * couldn't be finished, so it failed the day; it couldn't be declined, because
+ * you still want it; so it got postponed, again and again, until it was a zombie
+ * in the backlog with a postpone count that blamed you for someone else's
+ * silence. A blocked task now steps out of the Reckoning and out of the day's
+ * tally without being resolved, because holding you to a deadline you don't
+ * control teaches you to ignore deadlines.
+ *
+ * The obvious failure mode is a task that sits here forever, which is exactly
+ * the zombie this replaces — so `since` is shown, and the weekly review lists
+ * what you're waiting on, oldest first.
+ */
+export interface WaitingOn {
+  /** Who or what it's blocked on. Optional: sometimes you only know it isn't you. */
+  who: string | null;
+  since: number;
+}
+
+/** Past this many days, a "waiting" badge stops being neutral and starts nagging. */
+export const WAITING_STALE_DAYS = 14;
+
 // ─── Recurrence (repeating tasks) ───────────────────────────────────
 //
 // A recurrence is a *definition*, not a spawned task: a task template plus a
@@ -95,6 +120,11 @@ export interface Task {
    * leaves never reckon and are dropped from the done/total counts.
    */
   wontDo: WontDo | null;
+  /**
+   * Blocked on someone else — see {@link WaitingOn}. Cleared by completing or
+   * declining the task, since both settle it.
+   */
+  waitingOn: WaitingOn | null;
   children: Task[];
   createdAt: number;
   /**
@@ -362,7 +392,7 @@ export interface AppState {
   days: DayRecord[];
 }
 
-export const SCHEMA_VERSION = 15;
+export const SCHEMA_VERSION = 16;
 export const DEFAULT_PROJECT_ID = "project-inbox" as ProjectId;
 export const PROJECT_ROW_PREFIX = "project:";
 

@@ -635,6 +635,7 @@ export function OutlineView({
   groups,
   projects,
   suggested,
+  waiting,
   recurring,
   onAcceptRecurring,
   current,
@@ -679,6 +680,8 @@ export function OutlineView({
   /** Every project — the grouped `groups` only carry the ones with tasks in view. */
   projects: Project[];
   suggested: Task[];
+  /** Blocked tasks that are due or undated — shown, never counted. */
+  waiting: Task[];
   recurring: Recurrence[];
   onAcceptRecurring: (recId: RecurrenceId) => void;
   current: Task | null;
@@ -923,6 +926,28 @@ export function OutlineView({
               Soft picks from your week/month horizons — not commitments until you accept.
             </p>
             {suggested.map((t) => (
+              <TaskRow key={t.id} task={t} depth={0} />
+            ))}
+          </section>
+        )}
+
+        {/* Blocked work, kept in front of you. A task waiting on someone else
+            steps out of the gate and out of the day's maths — but if it also
+            stepped off the screen it would be the very zombie this replaces, so
+            it trails Today like the other passive groups, oldest wait first. */}
+        {zoom == null && view === "today" && waiting.length > 0 && (
+          <section className="mt-6 px-2">
+            <div className="mb-1 flex items-center justify-between border-t border-line pt-3">
+              <span className="eyebrow">Waiting on others</span>
+              <span className="text-[11px] text-ink-faint">
+                <span className="kbd">b</span> unblock
+              </span>
+            </div>
+            <p className="mb-1.5 text-[12px] text-ink-faint">
+              Not yours to move today — and not counted against the day. Still
+              here so it can't quietly rot.
+            </p>
+            {waiting.map((t) => (
               <TaskRow key={t.id} task={t} depth={0} />
             ))}
           </section>

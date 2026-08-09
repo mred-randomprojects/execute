@@ -75,6 +75,7 @@ function mergeOwnFields(base: Task, other: Task | undefined): Task {
     completed: newer.completed,
     completedAt: newer.completedAt,
     wontDo: newer.wontDo,
+    waitingOn: newer.waitingOn,
     priority: newer.priority,
     plannedFor: newer.plannedFor,
     horizon: newer.horizon,

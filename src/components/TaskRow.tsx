@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { Task } from "../types";
+import { WAITING_STALE_DAYS } from "../types";
 import { countAll, isOpen } from "../store/tasks";
 import { copyText } from "../ui/clipboard";
 import { relativeLabel } from "../store/dates";
@@ -141,6 +142,41 @@ export function RowInput({ task }: { task: Task }) {
   );
 }
 
+/** Inline "waiting on whom?" field, shown just after `b`. Blank is allowed —
+ *  sometimes all you know is that it isn't yours. */
+export function WaitingInput({ task }: { task: Task }) {
+  const ed = useEditor();
+  const [value, setValue] = useState(task.waitingOn?.who ?? "");
+  const ref = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (el == null) return;
+    el.focus();
+    el.select();
+  }, []);
+
+  return (
+    <input
+      {...NO_SPELLCHECK}
+      ref={ref}
+      value={value}
+      onChange={(e) => setValue(e.target.value)}
+      onBlur={() => ed.commitWaiting(task.id, value)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === "Escape") {
+          e.preventDefault();
+          e.stopPropagation();
+          ed.commitWaiting(task.id, value);
+        }
+      }}
+      placeholder="waiting on whom? (optional — enter to save)"
+      className="min-w-0 flex-1 bg-transparent text-[12px] italic text-ink-soft outline-none placeholder:not-italic placeholder:text-ink-faint"
+      aria-label="Waiting on"
+    />
+  );
+}
+
 /** Inline "why won't you do this?" field, shown just after a fresh skip. */
 export function ReasonInput({ task }: { task: Task }) {
   const ed = useEditor();
@@ -187,6 +223,10 @@ export function TaskRow({ task, depth }: { task: Task; depth: number }) {
   const inSelection = ed.selectedIds.includes(task.id);
   const editing = ed.editingId === task.id;
   const reasonEditing = ed.reasonEditId === task.id;
+  const waitingEditing = ed.waitingEditId === task.id;
+  const waiting = task.waitingOn;
+  const waitingDays =
+    waiting == null ? 0 : Math.floor((Date.now() - waiting.since) / 86_400_000);
   const peeking = ed.peekId === task.id && !editing;
   const isMoving = ed.movingId === task.id;
   const isDropTarget = ed.mode === "move" && isFocused && !isMoving;
@@ -341,7 +381,7 @@ export function TaskRow({ task, depth }: { task: Task; depth: number }) {
                 : "truncate",
               task.completed || wontDo
                 ? "text-ink-faint line-through"
-                : dimNotToday
+                : waiting != null || dimNotToday
                   ? "text-ink-soft"
                   : "text-ink",
               task.text === "" ? "text-ink-faint" : "",
@@ -370,6 +410,31 @@ export function TaskRow({ task, depth }: { task: Task; depth: number }) {
             )}
             {isFocused && <span className="kbd shrink-0">w</span>}
           </span>
+        ) : null}
+
+        {/* Blocked on someone else: dimmed like a resolved row, because it isn't
+            work you can do — but never struck through, because it isn't done. */}
+        {!editing && waitingEditing ? (
+          <WaitingInput task={task} />
+        ) : !editing && waiting != null ? (
+          <button
+            tabIndex={-1}
+            onClick={(e) => {
+              e.stopPropagation();
+              e.currentTarget.blur();
+              ed.clearWaiting(task.id);
+            }}
+            title={`Waiting since ${new Date(waiting.since).toLocaleDateString()} — click to unblock`}
+            className={[
+              "mono flex shrink-0 items-center gap-1 rounded-sm px-1.5 py-[1px] text-[10px] font-medium",
+              waitingDays >= WAITING_STALE_DAYS
+                ? "bg-bad-soft text-bad"
+                : "bg-surface-2 text-ink-soft",
+            ].join(" ")}
+          >
+            waiting{waiting.who != null && waiting.who.trim() !== "" ? `: ${waiting.who}` : ""}
+            {waitingDays >= 1 && <span className="opacity-70">· {waitingDays}d</span>}
+          </button>
         ) : null}
 
         {isCurrent && !editing && (

@@ -33,6 +33,7 @@ import {
   findParentId,
   getAncestorPath,
   indentTask,
+  isOpen,
   indentUnder,
   makeTask,
   mapById,
@@ -166,6 +167,10 @@ function wontDoEq(a: Task["wontDo"], b: Task["wontDo"]): boolean {
   if (a == null || b == null) return a === b;
   return a.reason === b.reason && a.at === b.at;
 }
+function waitingEq(a: Task["waitingOn"], b: Task["waitingOn"]): boolean {
+  if (a == null || b == null) return a === b;
+  return a.who === b.who && a.since === b.since;
+}
 function labelsEq(a: string[], b: string[]): boolean {
   return a.length === b.length && a.every((x, i) => x === b[i]);
 }
@@ -186,6 +191,7 @@ function sameOwnFields(a: Task, b: Task): boolean {
     a.scheduledAt === b.scheduledAt &&
     horizonEq(a.horizon, b.horizon) &&
     wontDoEq(a.wontDo, b.wontDo) &&
+    waitingEq(a.waitingOn, b.waitingOn) &&
     labelsEq(a.labels, b.labels)
   );
 }
@@ -732,8 +738,10 @@ export function toggleComplete(id: TaskId): void {
         ...x,
         completed,
         completedAt: completed ? Date.now() : null,
-        // Completing resolves the task positively — clear any "won't do".
+        // Completing resolves the task positively — clear any "won't do", and
+        // any wait: a finished task isn't blocked on anyone.
         wontDo: completed ? null : x.wontDo,
+        waitingOn: completed ? null : x.waitingOn,
       })),
       log: [makeLog(s, t, completed ? "completed" : "uncompleted", null), ...s.log],
     };
@@ -755,6 +763,7 @@ export function setCompleted(
         completed,
         completedAt: completed ? Date.now() : null,
         wontDo: completed ? null : x.wontDo,
+        waitingOn: completed ? null : x.waitingOn,
       })),
       log: completed ? [makeLog(s, t, "completed", reason), ...s.log] : s.log,
     };
@@ -779,7 +788,8 @@ function patchLatestSkip(log: LogEntry[], taskId: TaskId, reason: string | null)
 
 function applyWontDo(task: Task, reason: string | null): Task {
   const wontDo: WontDo = { reason, at: Date.now() };
-  return { ...task, completed: false, completedAt: null, wontDo };
+  // Declining settles it too, so the wait ends here.
+  return { ...task, completed: false, completedAt: null, wontDo, waitingOn: null };
 }
 
 /** Mark one task "won't do" (clears completion). No-op if already skipped. */
@@ -829,6 +839,39 @@ export function toggleWontDo(id: TaskId, reason: string | null = null): void {
   if (t == null) return;
   if (t.wontDo != null) clearWontDo(id);
   else markWontDo(id, reason);
+}
+
+// ─── Waiting on someone else ────────────────────────────────────────
+//
+// Not a resolution: the task stays open and stays yours eventually. It just
+// steps out of the Reckoning and out of the day's tally while the ball is in
+// someone else's court. Completing or declining clears it, because both settle
+// the task — see {@link WaitingOn} for why this exists at all.
+
+/** Mark a task blocked (optionally on whom). No-op on a resolved task. */
+export function markWaiting(id: TaskId, who: string | null = null): void {
+  update((s) => {
+    const t = findById(s.tasks, id);
+    if (t == null || !isOpen(t)) return s;
+    return {
+      ...s,
+      tasks: mapById(s.tasks, id, (x) => ({
+        ...x,
+        // Re-marking keeps the original `since`: the wait started when it
+        // started, and naming who you're waiting on shouldn't reset the clock.
+        waitingOn: { who, since: x.waitingOn?.since ?? Date.now() },
+      })),
+    };
+  }, `Waiting on ${who == null || who.trim() === "" ? "someone" : quoteText(who)} for ${quote(findById(state.tasks, id))}`);
+}
+
+/** Unblock a task — the ball is back in your court. */
+export function clearWaiting(id: TaskId): void {
+  update((s) => {
+    const t = findById(s.tasks, id);
+    if (t == null || t.waitingOn == null) return s;
+    return { ...s, tasks: mapById(s.tasks, id, (x) => ({ ...x, waitingOn: null })) };
+  }, `No longer waiting on ${quote(findById(state.tasks, id))}`);
 }
 
 /** Set the reason on an already-skipped task, back-filling its log entry. */
@@ -1058,6 +1101,7 @@ export function setCompletedMany(ids: TaskId[], completed: boolean): void {
         completed,
         completedAt: completed ? Date.now() : null,
         wontDo: completed ? null : x.wontDo,
+        waitingOn: completed ? null : x.waitingOn,
       }));
       if (completed) logs.push(makeLog(s, t, "completed", null));
     }

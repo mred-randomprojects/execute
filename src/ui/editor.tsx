@@ -24,6 +24,8 @@ export interface Editor {
   editingId: TaskId | null;
   /** Task whose "won't do" reason is being captured inline (empty field). */
   reasonEditId: TaskId | null;
+  /** Task whose "waiting on whom?" field is open (mirrors reasonEditId). */
+  waitingEditId: TaskId | null;
   /** Task peeked in place (`p`): full unwrapped title + notes under the row. */
   peekId: TaskId | null;
   collapsed: Set<TaskId>;
@@ -61,6 +63,11 @@ export interface Editor {
   togglePeek: (id: TaskId) => void;
   /** Begin editing the "won't do" reason inline (on an already-skipped task). */
   startReason: (id: TaskId) => void;
+  /** Mark blocked and begin naming who you're waiting on, inline. */
+  startWaiting: (id: TaskId) => void;
+  commitWaiting: (id: TaskId, who: string) => void;
+  /** Unblock — the ball is back in your court. */
+  clearWaiting: (id: TaskId) => void;
   openDetail: (id: TaskId) => void;
   zoomInto: (id: TaskId) => void;
 
