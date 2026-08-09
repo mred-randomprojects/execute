@@ -128,6 +128,7 @@ import { minutesFromBlocks } from "./store/estimate";
 import { willPromptOnKeep, willPromptOnPostpone } from "./store/deferral";
 import { presenceSnapshot } from "./store/presence";
 import { currentRun } from "./store/streak";
+import { suggestedCapacityBlocks } from "./store/capacity";
 import { DayStreak } from "./components/DayStreak";
 import {
   emptySelection,
@@ -556,6 +557,12 @@ export function App() {
     if (ready) recordDay(today, tally, dayClosed);
   }, [ready, today, tally, dayClosed]);
   const run = useMemo(() => currentRun(state.days, today), [state.days, today]);
+  // What the last two weeks say a day of yours holds — null until the records
+  // say enough, and null when they already agree with the current setting.
+  const suggestedCapacity = useMemo(
+    () => suggestedCapacityBlocks(state.days, today, state.dailyCapacityBlocks),
+    [state.days, today, state.dailyCapacityBlocks]
+  );
 
   // ── Shutdown (the evening ritual) ─────────────────────────────────
   // Never while the gate is up: you can't close tonight with yesterday still
@@ -2192,6 +2199,18 @@ export function App() {
     { id: "add-to-calendar", label: "Add to calendar…", aliases: ["calendar", "cal", "event", "gcal", "schedule event", "block time"], run: openCalendarPicker },
     { id: "capacity-up", label: `Daily capacity: raise (${state.dailyCapacityBlocks} → ${state.dailyCapacityBlocks + 1} blocks)`, aliases: ["capacity", "budget"], run: () => setDailyCapacityBlocks(state.dailyCapacityBlocks + 1) },
     { id: "capacity-down", label: `Daily capacity: lower (${state.dailyCapacityBlocks} → ${Math.max(1, state.dailyCapacityBlocks - 1)} blocks)`, aliases: ["capacity", "budget"], run: () => setDailyCapacityBlocks(state.dailyCapacityBlocks - 1) },
+    // Offered only when the day records actually say something, and only when
+    // they disagree with the current setting by enough to be worth a change.
+    ...(suggestedCapacity != null
+      ? [
+          {
+            id: "capacity-calibrate",
+            label: `Daily capacity: calibrate to what you actually finish (${state.dailyCapacityBlocks} → ${suggestedCapacity} blocks)`,
+            aliases: ["capacity", "budget", "calibrate", "realistic", "actual"],
+            run: () => setDailyCapacityBlocks(suggestedCapacity),
+          },
+        ]
+      : []),
     // The home view's period tabs, reachable by name. Deliberately AFTER the
     // Schedule commands: typing "next week" must offer scheduling first.
     ...PERIODS.filter((p) => p !== "today").map((p) => ({
@@ -2579,6 +2598,7 @@ export function App() {
                   editingProjectId={editingProjectId}
                   progress={progress}
                   run={run}
+                  capacity={capacity}
                   closingTime={closingTime}
                   onShutdown={cmd.shutOpen}
                   captureRef={captureRef}

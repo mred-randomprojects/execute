@@ -459,7 +459,7 @@ export function markOpened(date: ISODate): void {
  */
 export function recordDay(
   date: ISODate,
-  tally: { committed: number; done: number; skipped: number },
+  tally: { committed: number; done: number; doneMinutes: number; skipped: number },
   closed: boolean
 ): void {
   update((s) => {
@@ -468,6 +468,7 @@ export function recordDay(
       date,
       committed: Math.max(prev?.committed ?? 0, tally.committed),
       done: Math.max(prev?.done ?? 0, tally.done),
+      doneMinutes: Math.max(prev?.doneMinutes ?? 0, tally.doneMinutes),
       skipped: Math.max(prev?.skipped ?? 0, tally.skipped),
       closedAt: prev?.closedAt ?? (closed ? Date.now() : null),
     };
@@ -475,6 +476,7 @@ export function recordDay(
       prev != null &&
       prev.committed === next.committed &&
       prev.done === next.done &&
+      prev.doneMinutes === next.doneMinutes &&
       prev.skipped === next.skipped &&
       prev.closedAt === next.closedAt
     ) {

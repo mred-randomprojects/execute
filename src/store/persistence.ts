@@ -321,6 +321,7 @@ function coerceDays(raw: unknown): DayRecord[] {
       date,
       committed: count(o.committed),
       done: count(o.done),
+      doneMinutes: count(o.doneMinutes),
       skipped: count(o.skipped),
       closedAt: numOrNull(o.closedAt),
     });

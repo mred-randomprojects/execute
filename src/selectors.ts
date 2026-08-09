@@ -396,6 +396,8 @@ export interface DayTally {
   /** Commitments the day carries, including the ones already declined. */
   committed: number;
   done: number;
+  /** Estimated minutes on the finished work — what a day of yours empirically holds. */
+  doneMinutes: number;
   skipped: number;
   /** Still unresolved — what stops the day being closed. */
   open: number;
@@ -404,12 +406,21 @@ export interface DayTally {
 export function todayTally(tasks: Task[], today: ISODate): DayTally {
   const leaves = todayLeaves(tasks, today);
   let done = 0;
+  let doneMinutes = 0;
   let skipped = 0;
   for (const t of leaves) {
-    if (t.completed) done++;
-    else if (t.wontDo != null) skipped++;
+    if (t.completed) {
+      done++;
+      if (t.estimatedMinutes != null && t.estimatedMinutes > 0) doneMinutes += t.estimatedMinutes;
+    } else if (t.wontDo != null) skipped++;
   }
-  return { committed: leaves.length, done, skipped, open: leaves.length - done - skipped };
+  return {
+    committed: leaves.length,
+    done,
+    doneMinutes,
+    skipped,
+    open: leaves.length - done - skipped,
+  };
 }
 
 export interface TodayProgress {

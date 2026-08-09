@@ -12,6 +12,7 @@ import type {
 } from "../types";
 import { projectRowId } from "../types";
 import type {
+  CapacityLoad,
   Crumb,
   LaterGroup,
   Period,
@@ -39,6 +40,7 @@ import { TaskRow } from "../components/TaskRow";
 import { InboxZero } from "../components/InboxZero";
 import type { Run } from "../store/streak";
 import { Donut } from "../components/Donut";
+import { formatMinutes } from "../store/estimate";
 import { NO_SPELLCHECK } from "../ui/noSpellcheck";
 
 const TITLES = VIEW_TITLES;
@@ -650,6 +652,7 @@ export function OutlineView({
   editingProjectId,
   progress,
   run,
+  capacity,
   closingTime,
   onShutdown,
   captureRef,
@@ -694,6 +697,8 @@ export function OutlineView({
   progress: TodayProgress;
   /** The closing streak, so reaching zero can name the run it just extended. */
   run: Run;
+  /** Today's committed load against the daily budget — drives the over-commit strip. */
+  capacity: CapacityLoad;
   /** Past the evening hour with work still open — offer the shutdown ritual. */
   closingTime: boolean;
   onShutdown: () => void;
@@ -795,6 +800,26 @@ export function OutlineView({
       {zoom == null && view === "today" && period === "today" && progress.total > 0 && progress.remaining === 0 && (
         <div className="mb-4">
           <InboxZero total={progress.total} run={run} />
+        </div>
+      )}
+
+      {/* Over-commitment, said at the moment it happens rather than discovered
+          by the gate tomorrow morning. The Reckoning is the symptom; planning
+          more than a day holds is the cause, and this is where the cause is. */}
+      {zoom == null && view === "today" && period === "today" && capacity.overBlocks > 0 && (
+        <div className="mb-4 flex items-center justify-between gap-3 rounded border border-bad/40 bg-bad-soft px-4 py-2.5">
+          <span className="text-[13px] text-ink">
+            <span className="font-medium">
+              {capacity.usedBlocks} of {capacity.capacityBlocks} blocks committed.
+            </span>{" "}
+            <span className="text-ink-soft">
+              That's about {formatMinutes(capacity.usedMinutes)} of work — something
+              here isn't going to happen.
+            </span>
+          </span>
+          <span className="mono shrink-0 text-[11px] text-bad">
+            over by {capacity.overBlocks}
+          </span>
         </div>
       )}
 

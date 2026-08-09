@@ -102,6 +102,41 @@ describe("App integration", () => {
   });
 });
 
+describe("Over-commitment", () => {
+  /** `e` → the estimate picker → N blocks, on whatever the cursor is on. */
+  async function estimateCursor(blocks: number) {
+    fireEvent.keyDown(document.body, { key: "e" });
+    const dialog = await screen.findByRole("dialog", { name: "Estimate" });
+    fireEvent.keyDown(dialog, { key: String(blocks) });
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog", { name: "Estimate" })).toBeNull()
+    );
+  }
+
+  it("says so while you're committing, not the next morning", async () => {
+    render(<App />);
+    await addTask("a big one");
+    await addTask("another big one");
+    blurActive();
+
+    await estimateCursor(8);
+    fireEvent.keyDown(document.body, { key: "k" }); // up to the first task
+    await estimateCursor(8); // 16 blocks against a 12-block day
+
+    expect(await screen.findByText(/16 of 12 blocks committed/)).toBeTruthy();
+    expect(screen.getByText(/isn't going to happen/)).toBeTruthy();
+  });
+
+  it("stays quiet while the day still fits", async () => {
+    render(<App />);
+    await addTask("a small one");
+    blurActive();
+    await estimateCursor(3);
+
+    expect(screen.queryByText(/blocks committed/)).toBeNull();
+  });
+});
+
 describe("The evening shutdown", () => {
   const openShutdown = () => {
     blurActive();

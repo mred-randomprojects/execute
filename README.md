@@ -66,6 +66,19 @@ In **the Reckoning** and at completion you can attach an optional **reason**;
 these are recorded in an event log (and shown in a task's History panel) so the
 data can later be analysed.
 
+## Capacity you didn't have to guess
+
+Over-commitment is the *cause*; the Reckoning is only the symptom — so the app
+says something at the moment you commit, not the next morning. Push Today past
+your daily budget and a strip appears: **"16 of 12 blocks committed — something
+here isn't going to happen."**
+
+The budget itself stops being a number you typed. Day records track the
+estimated minutes you actually finish, and `⌘k` → "calibrate" offers the median
+of your last two weeks. It stays silent until there are at least three usable
+days, and silent when your setting is already about right — an app that always
+has a correction for you gets tuned out.
+
 ## Shutdown — decide tonight, not tomorrow morning
 
 Press **`q`** when you stop working. Shutdown walks today's still-open

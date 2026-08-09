@@ -199,6 +199,12 @@ export interface DayRecord {
   /** Commitments the day carried — today-leaves, including won't-do ones. */
   committed: number;
   done: number;
+  /**
+   * Estimated minutes on the work actually finished that day. The empirical
+   * answer to "how much fits in a day" — the number `dailyCapacityBlocks` is
+   * supposed to be, but which has only ever been *declared*.
+   */
+  doneMinutes: number;
   /** Consciously declined ("won't do") — a resolution, not a failure. */
   skipped: number;
   /**
@@ -356,7 +362,7 @@ export interface AppState {
   days: DayRecord[];
 }
 
-export const SCHEMA_VERSION = 14;
+export const SCHEMA_VERSION = 15;
 export const DEFAULT_PROJECT_ID = "project-inbox" as ProjectId;
 export const PROJECT_ROW_PREFIX = "project:";
 

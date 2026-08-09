@@ -132,6 +132,7 @@ function mergeDays(a: DayRecord[], b: DayRecord[]): DayRecord[] {
             date: d.date,
             committed: Math.max(prev.committed, d.committed),
             done: Math.max(prev.done, d.done),
+            doneMinutes: Math.max(prev.doneMinutes, d.doneMinutes),
             skipped: Math.max(prev.skipped, d.skipped),
             closedAt:
               prev.closedAt == null

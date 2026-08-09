@@ -17,6 +17,7 @@ const closed = (date: ISODate, done = 2): DayRecord => ({
   date,
   committed: done,
   done,
+  doneMinutes: done * 20,
   skipped: 0,
   closedAt: 1,
 });
@@ -25,6 +26,7 @@ const missed = (date: ISODate): DayRecord => ({
   date,
   committed: 3,
   done: 1,
+  doneMinutes: 20,
   skipped: 0,
   closedAt: null,
 });
@@ -33,6 +35,7 @@ const empty = (date: ISODate): DayRecord => ({
   date,
   committed: 0,
   done: 0,
+  doneMinutes: 0,
   skipped: 0,
   closedAt: null,
 });
@@ -46,7 +49,7 @@ describe("dayStatus", () => {
     // Consciously deciding not to do something IS an outcome. The whole point of
     // the metric is that a mindful "no" beats a silent overrun.
     expect(
-      dayStatus({ date: TODAY, committed: 3, done: 0, skipped: 3, closedAt: 5 })
+      dayStatus({ date: TODAY, committed: 3, done: 0, doneMinutes: 0, skipped: 3, closedAt: 5 })
     ).toBe("closed");
   });
 
