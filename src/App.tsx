@@ -85,7 +85,15 @@ import {
   type PostponeTarget,
 } from "./store/store";
 import { findById, findParentId, isOpen, walk } from "./store/tasks";
-import { addDays, monthKey, monthKeyOffset, todayISO, weekKey, weekKeyOffset } from "./store/dates";
+import {
+  addDays,
+  daysBetween,
+  monthKey,
+  monthKeyOffset,
+  todayISO,
+  weekKey,
+  weekKeyOffset,
+} from "./store/dates";
 import { defaultRule } from "./store/recurrence";
 import { parseCapture } from "./store/capture";
 import { taskToMarkdown, sectionsToMarkdown, type MarkdownSection } from "./store/taskMarkdown";
@@ -170,6 +178,15 @@ import { gcalTemplateUrl } from "./store/calendar";
 import { ConfirmModal, type ConfirmRequest } from "./components/ConfirmModal";
 
 const THEMES: ThemeName[] = ["slate", "ivory", "carbon", "bordeaux"];
+
+/**
+ * When the Reckoning offers an amnesty instead of just a wall: a pile this big,
+ * or this many days unopened. Either alone is enough — ten overdue tasks is
+ * daunting whether you earned them by being away or by over-committing while
+ * you were here.
+ */
+const CATCH_UP_PILE = 10;
+const CATCH_UP_DAYS = 3;
 
 interface OutlineProjectRow {
   kind: "project";
@@ -298,8 +315,16 @@ export function App() {
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", state.theme);
   }, [state.theme]);
+  // How long the app went unopened. Captured *before* markOpened overwrites the
+  // stamp, and deliberately not depending on `lastOpenedDate` — this must read
+  // the pre-mark value exactly once per day change, or it would always see zero.
+  const [daysAway, setDaysAway] = useState(0);
   useEffect(() => {
-    if (ready) markOpened(today);
+    if (!ready) return;
+    const last = state.lastOpenedDate;
+    setDaysAway(last == null || last >= today ? 0 : daysBetween(last, today) - 1);
+    markOpened(today);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, today]);
 
   // ── Reckoning (the hard gate) ─────────────────────────────────────
@@ -316,6 +341,35 @@ export function App() {
   const breakdownTask =
     breakingDownId != null ? findById(state.tasks, breakingDownId) ?? null : null;
   const leftoverKey = leftovers.map((t) => t.id).join(",");
+
+  // ── Coming back to a wall ─────────────────────────────────────────
+  // The gate exists to stop work carrying forward *silently*, not to punish
+  // absence — but after a week away that's exactly what it does, with twenty
+  // overdue commitments standing between you and starting, at the moment
+  // motivation is lowest. That's where people quit, and a strict app you've
+  // stopped opening enforces nothing at all. So past either threshold there's a
+  // door: one recorded decision that clears the pile into the Inbox.
+  const lapseOffered = leftovers.length >= CATCH_UP_PILE || daysAway >= CATCH_UP_DAYS;
+  const catchUp = () => {
+    const ids = leftovers.map((t) => t.id);
+    if (ids.length === 0) return;
+    setConfirm({
+      title: `Move ${ids.length} overdue task${ids.length === 1 ? "" : "s"} to the Inbox?`,
+      body: "Each keeps its history and its postpone count — that's the difference between an amnesty and a leak. Today starts clean, and ⌘Z undoes this.",
+      confirmLabel: "Move them",
+      cancelLabel: "One at a time",
+      tone: "neutral",
+      enterAction: "cancel",
+      onConfirm: () => {
+        setReckCursorId(null);
+        postponeManyTo(
+          ids,
+          { plannedFor: null, horizon: null },
+          daysAway > 0 ? `catching up after ${daysAway} days away` : "catching up"
+        );
+      },
+    });
+  };
 
   // ── Planning board (the reckoning's opt-in board skin) ────────────
   const capacity = useMemo(
@@ -2445,6 +2499,7 @@ export function App() {
                   onSetEstimate={boardSetEstimate}
                   onCapacityDelta={(d) => setDailyCapacityBlocks(state.dailyCapacityBlocks + d)}
                   onSwitchToCards={() => setBoardPreferred(false)}
+                  lapse={lapseOffered ? { daysAway, onCatchUp: catchUp } : null}
                   captureRef={captureRef}
                   onCapture={onReckCapture}
                   onCaptureArrowDown={() => {
@@ -2478,6 +2533,7 @@ export function App() {
                   setBreakingDownId(null);
                 }}
                 onSwitchToBoard={() => setBoardPreferred(true)}
+                lapse={lapseOffered ? { daysAway, onCatchUp: catchUp } : null}
                 captureRef={captureRef}
                 onCapture={onReckCapture}
                 onCaptureArrowDown={() => {

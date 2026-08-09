@@ -6,6 +6,7 @@ import { relativeLabel } from "../store/dates";
 import { ActionChip } from "../components/ActionChip";
 import { BreakdownPanel } from "../components/BreakdownPanel";
 import { CaptureBar } from "../components/CaptureBar";
+import { CatchUpBand } from "../components/CatchUpBand";
 import { DeferralBadges } from "../components/DeferralBadges";
 import { NO_SPELLCHECK } from "../ui/noSpellcheck";
 
@@ -75,6 +76,7 @@ export function ReckoningView({
   onAddStep,
   onFinishBreakdown,
   onSwitchToBoard,
+  lapse,
   captureRef,
   onCapture,
   onCaptureArrowDown,
@@ -99,6 +101,8 @@ export function ReckoningView({
   onAddStep: (parentId: TaskId, text: string) => void;
   onFinishBreakdown: () => void;
   onSwitchToBoard: () => void;
+  /** Non-null when the pile is big enough to offer an amnesty. */
+  lapse: { daysAway: number; onCatchUp: () => void } | null;
   captureRef: RefObject<HTMLInputElement>;
   onCapture: (raw: string) => void;
   onCaptureArrowDown: () => void;
@@ -202,6 +206,14 @@ export function ReckoningView({
           onArrowDown={onCaptureArrowDown}
         />
       </div>
+
+      {lapse != null && (
+        <CatchUpBand
+          count={totalLeftovers}
+          daysAway={lapse.daysAway}
+          onCatchUp={lapse.onCatchUp}
+        />
+      )}
 
       <header className="mb-6 flex items-start justify-between gap-4 border-b border-line pb-5">
         <div>

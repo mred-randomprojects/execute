@@ -66,6 +66,19 @@ In **the Reckoning** and at completion you can attach an optional **reason**;
 these are recorded in an event log (and shown in a task's History panel) so the
 data can later be analysed.
 
+## Coming back after a while
+
+The gate exists to stop work carrying forward *silently* — not to punish
+absence. But after a week away that's exactly what it does: twenty overdue
+commitments standing between you and starting, at the moment your motivation is
+lowest. That's where people quit, and a strict app you've stopped opening
+enforces nothing at all.
+
+So past ten overdue tasks (or three days unopened) the Reckoning offers a door:
+**Start clean** moves the pile to the Inbox. It's still a decision, still
+confirmed, still recorded — and every task keeps its `postponed N×`. That's the
+difference between an amnesty and a leak.
+
 ## Capacity you didn't have to guess
 
 Over-commitment is the *cause*; the Reckoning is only the symptom — so the app

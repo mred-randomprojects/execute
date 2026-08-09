@@ -102,6 +102,47 @@ describe("App integration", () => {
   });
 });
 
+describe("Coming back to a wall", () => {
+  async function seedOverdue(n: number) {
+    render(<App />);
+    for (let i = 0; i < n; i++) await addTask(`overdue ${i}`);
+    act(() => setDevDateOverride(addDays(todayISO(null), 1)));
+    await screen.findByText("Unfinished from before today");
+  }
+
+  it("offers no amnesty for a pile you can just work through", async () => {
+    await seedOverdue(2);
+    expect(screen.queryByLabelText("Move them all to the Inbox")).toBeNull();
+  });
+
+  it("offers a way out once the pile is a wall", async () => {
+    await seedOverdue(10);
+    expect(screen.getByText(/10 commitments went past/)).toBeTruthy();
+
+    fireEvent.click(screen.getByLabelText("Move them all to the Inbox"));
+    // Bulk and irreversible-feeling, so it asks — and defaults to *not* doing it.
+    expect(await screen.findByText("Move 10 overdue tasks to the Inbox?")).toBeTruthy();
+    fireEvent.click(screen.getByText("Move them"));
+
+    await waitFor(() =>
+      expect(screen.queryByText("Unfinished from before today")).toBeNull()
+    );
+  });
+
+  it("keeps every task's history — an amnesty, not a leak", async () => {
+    await seedOverdue(10);
+    fireEvent.click(screen.getByLabelText("Move them all to the Inbox"));
+    fireEvent.click(await screen.findByText("Move them"));
+    await waitFor(() =>
+      expect(screen.queryByText("Unfinished from before today")).toBeNull()
+    );
+
+    // They're in the Inbox, not gone, and the deferral is on the record.
+    fireEvent.keyDown(document.body, { key: "2" });
+    expect(await screen.findByText("overdue 0")).toBeTruthy();
+  });
+});
+
 describe("Over-commitment", () => {
   /** `e` → the estimate picker → N blocks, on whatever the cursor is on. */
   async function estimateCursor(blocks: number) {

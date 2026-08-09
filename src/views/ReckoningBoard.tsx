@@ -8,6 +8,7 @@ import { blocksFromMinutes, formatMinutes, MAX_ESTIMATE_BLOCKS } from "../store/
 import { ActionChip } from "../components/ActionChip";
 import { BlockPips } from "../components/BlockPips";
 import { CaptureBar } from "../components/CaptureBar";
+import { CatchUpBand } from "../components/CatchUpBand";
 import { DeferralBadges } from "../components/DeferralBadges";
 import { renderBlock } from "../ui/markdown";
 
@@ -199,6 +200,7 @@ export function ReckoningBoard({
   onSetEstimate,
   onCapacityDelta,
   onSwitchToCards,
+  lapse,
   captureRef,
   onCapture,
   onCaptureArrowDown,
@@ -222,6 +224,8 @@ export function ReckoningBoard({
   onSetEstimate: (id: TaskId, blocks: number) => void;
   onCapacityDelta: (delta: number) => void;
   onSwitchToCards: () => void;
+  /** Non-null when the pile is big enough to offer an amnesty. */
+  lapse: { daysAway: number; onCatchUp: () => void } | null;
   captureRef: RefObject<HTMLInputElement>;
   onCapture: (raw: string) => void;
   onCaptureArrowDown: () => void;
@@ -264,6 +268,10 @@ export function ReckoningBoard({
           onArrowDown={onCaptureArrowDown}
         />
       </div>
+
+      {lapse != null && (
+        <CatchUpBand count={totalLeft} daysAway={lapse.daysAway} onCatchUp={lapse.onCatchUp} />
+      )}
 
       <header className="mb-5 flex items-end justify-between border-b border-line pb-4">
         <div>
