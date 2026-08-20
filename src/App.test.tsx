@@ -2,8 +2,15 @@ import { describe, it, expect, afterEach, beforeEach, vi } from "vitest";
 import { act } from "react";
 import { render, screen, fireEvent, cleanup, waitFor, within } from "@testing-library/react";
 import { App } from "./App";
-import { createProject, initStore, setDevDateOverride } from "./store/store";
-import { addDays, todayISO } from "./store/dates";
+import {
+  addChild,
+  addTaskAfter,
+  createProject,
+  initStore,
+  setDevDateOverride,
+  setHorizonMany,
+} from "./store/store";
+import { addDays, monthKeyOffset, todayISO, weekKey } from "./store/dates";
 
 afterEach(() => {
   cleanup();
@@ -1121,6 +1128,103 @@ describe("Reorder", () => {
       ).toBeTruthy();
     });
     expect(screen.queryByText("mid")).toBeNull();
+  });
+
+  /** True when `a` is rendered before `b`. */
+  function precedes(a: string, b: string): boolean {
+    return Boolean(
+      screen.getByText(a).compareDocumentPosition(screen.getByText(b)) &
+        Node.DOCUMENT_POSITION_FOLLOWING
+    );
+  }
+
+  it("⌥↓ clears a whole run of suggested-band siblings in one press", async () => {
+    // The reported bug. A parent with four children: two planned for today (in
+    // the outline) and two on soft horizons, which Today re-lists at the foot
+    // under "Suggested for today". All four are on screen, so every one of them
+    // counted as a neighbour — and the two presses that swapped into a suggestion
+    // moved the tree without moving anything visible. ⌥↓ looked broken until the
+    // third press. A month anchor in the past always suggests today.
+    render(<App />);
+    await screen.findByPlaceholderText("Add a task for today…");
+    const today = todayISO(null);
+    act(() => {
+      const parent = addTaskAfter(null, "parent", null);
+      addChild(parent, "kid-one", today);
+      const soft1 = addChild(parent, "soft-one", null);
+      const soft2 = addChild(parent, "soft-two", null);
+      addChild(parent, "kid-two", today);
+      setHorizonMany([soft1, soft2], { unit: "month", anchor: "2020-01" });
+    });
+    await screen.findByText("kid-one");
+    // Both soft children render — in the band, below the outline.
+    expect(precedes("kid-two", "soft-one")).toBe(true);
+    blurActive();
+
+    // Rows top to bottom: the Inbox header, parent, kid-one, kid-two, the band.
+    fireEvent.keyDown(document.body, { key: "ArrowUp", metaKey: true }); // → Inbox header
+    fireEvent.keyDown(document.body, { key: "ArrowDown" }); // parent
+    fireEvent.keyDown(document.body, { key: "ArrowDown" }); // kid-one
+    fireEvent.keyDown(document.body, { key: "ArrowDown", altKey: true });
+
+    await waitFor(() => expect(precedes("kid-two", "kid-one")).toBe(true));
+    // …and back, in one press too.
+    fireEvent.keyDown(document.body, { key: "ArrowUp", altKey: true });
+    await waitFor(() => expect(precedes("kid-one", "kid-two")).toBe(true));
+  });
+
+  it("⌥↓ on a suggested-band row moves nothing, rather than shuffling the tree", async () => {
+    // The band is a derived list of soft picks, not an order anyone curated —
+    // and a "move" there lands on the task's real siblings, out of sight. The
+    // honest answer is to do nothing.
+    render(<App />);
+    await screen.findByPlaceholderText("Add a task for today…");
+    const today = todayISO(null);
+    act(() => {
+      const parent = addTaskAfter(null, "parent", null);
+      addChild(parent, "kid-one", today);
+      const soft1 = addChild(parent, "soft-one", null);
+      const soft2 = addChild(parent, "soft-two", null);
+      setHorizonMany([soft1, soft2], { unit: "month", anchor: "2020-01" });
+    });
+    await screen.findByText("soft-one");
+    blurActive();
+
+    // Rows: the Inbox header, parent, kid-one, then soft-one / soft-two in the band.
+    fireEvent.keyDown(document.body, { key: "ArrowUp", metaKey: true }); // → Inbox header
+    for (let i = 0; i < 3; i++) fireEvent.keyDown(document.body, { key: "ArrowDown" });
+    fireEvent.keyDown(document.body, { key: "ArrowDown", altKey: true });
+
+    await waitFor(() => expect(precedes("soft-one", "soft-two")).toBe(true));
+    expect(precedes("kid-one", "soft-one")).toBe(true);
+  });
+
+  it("⌥↓ in Later's by-date layout moves inside the bucket, not past it", async () => {
+    // Same failure, different cause: Later groups roots by horizon, so a task's
+    // raw next sibling is often rendered in another bucket entirely. Swapping
+    // into it changed nothing on screen.
+    render(<App />);
+    await screen.findByPlaceholderText("Add a task for today…");
+    const today = todayISO(null);
+    act(() => {
+      const a = addTaskAfter(null, "week-one", null);
+      const b = addTaskAfter(a, "month-later", null);
+      const c = addTaskAfter(b, "week-two", null);
+      setHorizonMany([a, c], { unit: "week", anchor: weekKey(today) });
+      setHorizonMany([b], { unit: "month", anchor: monthKeyOffset(today, 1) });
+    });
+    blurActive();
+    fireEvent.keyDown(document.body, { key: "2" }); // → Later, by date
+    await screen.findByText("week-one");
+    // The two week tasks share a bucket; the month one renders below, in its own.
+    expect(precedes("week-two", "month-later")).toBe(true);
+
+    fireEvent.keyDown(document.body, { key: "ArrowUp", metaKey: true }); // → week-one
+    fireEvent.keyDown(document.body, { key: "ArrowDown", altKey: true });
+
+    await waitFor(() => expect(precedes("week-two", "week-one")).toBe(true));
+    // The other bucket stayed put.
+    expect(precedes("week-one", "month-later")).toBe(true);
   });
 });
 

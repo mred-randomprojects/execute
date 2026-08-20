@@ -1036,15 +1036,25 @@ export function emptyTrash(): void {
   update((s) => ({ ...s, trash: [] }), `Empty the trash (${state.trash.length})`);
 }
 
-export function reorder(selectedIds: TaskId[], dir: "up" | "down"): void {
+// Both reorders take `visible`: the task ids rendered in the *same section* as
+// the cursor, so a move hops over filtered-out siblings (and over anything the
+// view re-listed elsewhere) instead of silently swapping past them. This one
+// stays inside the tree — it never moves a task between projects — which is what
+// the views that re-sort their groups (Later's buckets, the multi-day day
+// headings) want: their sections stop short of the project divider.
+export function reorder(
+  selectedIds: TaskId[],
+  dir: "up" | "down",
+  visible?: Set<TaskId>
+): void {
   updateTasks(
-    (tasks) => reorderSelected(tasks, new Set(selectedIds), dir),
+    (tasks) => reorderSelected(tasks, new Set(selectedIds), dir, visible),
     `Move ${subject(selectedIds)} ${dir}`,
   );
 }
 
-// `visible` is the set of task ids the current view actually shows, so a reorder
-// hops over filtered-out siblings instead of silently swapping past them.
+// …and this one lets a root task at a group's edge cross the divider into the
+// neighbouring project, which is only meaningful in the plain outline.
 export function reorderAcrossProjects(
   selectedIds: TaskId[],
   dir: "up" | "down",

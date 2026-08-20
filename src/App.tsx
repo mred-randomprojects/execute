@@ -49,6 +49,7 @@ import {
   recordDay,
   removeRecurrenceNode,
   renameProject,
+  reorder,
   reorderAcrossProjects,
   resetCommandRanking,
   restoreFromTrash,
@@ -206,6 +207,25 @@ interface OutlineTaskRow {
   kind: "task";
   id: OutlineId;
   taskId: TaskId;
+  /**
+   * Which *render section* the row sits in — a project group, one day inside a
+   * multi-day tab, one bucket of Later's by-date layout, the zoom subtree. The
+   * point of the key: inside a single section the rendered order IS the tree
+   * order, so a reorder can bubble a task through it and have the screen agree.
+   *
+   * `null` marks rows that belong to no order at all: the passive bands that
+   * trail the outline ("Suggested for today", waiting-on, today's recurrences)
+   * and the Recurring view's templates. They're focusable, but their tasks were
+   * filtered *out* of their group and re-listed at the foot of the view.
+   *
+   * Reorder has to know the difference. A task in a band is still a sibling in
+   * the *tree*, so counting it as a neighbour makes ⌥↑/↓ swap into it — a move
+   * that changes the data and nothing on screen. Two horizon children sitting
+   * between two of today's, and the shortcut reads as broken until the third
+   * press finally clears the run. Same for tasks rendered in another bucket or
+   * under another day heading.
+   */
+  section: string | null;
 }
 
 type OutlineRow = OutlineProjectRow | OutlineTaskRow;
@@ -531,13 +551,16 @@ export function App() {
     [view, period, zoom, state.recurrences, state.tasks, today]
   );
   const outlineRows = useMemo<OutlineRow[]>(() => {
-    if (zoomFocus != null) {
-      return flattenRows(zoomFocus.subtree, collapsed).map((row) => ({
+    /** Flatten one render section's tasks into rows, all stamped with its key. */
+    const sectionRows = (tasks: Task[], section: string | null): OutlineTaskRow[] =>
+      flattenRows(tasks, collapsed).map((row) => ({
         kind: "task" as const,
         id: row.task.id,
         taskId: row.task.id,
+        section,
       }));
-    }
+
+    if (zoomFocus != null) return sectionRows(zoomFocus.subtree, "zoom");
     if (view === "projects") {
       // The index navigates over project rows only — no task rows.
       return state.projects.map((project) => ({
@@ -547,67 +570,88 @@ export function App() {
       }));
     }
     if (view === "recurring") {
-      // Navigate over the recurrence templates (roots + their steps).
+      // Navigate over the recurrence templates (roots + their steps). These
+      // aren't tasks in the tree, so there is no order for ⌥↑/↓ to move in.
       return recurrenceGroups.flatMap((group) =>
-        group.recurrences.flatMap((rec) =>
-          flattenRows([rec.template], collapsed).map((row) => ({
-            kind: "task" as const,
-            id: row.task.id,
-            taskId: row.task.id,
-          }))
-        )
+        group.recurrences.flatMap((rec) => sectionRows([rec.template], null))
       );
     }
     if (usingBuckets) {
       // By-date "Later": bucket headers aren't focusable; navigate the tasks.
+      // Each bucket is its own section — a task's raw neighbour often sits in a
+      // different bucket entirely, and swapping into it moves nothing on screen.
       return bucketGroups.flatMap((group) =>
-        flattenRows(group.tasks, collapsed).map((row) => ({
-          kind: "task" as const,
-          id: row.task.id,
-          taskId: row.task.id,
-        }))
+        sectionRows(group.tasks, `bucket:${group.meta.id}`)
       );
     }
-    const rows = displayGroups.flatMap((group) => [
-      {
-        kind: "project" as const,
-        id: projectRowId(group.project.id),
-        projectId: group.project.id,
-      },
-      ...(collapsedProjects.has(group.project.id)
-        ? []
-        : flattenRows(group.tasks, collapsed).map((row) => ({
-            kind: "task" as const,
-            id: row.task.id,
-            taskId: row.task.id,
-          }))),
-    ]);
-    // Suggested-for-today rows trail the project groups, matching their render order.
+    const rows: OutlineRow[] = displayGroups.flatMap((group) => {
+      const key = `project:${group.project.id}`;
+      // Multi-day tabs re-sort a group under day headings, so each day is its
+      // own section; a single-day tab renders the group in tree order as-is.
+      const parts =
+        group.sections != null
+          ? group.sections.map((s) => ({ key: `${key}:${s.day ?? "anytime"}`, tasks: s.tasks }))
+          : [{ key, tasks: group.tasks }];
+      return [
+        {
+          kind: "project" as const,
+          id: projectRowId(group.project.id),
+          projectId: group.project.id,
+        },
+        ...(collapsedProjects.has(group.project.id)
+          ? []
+          : parts.flatMap((part) => sectionRows(part.tasks, part.key))),
+      ];
+    });
+    // Suggested-for-today rows trail the project groups, matching their render
+    // order. Sectionless from here down: focusable, but in no sibling order.
     for (const t of suggestedTasks) {
-      rows.push({ kind: "task" as const, id: t.id, taskId: t.id });
+      rows.push({ kind: "task" as const, id: t.id, taskId: t.id, section: null });
     }
     // …then the blocked ones, again matching render order.
     for (const t of waitingTasks) {
-      rows.push({ kind: "task" as const, id: t.id, taskId: t.id });
+      rows.push({ kind: "task" as const, id: t.id, taskId: t.id, section: null });
     }
     // Recurring-today suggestions trail those, again matching render order. Only
     // the template root is focusable (its steps render as a static preview).
     for (const rec of recurringToday) {
-      rows.push({ kind: "task" as const, id: rec.template.id, taskId: rec.template.id });
+      const id = rec.template.id;
+      rows.push({ kind: "task" as const, id, taskId: id, section: null });
     }
     return rows;
   }, [zoomFocus, view, state.projects, displayGroups, usingBuckets, bucketGroups, collapsed, collapsedProjects, suggestedTasks, waitingTasks, recurrenceGroups, recurringToday]);
   const flatIds = useMemo(() => outlineRows.map((r) => r.id), [outlineRows]);
   const flatKey = flatIds.join(",");
-  // The task ids the view actually renders — so structural edits (reorder) act on
-  // visible siblings and skip filtered-out ones.
-  const visibleTaskIds = useMemo(
-    () =>
-      new Set(
-        outlineRows.flatMap((r) => (r.kind === "task" ? [r.taskId] : []))
-      ),
-    [outlineRows]
-  );
+  /**
+   * The neighbourhood a keyboard reorder may move `anchorId` through: every task
+   * rendered in the same section as it (see `section` on OutlineTaskRow), which
+   * is exactly the run of rows whose on-screen order matches their tree order.
+   * Empty when the cursor is on a sectionless row — a suggestion, a blocked
+   * task, a recurrence template — where there is no order to move in and the
+   * only honest answer is to do nothing.
+   *
+   * Reorder passes this as its `visible` set, so filtered-out siblings stay
+   * pinned and ⌥↑/↓ always lands one *visible* slot away.
+   */
+  const reorderScopeFor = (anchorId: TaskId | null): Set<TaskId> => {
+    const anchor =
+      anchorId == null
+        ? undefined
+        : outlineRows.find(
+            (r): r is OutlineTaskRow => r.kind === "task" && r.taskId === anchorId
+          );
+    if (anchor?.section == null) return new Set();
+    return new Set(
+      outlineRows.flatMap((r) =>
+        r.kind === "task" && r.section === anchor.section ? [r.taskId] : []
+      )
+    );
+  };
+  // Crossing the divider into the neighbouring project is only meaningful where
+  // the outline *is* the project groups, top to bottom. Zoom shows one subtree,
+  // Later's buckets and the multi-day day headings re-sort the groups into runs
+  // that stop short of them — in those, ⌥↑/↓ stays inside the section.
+  const reorderCrossesProjects = zoomFocus == null && !usingBuckets && !multiDayPeriod;
 
   const progress = useMemo(() => todayProgress(state.tasks, today), [state.tasks, today]);
   const backlog = useMemo(() => backlogCount(state.tasks), [state.tasks]);
@@ -976,6 +1020,16 @@ export function App() {
         ? [focusedTaskId]
         : [];
 
+  /** ⌥↑/⌥↓ — move the selection one *rendered* slot within the cursor's section. */
+  const applyReorder = (dir: "up" | "down") => {
+    const targets = actionTargets();
+    const scope = reorderScopeFor(focusedTaskId ?? targets[0] ?? null);
+    if (targets.length === 0 || scope.size === 0) return;
+    if (reorderCrossesProjects) reorderAcrossProjects(targets, dir, scope);
+    else reorder(targets, dir, scope);
+    bumpScroll();
+  };
+
   // ── Scheduling (the `s` picker + the detail panel's chips) ────────
   /** A picker choice as the two mutually-exclusive fields it actually sets. */
   const scheduleFieldsFor = (choice: ScheduleChoice): PostponeTarget => {
@@ -1245,14 +1299,8 @@ export function App() {
     },
     selectDown: () => setSelection((s) => moveSelection(s, flatIds, "down", true)),
     selectUp: () => setSelection((s) => moveSelection(s, flatIds, "up", true)),
-    reorderUp: () => {
-      reorderAcrossProjects(actionTargets(), "up", visibleTaskIds);
-      bumpScroll();
-    },
-    reorderDown: () => {
-      reorderAcrossProjects(actionTargets(), "down", visibleTaskIds);
-      bumpScroll();
-    },
+    reorderUp: () => applyReorder("up"),
+    reorderDown: () => applyReorder("down"),
     // → expands a collapsed project/task first (outliner convention), then
     // descends; only opens the details panel when there's nothing to expand.
     panelOpen: () => {

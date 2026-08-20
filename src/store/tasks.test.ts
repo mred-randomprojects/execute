@@ -291,6 +291,52 @@ describe("reorder skips filtered-out siblings (view-aware)", () => {
     expect(next.map((t) => t.id)).toEqual(["c", "hidden", "a"]);
   });
 
+  it("clears a whole run of hidden siblings in one move, not one press each", () => {
+    // The reported bug: two children the view filtered out (they render in the
+    // "Suggested for today" band instead) sat between two of today's. Each ⌥↓
+    // swapped into one of them — a move with no visible effect — so the shortcut
+    // looked dead until the third press. One press must land one visible slot on.
+    const tree = [task("c1"), task("c2"), task("c3"), task("c4")];
+    expect(shape(reorderSelected(tree, sel("c1"), "down", vis("c1", "c4")))).toBe("c4,c2,c3,c1");
+    // …and symmetrically on the way back up.
+    const moved = [task("c4"), task("c2"), task("c3"), task("c1")];
+    expect(shape(reorderSelected(moved, sel("c1"), "up", vis("c4", "c1")))).toBe("c1,c2,c3,c4");
+  });
+
+  it("hops the run at a nested level too (the children of one parent)", () => {
+    const tree = [task("p", [task("c1"), task("c2"), task("c3"), task("c4")]), task("q")];
+    const next = reorderSelected(tree, sel("c1"), "down", vis("p", "c1", "c4", "q"));
+    expect(shape(next)).toBe("p[c4,c2,c3,c1],q");
+  });
+
+  it("leaves the tree alone when the selected task itself isn't in the order", () => {
+    // The cursor is on a row the outline re-listed elsewhere (a suggestion, a
+    // blocked task). There is no order to move it in, so nothing may move —
+    // silently reshuffling the tree is exactly the failure being fixed.
+    const tree = [task("a"), task("aside"), task("c")];
+    expect(shape(reorderSelected(tree, sel("aside"), "down", vis("a", "c")))).toBe("a,aside,c");
+    expect(shape(reorderSelected(tree, sel("aside"), "up", vis("a", "c")))).toBe("a,aside,c");
+  });
+
+  it("reorderSelectedAcrossProjects clears a hidden run in one move as well", () => {
+    const tree = [
+      task("a", [], { projectId: projectId("work") }),
+      task("h1", [], { projectId: projectId("work") }),
+      task("h2", [], { projectId: projectId("work") }),
+      task("d", [], { projectId: projectId("work") }),
+    ];
+    const next = reorderSelectedAcrossProjects(tree, sel("a"), "down", projects, vis("a", "d"));
+    expect(next.map((t) => t.id)).toEqual(["d", "h1", "h2", "a"]);
+  });
+
+  it("an empty visible set moves nothing at all", () => {
+    const tree = [task("a"), task("b")];
+    expect(shape(reorderSelected(tree, sel("a"), "down", new Set()))).toBe("a,b");
+    expect(
+      reorderSelectedAcrossProjects(tree, sel("a"), "down", projects, new Set()).map((t) => t.id)
+    ).toEqual(["a", "b"]);
+  });
+
   it("crosses into the next project when last among visible, ignoring hidden trailers", () => {
     // "a" is the only visible task in work ("b" is hidden after it); moving down
     // should jump to home rather than swap with the hidden "b".
