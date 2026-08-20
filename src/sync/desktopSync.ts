@@ -3,7 +3,7 @@ import {
   onAuthStateChanged,
   signInWithCredential,
 } from "firebase/auth";
-import { auth } from "../firebase";
+import { firebaseAuth, firebaseConfigured } from "../firebase";
 import { adoptRemote, getReady, getState, setCloudSync, subscribeReady } from "../store/store";
 import { mergeAndSave, subscribeAppState } from "../viewer/cloud";
 import { jsonEqual, mergeStates } from "./merge";
@@ -41,12 +41,18 @@ function b() {
   return typeof window !== "undefined" ? window.execute : undefined;
 }
 
-/** Sync exists only in the desktop app with a configured OAuth client. */
+/**
+ * Sync exists only in the desktop app with a configured OAuth client *and*
+ * Firebase credentials. This is the gate: every `firebaseAuth()` call below is
+ * downstream of it, so a build without .env.local never constructs the SDK —
+ * it just runs local-first with the Sync control hidden (see src/firebase.ts).
+ */
 export function syncAvailable(): boolean {
   const bridge = b();
   return (
     bridge?.isElectron === true &&
     typeof bridge.signInWithGoogle === "function" &&
+    firebaseConfigured() &&
     Boolean(clientId) &&
     Boolean(clientSecret)
   );
@@ -58,7 +64,7 @@ let pushing = false;
 let dirtyDuringPush = false;
 
 async function doPush() {
-  const user = auth.currentUser;
+  const user = firebaseAuth().currentUser;
   // Never push before the store has loaded (would clobber cloud with empty
   // state) and never trigger interactive sign-in from an automatic push.
   if (user == null || !getReady()) return;
@@ -88,7 +94,7 @@ async function doPush() {
 }
 
 function schedulePush() {
-  if (auth.currentUser == null) return; // signed out → stay quiet, never popup
+  if (firebaseAuth().currentUser == null) return; // signed out → stay quiet, never popup
   if (pushTimer != null) clearTimeout(pushTimer);
   pushTimer = setTimeout(() => void doPush(), PUSH_DEBOUNCE_MS);
 }
@@ -132,7 +138,7 @@ function startPull(uid: string) {
     (e: unknown) => {
       setStatus({
         kind: "error",
-        email: auth.currentUser?.email ?? null,
+        email: firebaseAuth().currentUser?.email ?? null,
         message: e instanceof Error ? e.message : "Sync read failed",
       });
     },
@@ -141,7 +147,7 @@ function startPull(uid: string) {
 
 /** Start pulling when signed in AND the store has loaded; stop otherwise. */
 function reconcilePull() {
-  const user = auth.currentUser;
+  const user = firebaseAuth().currentUser;
   if (user == null || !getReady()) {
     stopPull();
     return;
@@ -160,7 +166,9 @@ export function initAutoSync(): () => void {
     setStatus({ kind: "off" });
     return () => {};
   }
-  setStatus(auth.currentUser != null ? { kind: "idle", email: auth.currentUser.email } : { kind: "signedOut" });
+  const auth = firebaseAuth();
+  const restored = auth.currentUser;
+  setStatus(restored != null ? { kind: "idle", email: restored.email } : { kind: "signedOut" });
 
   const unsubAuth = onAuthStateChanged(auth, (user) => {
     if (user != null) {
@@ -193,13 +201,13 @@ export async function signIn(): Promise<void> {
     throw new Error("Missing VITE_GOOGLE_DESKTOP_CLIENT_ID / VITE_GOOGLE_DESKTOP_CLIENT_SECRET.");
   }
   const { idToken } = await bridge.signInWithGoogle(clientId, clientSecret);
-  await signInWithCredential(auth, GoogleAuthProvider.credential(idToken));
+  await signInWithCredential(firebaseAuth(), GoogleAuthProvider.credential(idToken));
   // onAuthStateChanged fires → status idle → catch-up push.
 }
 
 /** Manual nudge (retry after an error / force a push). */
 export function syncNow(): void {
-  if (auth.currentUser == null) {
+  if (firebaseAuth().currentUser == null) {
     void signIn();
     return;
   }

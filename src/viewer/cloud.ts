@@ -1,11 +1,11 @@
 import { doc, getDoc, onSnapshot, runTransaction, setDoc, type Unsubscribe } from "firebase/firestore";
-import { db } from "../firebase";
+import { firebaseDb } from "../firebase";
 import type { AppState } from "../types";
 import { coerceState } from "../store/persistence";
 import { mergeStates } from "../sync/merge";
 
 function appDataRef(uid: string) {
-  return doc(db, "users", uid, "data", "appData");
+  return doc(firebaseDb(), "users", uid, "data", "appData");
 }
 
 /**
@@ -64,7 +64,7 @@ export async function saveAppState(uid: string, state: AppState): Promise<void> 
  */
 export async function mergeAndSave(uid: string, local: AppState): Promise<AppState> {
   const ref = appDataRef(uid);
-  return runTransaction(db, async (tx) => {
+  return runTransaction(firebaseDb(), async (tx) => {
     const snap = await tx.get(ref);
     const merged = snap.exists() ? mergeStates(local, coerceState(snap.data())) : local;
     tx.set(ref, { ...merged, updatedAt: Date.now() });

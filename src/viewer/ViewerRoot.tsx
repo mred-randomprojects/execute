@@ -6,6 +6,7 @@ import type { AppState, Task, TaskId } from "../types";
 import { makeTask, mapById } from "../store/tasks";
 import { parseCapture } from "../store/capture";
 import { todayISO } from "../store/dates";
+import { firebaseConfigured } from "../firebase";
 import { loadAppState, mergeAndSave, subscribeAppState } from "./cloud";
 import { ReadOnlyApp } from "./ReadOnlyApp";
 import { SeedPanel } from "./SeedPanel";
@@ -231,6 +232,24 @@ function AuthedViewer({ user, onSignOut }: { user: User; onSignOut: () => void }
 }
 
 export function ViewerRoot() {
+  // Unlike the desktop — which just runs local-first with sync switched off —
+  // the viewer IS the cloud, so an unconfigured build has nothing to show. Say
+  // that plainly and above AuthProvider, whose effect would otherwise construct
+  // the SDK and throw. A deploy missing one GitHub secret used to land here as
+  // a blank page.
+  if (!firebaseConfigured()) {
+    return (
+      <Centered>
+        <h1 className="font-serif text-2xl font-medium">Not configured</h1>
+        <p className="max-w-sm text-sm text-ink-soft">
+          This build has no Firebase credentials, so there's no cloud to read.
+          Set the <code className="text-[12px]">VITE_FIREBASE_*</code> values in{" "}
+          <code className="text-[12px]">.env.local</code> (or the deploy's GitHub
+          secrets) and rebuild.
+        </p>
+      </Centered>
+    );
+  }
   return (
     <AuthProvider>
       <Gate />
