@@ -10,6 +10,7 @@ export type KeyContext =
   | "global"
   | "help"
   | "palette"
+  | "search"
   | "history"
   | "review"
   | "schedule"
@@ -32,6 +33,7 @@ export type AppMode = "normal" | "move";
 export interface ContextState {
   showHelp: boolean;
   showPalette: boolean;
+  showSearch: boolean;
   showHistory: boolean;
   showReview: boolean;
   showSchedule: boolean;

@@ -14,6 +14,8 @@ export const keymap: KeyBinding[] = [
   { key: "Meta+y", action: "history.toggle", context: ["normal", "reckoning", "board"], displayKey: "⌘ y", description: "history — everything you just did", section: "General" },
   { key: "?", action: "help.toggle", context: ["normal", "reckoning", "board"], displayKey: "?", description: "keyboard help", section: "General" },
   { key: "Meta+k", action: "palette.open", context: ["normal", "reckoning", "board", "editing"], displayKey: "⌘ k", description: "command palette", section: "General" },
+  { key: "f", action: "search.open", context: "normal", displayKey: "f / ⌘ f", description: "find — search all tasks (subsequence: “byml” → “Buy milk”)", section: "General" },
+  { key: "Meta+f", action: "search.open", context: ["normal", "editing"] },
 
   // ── history panel ─────────────────────────────────────────────────
   { key: "ArrowDown", action: "history.down", context: "history", displayKey: "↑ / ↓", description: "walk the history", section: "History" },

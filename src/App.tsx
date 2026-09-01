@@ -87,7 +87,7 @@ import {
   useStore,
   type PostponeTarget,
 } from "./store/store";
-import { findById, findParentId, isOpen, walk } from "./store/tasks";
+import { findById, findParentId, getAncestorPath, isOpen, walk } from "./store/tasks";
 import {
   addDays,
   daysBetween,
@@ -179,6 +179,7 @@ import { buildReview } from "./store/review";
 import { DevControls } from "./components/DevControls";
 import { StatusBar } from "./components/StatusBar";
 import { CommandPalette, type Command } from "./components/CommandPalette";
+import { SearchPalette } from "./components/SearchPalette";
 import { SchedulePicker, type ScheduleChoice } from "./components/SchedulePicker";
 import { ProjectPicker } from "./components/ProjectPicker";
 import { EstimatePicker } from "./components/EstimatePicker";
@@ -274,6 +275,7 @@ export function App() {
   const [showReview, setShowReview] = useState(false);
   const [historySel, setHistorySel] = useState(0);
   const [showPalette, setShowPalette] = useState(false);
+  const [showSearch, setShowSearch] = useState(false);
   const [showSchedule, setShowSchedule] = useState(false);
   const [showProject, setShowProject] = useState(false);
   const [showEstimate, setShowEstimate] = useState(false);
@@ -1623,6 +1625,7 @@ export function App() {
       else if (showHistory) setShowHistory(false);
       else if (showReview) setShowReview(false);
       else if (showPalette) setShowPalette(false);
+      else if (showSearch) setShowSearch(false);
       else if (showSchedule) {
         setShowSchedule(false);
         setPostponeReq(null);
@@ -1893,10 +1896,45 @@ export function App() {
     );
   };
 
+  // ── Task finder (⌘f / f) ──────────────────────────────────────────
+  const openSearch = () => {
+    // Only from a settled outline: the rituals own the screen, and a jump would
+    // land in a view they'd immediately paint over. (In "normal" none of these
+    // hold; the guard is for the ⌘f-while-editing binding.)
+    if (reckoningActive || shutdownActive || planActive || mode === "move") return;
+    setShowSearch(true);
+  };
+  // Jump to any task from the finder: leave focus mode, show it in All (which
+  // filters by nothing), un-collapse its project and every ancestor so the row
+  // actually renders, reveal completed tasks if that's what we're jumping to,
+  // then select it — TaskRow scrolls the focused row into view on its own.
+  const jumpToTask = (id: TaskId) => {
+    const task = findById(state.tasks, id);
+    if (task == null) return; // vanished between opening the finder and picking
+    setShowSearch(false);
+    setZoom(null);
+    setShowPanel(false);
+    setView("all");
+    setProjectCollapsed(task.projectId, false);
+    const ancestorIds = getAncestorPath(state.tasks, id)
+      .slice(0, -1) // drop the task itself; keep root→parent
+      .map((t) => t.id);
+    if (ancestorIds.length > 0) {
+      setCollapsed((prev) => {
+        const next = new Set(prev);
+        for (const aid of ancestorIds) next.delete(aid);
+        return next;
+      });
+    }
+    if (!isOpen(task) && hideCompleted) setHideCompleted(false);
+    setFocus(id);
+  };
+
   // ── Keyboard wiring ───────────────────────────────────────────────
   const dispatchState: ContextState = {
     showHelp,
     showPalette,
+    showSearch,
     showHistory,
     showReview,
     showSchedule,
@@ -1955,6 +1993,7 @@ export function App() {
       if (row != null && row.reach !== "gone") jumpHistory(row);
     },
     "palette.open": cmd.paletteOpen,
+    "search.open": openSearch,
     "schedule.open": cmd.scheduleOpen,
     "project.open": cmd.projectOpen,
     "estimate.open": openEstimatePicker,
@@ -2385,6 +2424,7 @@ export function App() {
   };
 
   const commands: Command[] = [
+    { id: "search", label: "Search tasks", aliases: ["find"], hint: "f", run: openSearch },
     { id: "today", label: "Go to Today", hint: "1", run: cmd.gotoView("today") },
     { id: "backlog", label: "Go to Backlog", hint: "2", run: cmd.gotoView("backlog") },
     { id: "all", label: "Go to All", hint: "3", run: cmd.gotoView("all") },
@@ -2923,6 +2963,14 @@ export function App() {
           onUse={recordCommandUse}
           onResetRanking={resetCommandRanking}
           onClose={() => setShowPalette(false)}
+        />
+      )}
+      {showSearch && (
+        <SearchPalette
+          tasks={state.tasks}
+          projects={state.projects}
+          onPick={jumpToTask}
+          onClose={() => setShowSearch(false)}
         />
       )}
       {showSchedule && scheduleTargetIds.length > 0 && (

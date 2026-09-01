@@ -39,6 +39,9 @@ export function getActiveContext(state: ContextState): KeyContext {
   // rather than unwinding whatever sits beneath.
   if (state.showReview) return "review";
   if (state.showPalette) return "palette";
+  // The task finder likewise owns the keyboard while open, so outline shortcuts
+  // stay dormant beneath the search field.
+  if (state.showSearch) return "search";
   // The schedule picker owns the keyboard while open (it has no app bindings),
   // so normal/editing shortcuts stay dormant beneath it.
   if (state.showSchedule) return "schedule";
