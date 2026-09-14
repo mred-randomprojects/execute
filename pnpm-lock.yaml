@@ -17,6 +17,9 @@ importers:
       '@fontsource/newsreader':
         specifier: ^5.1.0
         version: 5.2.10
+      cmd-s:
+        specifier: github:mred-randomprojects/cmd-s#v1.0.0
+        version: https://codeload.github.com/mred-randomprojects/cmd-s/tar.gz/3a4f874a6b703c16ad56acf36fb9203f34c68a38
       electron-squirrel-startup:
         specifier: ^1.0.1
         version: 1.0.1
@@ -1541,6 +1544,10 @@ packages:
   clone@1.0.4:
     resolution: {integrity: sha512-JQHZ2QMW6l3aH/j6xCqQThY/9OH4D/9ls34cgkUBiEeocRTU04tHfKPBsUK1PqZCUQM7GiA0IIXJSuXHI64Kbg==}
     engines: {node: '>=0.8'}
+
+  cmd-s@https://codeload.github.com/mred-randomprojects/cmd-s/tar.gz/3a4f874a6b703c16ad56acf36fb9203f34c68a38:
+    resolution: {tarball: https://codeload.github.com/mred-randomprojects/cmd-s/tar.gz/3a4f874a6b703c16ad56acf36fb9203f34c68a38}
+    version: 1.0.0
 
   color-convert@0.5.3:
     resolution: {integrity: sha512-RwBeO/B/vZR3dfKL1ye/vx8MHZ40ugzpyfeVG5GsiuGnrlMWe2o8wxBbLCpw9CsxV+wHuzYlCiWnybrIA0ling==}
@@ -5318,6 +5325,8 @@ snapshots:
       mimic-response: 1.0.1
 
   clone@1.0.4: {}
+
+  cmd-s@https://codeload.github.com/mred-randomprojects/cmd-s/tar.gz/3a4f874a6b703c16ad56acf36fb9203f34c68a38: {}
 
   color-convert@0.5.3:
     optional: true

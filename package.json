@@ -29,6 +29,7 @@
     "@fontsource/ibm-plex-mono": "^5.1.0",
     "@fontsource/inter": "^5.1.0",
     "@fontsource/newsreader": "^5.1.0",
+    "cmd-s": "github:mred-randomprojects/cmd-s#v1.0.0",
     "electron-squirrel-startup": "^1.0.1",
     "firebase": "^12",
     "nanoid": "^5.1.5",
