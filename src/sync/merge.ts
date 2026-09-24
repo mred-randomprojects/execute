@@ -178,7 +178,7 @@ function mergeTrees(
   slotsR: Map<TaskId, Slot>,
   deleted: ReadonlySet<string>,
 ): Task[] {
-  const merged = new Map<TaskId, Slot & { dead: boolean }>();
+  const merged = new Map<TaskId, PlacedSlot>();
   for (const id of new Set([...slotsL.keys(), ...slotsR.keys()])) {
     if (deleted.has(id)) continue;
     const l = slotsL.get(id);
@@ -194,64 +194,7 @@ function mergeTrees(
     });
   }
 
-  for (const slot of merged.values()) {
-    if (slot.parent == null || merged.has(slot.parent)) continue;
-    if (deleted.has(slot.parent)) slot.dead = true;
-    else slot.parent = null;
-  }
-
-  // Break loops: walk up from every task; a revisit on the current path is a loop.
-  const settled = new Set<TaskId>();
-  for (const start of merged.keys()) {
-    const path: TaskId[] = [];
-    const onPath = new Set<TaskId>();
-    let cur: TaskId | null = start;
-    while (cur != null && !settled.has(cur)) {
-      if (onPath.has(cur)) {
-        const loop = path.slice(path.indexOf(cur));
-        let loser = loop[0];
-        for (const id of loop) {
-          const a = merged.get(id)?.node;
-          const b = merged.get(loser)?.node;
-          if (a != null && b != null && (a.movedAt < b.movedAt || (a.movedAt === b.movedAt && a.id < b.id))) {
-            loser = id;
-          }
-        }
-        const slot = merged.get(loser);
-        if (slot != null) slot.parent = null;
-        break;
-      }
-      onPath.add(cur);
-      path.push(cur);
-      cur = merged.get(cur)?.parent ?? null;
-    }
-    for (const id of path) settled.add(id);
-  }
-
-  const alive = new Map<TaskId, boolean>();
-  const isAlive = (id: TaskId): boolean => {
-    const known = alive.get(id);
-    if (known != null) return known;
-    const slot = merged.get(id);
-    const ok = slot != null && !slot.dead && (slot.parent == null || isAlive(slot.parent));
-    alive.set(id, ok);
-    return ok;
-  };
-
-  const kids = new Map<TaskId | null, Task[]>();
-  for (const [id, slot] of merged) {
-    if (!isAlive(id)) continue;
-    const list = kids.get(slot.parent) ?? [];
-    list.push(slot.node);
-    kids.set(slot.parent, list);
-  }
-  const build = (parent: TaskId | null): Task[] =>
-    (kids.get(parent) ?? []).sort(byRank).map((t) => ({ ...t, children: build(t.id) }));
-  // Two devices can hand out the same rank independently (both appended to the
-  // same list offline). Sorting by id already ordered them identically on both;
-  // re-ranking the tie here makes the output a fixed point, so merging it again
-  // changes nothing (no push↔pull loop). Deterministic, so both devices agree.
-  return repairRanks(build(null));
+  return treeFromSlots(merged, deleted);
 }
 
 function mergeLog(a: LogEntry[], b: LogEntry[]): LogEntry[] {
@@ -411,4 +354,89 @@ export function jsonEqual(a: unknown, b: unknown): boolean {
     if (!jsonEqual(ao[k], bo[k])) return false;
   }
   return true;
+}
+
+
+/** A slot the tree can be built from; `dead` = known to be gone with its parent. */
+export interface PlacedSlot {
+  node: Task;
+  parent: TaskId | null;
+  dead: boolean;
+}
+
+/**
+ * Build the task tree from flat slots — the one place a tree is assembled from
+ * parent pointers, shared by the merge and by reading per-task cloud documents.
+ *
+ * - A slot whose parent is `deleted` goes with it; one whose parent is simply
+ *   unknown (not loaded, or never synced) is kept at the top level.
+ * - A loop (X under Y, Y under X) is broken by sending its oldest move
+ *   (`movedAt`, then id) to the top level.
+ * - Siblings sort by (rank, id) and rank ties are re-ranked, so the result is
+ *   deterministic and already a fixed point for the next merge.
+ *
+ * Mutates the slots' `parent`/`dead` while repairing; callers pass their own.
+ */
+export function treeFromSlots(
+  merged: Map<TaskId, PlacedSlot>,
+  deleted: ReadonlySet<string> = new Set(),
+): Task[] {
+  for (const slot of merged.values()) {
+    if (slot.parent == null || merged.has(slot.parent)) continue;
+    if (deleted.has(slot.parent)) slot.dead = true;
+    else slot.parent = null;
+  }
+
+  // Break loops: walk up from every task; a revisit on the current path is a loop.
+  const settled = new Set<TaskId>();
+  for (const start of merged.keys()) {
+    const path: TaskId[] = [];
+    const onPath = new Set<TaskId>();
+    let cur: TaskId | null = start;
+    while (cur != null && !settled.has(cur)) {
+      if (onPath.has(cur)) {
+        const loop = path.slice(path.indexOf(cur));
+        let loser = loop[0];
+        for (const id of loop) {
+          const a = merged.get(id)?.node;
+          const b = merged.get(loser)?.node;
+          if (a != null && b != null && (a.movedAt < b.movedAt || (a.movedAt === b.movedAt && a.id < b.id))) {
+            loser = id;
+          }
+        }
+        const slot = merged.get(loser);
+        if (slot != null) slot.parent = null;
+        break;
+      }
+      onPath.add(cur);
+      path.push(cur);
+      cur = merged.get(cur)?.parent ?? null;
+    }
+    for (const id of path) settled.add(id);
+  }
+
+  const alive = new Map<TaskId, boolean>();
+  const isAlive = (id: TaskId): boolean => {
+    const known = alive.get(id);
+    if (known != null) return known;
+    const slot = merged.get(id);
+    const ok = slot != null && !slot.dead && (slot.parent == null || isAlive(slot.parent));
+    alive.set(id, ok);
+    return ok;
+  };
+
+  const kids = new Map<TaskId | null, Task[]>();
+  for (const [id, slot] of merged) {
+    if (!isAlive(id)) continue;
+    const list = kids.get(slot.parent) ?? [];
+    list.push(slot.node);
+    kids.set(slot.parent, list);
+  }
+  const build = (parent: TaskId | null): Task[] =>
+    (kids.get(parent) ?? []).sort(byRank).map((t) => ({ ...t, children: build(t.id) }));
+  // Two devices can hand out the same rank independently (both appended to the
+  // same list offline). Sorting by id already ordered them identically on both;
+  // re-ranking the tie here makes the output a fixed point, so merging it again
+  // changes nothing (no push↔pull loop). Deterministic, so both devices agree.
+  return repairRanks(build(null));
 }

@@ -96,6 +96,14 @@ on either device survives — before, the writer's tree shape won wholesale.
 Projects and recurrences carry `updatedAt` and merge newest-wins per id. This
 is Phase 0 of the per-task-documents plan.
 
+**The per-item document format (Phase 1).** `sync/docs.ts` defines the v2
+cloud layout — one document per task, project, recurrence, tombstone, log line
+and day, plus `meta/state` — as three pure functions: `toDocs`, `fromDocs`
+(defensively coerced, per-device fields from the local base) and `diffDocs`
+(field-level patches against the device's own previous view). The merge is not
+duplicated: devices read documents into a state and merge with `mergeStates`.
+Real data round-trips exactly (3,568 documents, largest ~1.2 KB).
+
 **Known limit — the next architectural step.** One document means every edit
 rewrites (and every listener re-downloads) the whole state, and the 1 MiB cap
 is only pushed back, not removed. The durable fix is a document per task (or

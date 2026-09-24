@@ -184,7 +184,7 @@ function coerceWaitingOn(raw: unknown): WaitingOn | null {
   return { who: strOrNull(raw.who), since: num(raw.since, Date.now()) };
 }
 
-function coerceTask(raw: unknown): Task {
+export function coerceTask(raw: unknown): Task {
   const o = isObject(raw) ? raw : {};
   const children = Array.isArray(o.children) ? o.children.map(coerceTask) : [];
   const labels = Array.isArray(o.labels)
@@ -443,7 +443,9 @@ export function coerceState(raw: unknown): AppState {
     recurrences,
     trash: trash.map((entry) => ({
       ...entry,
-      task: normalizeChildProjects([normalizeProject(entry.task)])[0],
+      // v18: a Trash entry's subtasks are ranked like the live tree's, so the
+      // entry reads back identically from per-task documents (sync/docs).
+      task: repairRanks(normalizeChildProjects([normalizeProject(entry.task)]))[0],
     })),
     // v17: pre-v17 documents have no tombstones. Existing `trash` entries keep
     // acting as deletion records in the merge, so nothing that is already
