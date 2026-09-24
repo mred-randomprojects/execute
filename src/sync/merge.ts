@@ -8,9 +8,10 @@ import type {
   Recurrence,
   Task,
   TaskId,
+  Tombstone,
   TrashedTask,
 } from "../types";
-import { ACTION_LOG_LIMIT, MAX_DAY_RECORDS } from "../types";
+import { ACTION_LOG_LIMIT, MAX_DAY_RECORDS, pruneTombstones } from "../types";
 
 // ─── Two-way merge (per-task last-write-wins) ────────────────────────
 //
@@ -24,9 +25,14 @@ import { ACTION_LOG_LIMIT, MAX_DAY_RECORDS } from "../types";
 //   • labels: UNION (a set — adding a tag on each device keeps both).
 //   • carriedCount / postponedCount: MAX (monotonic counters — never go
 //     backwards, so deferring on one device can't be erased by the other).
-//   • Deletes: `trash` entries are tombstones. A delete wins iff its deletedAt is
-//     ≥ the newest live copy's updatedAt (edit-after-delete resurrects; ties →
-//     deleted, which keeps the merge idempotent). No zombie resurrection.
+//   • Deletes: recorded as `tombstones` (see the type — the Trash is the undo
+//     affordance, this is the merge record), and read from `trash` too so a
+//     document written before v17 keeps its deletions. A delete wins iff its
+//     deletedAt is ≥ the newest live copy's updatedAt (edit-after-delete
+//     resurrects; ties → deleted, which keeps the merge idempotent). Without a
+//     record, a delete cannot be told apart from an add the other device made,
+//     and comes straight back — which is what used to happen to an undone
+//     create, an emptied Trash, and every deleted recurrence.
 //   • Structure (tree shape / sibling order): taken from LOCAL (the writer) for
 //     tasks both sides know about. Remote-only tasks (adds from the other device)
 //     are grafted back in at ANY depth — under their remote parent when it
@@ -47,7 +53,8 @@ function flatten(tasks: Task[]): Map<TaskId, Task> {
   return m;
 }
 
-function newestTombstones(...lists: TrashedTask[][]): Map<TaskId, TrashedTask> {
+/** The newest Trash entry per id — the restorable payload behind a deletion. */
+function newestTrashed(...lists: TrashedTask[][]): Map<TaskId, TrashedTask> {
   const m = new Map<TaskId, TrashedTask>();
   for (const list of lists) {
     for (const e of list) {
@@ -56,6 +63,38 @@ function newestTombstones(...lists: TrashedTask[][]): Map<TaskId, TrashedTask> {
     }
   }
   return m;
+}
+
+/**
+ * When each id was deleted, newest across every record either side holds:
+ * bare {@link Tombstone}s *and* Trash entries, which carry a deletion of their
+ * own. Reading both is what lets a document deleted before v17 — when the Trash
+ * was the only record — keep staying deleted.
+ */
+function deletionRecords(
+  trashed: Map<TaskId, TrashedTask>,
+  ...lists: Tombstone[][]
+): Map<string, Tombstone> {
+  // Bare records get the same reduction the store and the read path use:
+  // newest per id, `purged` latched on, expired entries dropped.
+  const records = new Map<string, Tombstone>(
+    pruneTombstones(lists.flat()).map((t) => [t.id, t]),
+  );
+  // A Trash entry is a deletion in its own right — reading it is what keeps a
+  // document written before v17 (when the Trash was the only record) deleted.
+  // It is deliberately NOT run through the TTL: the TTL exists to bound bare
+  // records, and a Trash entry is bounded by the Trash itself. Expiring it here
+  // would make everything trashed more than TOMBSTONE_TTL_DAYS ago silently fall
+  // out of the Trash on the next sync.
+  for (const [id, e] of trashed) {
+    const bare = records.get(id);
+    records.set(id, {
+      id,
+      deletedAt: Math.max(bare?.deletedAt ?? -Infinity, e.deletedAt),
+      purged: bare?.purged === true,
+    });
+  }
+  return records;
 }
 
 function labelsUnion(a: string[], b: string[]): string[] {
@@ -156,16 +195,23 @@ function maxDate(a: string | null, b: string | null): string | null {
 export function mergeStates(local: AppState, remote: AppState): AppState {
   const liveL = flatten(local.tasks);
   const liveR = flatten(remote.tasks);
-  const tombs = newestTombstones(local.trash, remote.trash);
+  const trashed = newestTrashed(local.trash, remote.trash);
+  const records = deletionRecords(trashed, local.tombstones, remote.tombstones);
 
   // Which ids end up deleted (tombstone at least as new as the newest live copy).
-  const deleted = new Set<TaskId>();
-  for (const [id, tomb] of tombs) {
+  //
+  // A RECURRENCE id falls out of the same rule for free: it is never a live
+  // task, so its `liveUpdatedAt` is -Infinity and any tombstone wins. That is
+  // also the only answer available — a Recurrence carries no `updatedAt`, so
+  // "edit after delete" cannot be adjudicated for one, and a delete you asked
+  // for beating an edit you may not have made is the safer way round.
+  const deleted = new Set<string>();
+  for (const [id, record] of records) {
     const liveUpdatedAt = Math.max(
-      liveL.get(id)?.updatedAt ?? -Infinity,
-      liveR.get(id)?.updatedAt ?? -Infinity,
+      liveL.get(id as TaskId)?.updatedAt ?? -Infinity,
+      liveR.get(id as TaskId)?.updatedAt ?? -Infinity,
     );
-    if (tomb.deletedAt >= liveUpdatedAt) deleted.add(id);
+    if (record.deletedAt >= liveUpdatedAt) deleted.add(id);
   }
 
   // Rebuild on LOCAL structure; overlay each node's own fields by LWW; drop
@@ -241,15 +287,32 @@ export function mergeStates(local: AppState, remote: AppState): AppState {
   const rooted = hasNested ? attach(tasks) : tasks;
   const withGrafts = [...rooted, ...(graftsByParent.get(null) ?? [])];
 
+  // The restorable copy survives while the id is deleted but not *purged*. Once
+  // it is purged the payload goes, even though the other device still lists it —
+  // otherwise emptying the Trash just waits for the next pull to refill it.
   const trash: TrashedTask[] = [];
-  for (const [id, tomb] of tombs) if (deleted.has(id)) trash.push(tomb);
+  for (const [id, entry] of trashed) {
+    if (deleted.has(id) && records.get(id)?.purged !== true) trash.push(entry);
+  }
+
+  // Every surviving deletion, as a bare record. Deliberately kept for ids that
+  // are in the Trash too: emptying the Trash throws the payload away, and this
+  // is what then goes on holding the deletion down. An id that lost the rule
+  // above (edited on the other device after it was deleted here) drops out —
+  // it is alive again, and a tombstone left behind would re-fight every sync.
+  const tombstones = pruneTombstones(
+    [...records.values()].filter((t) => deleted.has(t.id)),
+  );
 
   return {
     schemaVersion: Math.max(local.schemaVersion, remote.schemaVersion),
     projects: unionById<Project>(local.projects, remote.projects, (p) => p.id),
     tasks: withGrafts,
-    recurrences: unionById<Recurrence>(local.recurrences, remote.recurrences, (r) => r.id),
+    recurrences: unionById<Recurrence>(local.recurrences, remote.recurrences, (r) => r.id).filter(
+      (r) => !deleted.has(r.id),
+    ),
     trash,
+    tombstones,
     log: mergeLog(local.log, remote.log),
     theme: local.theme, // writer wins (a per-device preference, effectively)
     currentTaskId: local.currentTaskId, // writer's "right now"

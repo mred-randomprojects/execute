@@ -20,6 +20,7 @@ import type {
   Task,
   TaskId,
   TaskPriority,
+  Tombstone,
   ThemeName,
   TrashedTask,
   WaitingOn,
@@ -36,6 +37,7 @@ import {
   defaultPresence,
   defaultProject,
   emptyState,
+  pruneTombstones,
 } from "../types";
 import { normalizeChildProjects } from "./tasks";
 import type { CalendarEventInput } from "./calendar";
@@ -272,6 +274,23 @@ function coerceTrashed(raw: unknown): TrashedTask {
   return { task: coerceTask(o.task), deletedAt: num(o.deletedAt, Date.now()) };
 }
 
+// v17: deletion records for the merge (see Tombstone). Expired and de-duplicated
+// on read — the newest record for an id wins, because a re-delete after a
+// restore is the one that should out-vote another device's copy. Anything
+// without a usable id is dropped: a tombstone that can't say what it buried
+// says nothing, and would silently suppress nothing at all.
+function coerceTombstones(raw: unknown, now: number = Date.now()): Tombstone[] {
+  if (!Array.isArray(raw)) return [];
+  const parsed: Tombstone[] = [];
+  for (const entry of raw) {
+    const o = isObject(entry) ? entry : {};
+    const id = str(o.id);
+    if (id === "") continue;
+    parsed.push({ id, deletedAt: num(o.deletedAt, 0), purged: bool(o.purged) });
+  }
+  return pruneTombstones(parsed, now);
+}
+
 const LOG_ACTIONS: ReadonlySet<string> = new Set([
   "completed",
   "uncompleted",
@@ -416,6 +435,11 @@ export function coerceState(raw: unknown): AppState {
       ...entry,
       task: normalizeChildProjects([normalizeProject(entry.task)])[0],
     })),
+    // v17: pre-v17 documents have no tombstones. Existing `trash` entries keep
+    // acting as deletion records in the merge, so nothing that is already
+    // deleted comes back — the gap this closes is deletions that never had a
+    // trash entry to speak for them.
+    tombstones: coerceTombstones(raw.tombstones),
     log: Array.isArray(raw.log) ? raw.log.map(coerceLogEntry) : [],
     theme: coerceTheme(raw.theme),
     currentTaskId: strOrNull(raw.currentTaskId) as TaskId | null,

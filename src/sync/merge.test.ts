@@ -37,6 +37,7 @@ function state(over: Partial<AppState> = {}): AppState {
     tasks: [],
     recurrences: [],
     trash: [],
+    tombstones: [],
     log: [],
     theme: "slate",
     currentTaskId: null,

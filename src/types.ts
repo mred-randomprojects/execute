@@ -294,6 +294,94 @@ export interface TrashedTask {
   deletedAt: number;
 }
 
+/**
+ * A bare "this id is gone" record — no payload, not user-visible.
+ *
+ * The merge cannot tell "the cloud has X and I've never seen it" (another
+ * device's add → graft it back) from "the cloud has X and I deleted it" (→ drop
+ * it) without being told. {@link TrashedTask} used to be the only thing telling
+ * it, which left three ways to delete something that came straight back:
+ *
+ *   • undoing a *create* — the task leaves the tree without ever entering the
+ *     Trash, so nothing recorded that it was gone;
+ *   • emptying or purging the Trash — which deletes the very record that was
+ *     holding the delete down, so the next pull read the other device's copy
+ *     back and the Trash refilled itself;
+ *   • deleting a recurrence — merged by a plain union of ids, with no notion
+ *     of deletion at all.
+ *
+ * So deletion is recorded separately from the Trash: the Trash is the *undo*
+ * affordance (it keeps the whole task so you can restore it), and this is the
+ * *merge* record (it keeps only enough to out-vote a stale copy). Emptying the
+ * Trash discards the payload and keeps this.
+ *
+ * `id` is a {@link TaskId} or a {@link RecurrenceId} — both are nanoids and
+ * never collide, and the merge asks the same question of both.
+ */
+export interface Tombstone {
+  id: string;
+  deletedAt: number;
+  /**
+   * True once the restorable copy was deliberately thrown away — "Delete for
+   * good", or "Empty the trash".
+   *
+   * Recording the deletion alone is not enough to make emptying the Trash
+   * stick, because the merge rebuilds the Trash from whichever side still has
+   * the entry: the other device's copy would simply refill it, deleted but
+   * undeleted-looking. So the two states have to be told apart — *gone, still
+   * restorable* from *gone, and you said you meant it* — and only this second
+   * one drops the payload everywhere.
+   */
+  purged: boolean;
+}
+
+/**
+ * How long a tombstone is kept. Deletions have to be remembered longer than it
+ * takes every device to hear about them, but not forever — an unbounded list is
+ * the bug this feature would otherwise become, in a document that already has to
+ * fit in one Firestore write.
+ *
+ * The trade-off this buys: a device that has been offline for longer than this,
+ * still holding a copy of something deleted elsewhere, will graft it back on its
+ * next sync. Three months is far outside the "phone in a drawer for a fortnight"
+ * case this app actually has, and the failure is a task reappearing — not one
+ * disappearing.
+ */
+export const TOMBSTONE_TTL_DAYS = 90;
+
+/** Hard cap on tombstones, newest kept. A backstop under {@link TOMBSTONE_TTL_DAYS}. */
+export const MAX_TOMBSTONES = 2000;
+
+/**
+ * One record per id (the newest), expired entries dropped, newest first, capped.
+ * Shared by the read path and the merge so a document can never come back from
+ * either one holding a set the other would have trimmed.
+ */
+export function pruneTombstones(list: Tombstone[], now: number = Date.now()): Tombstone[] {
+  const horizon = now - TOMBSTONE_TTL_DAYS * 86_400_000;
+  const byId = new Map<string, Tombstone>();
+  for (const t of list) {
+    if (t.id === "" || t.deletedAt < horizon) continue;
+    const prev = byId.get(t.id);
+    if (prev == null) {
+      byId.set(t.id, t);
+      continue;
+    }
+    byId.set(t.id, {
+      id: t.id,
+      // Newest wins: a re-delete after a restore is the record that should count.
+      deletedAt: Math.max(prev.deletedAt, t.deletedAt),
+      // …but `purged` is a latch, not a value to be outvoted. Throwing the copy
+      // away can't be undone, and OR-ing keeps this commutative, so two devices
+      // reduce the same set to the same answer whichever order they see it in.
+      purged: prev.purged || t.purged,
+    });
+  }
+  return [...byId.values()]
+    .sort((a, b) => b.deletedAt - a.deletedAt)
+    .slice(0, MAX_TOMBSTONES);
+}
+
 /** Accountability events. Optional reasons can later be fed to an AI for analysis. */
 export type LogAction =
   | "completed"
@@ -348,6 +436,13 @@ export interface AppState {
   /** Recurrence definitions (templates + rules). Never counted or reckoned. */
   recurrences: Recurrence[];
   trash: TrashedTask[];
+  /**
+   * Ids that have been deleted, so another device's surviving copy is merged as
+   * a deletion rather than grafted back as a new task. See {@link Tombstone} for
+   * why this is separate from {@link AppState.trash}. Written centrally at the
+   * store's mutation choke points, so no delete path can forget to.
+   */
+  tombstones: Tombstone[];
   log: LogEntry[];
   theme: ThemeName;
   /** The one task the user is focusing on "right now" — surfaced in a banner. */
@@ -392,7 +487,7 @@ export interface AppState {
   days: DayRecord[];
 }
 
-export const SCHEMA_VERSION = 16;
+export const SCHEMA_VERSION = 17;
 export const DEFAULT_PROJECT_ID = "project-inbox" as ProjectId;
 export const PROJECT_ROW_PREFIX = "project:";
 
@@ -435,6 +530,7 @@ export function emptyState(): AppState {
     tasks: [],
     recurrences: [],
     trash: [],
+    tombstones: [],
     log: [],
     theme: "slate",
     currentTaskId: null,

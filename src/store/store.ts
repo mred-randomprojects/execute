@@ -17,6 +17,8 @@ import type {
   TaskId,
   TaskPriority,
   ThemeName,
+  Tombstone,
+  TrashedTask,
   WontDo,
 } from "../types";
 import {
@@ -25,6 +27,7 @@ import {
   MAX_DAY_RECORDS,
   PROJECT_COLORS,
   emptyState,
+  pruneTombstones,
 } from "../types";
 import {
   assignProjectDeep,
@@ -220,6 +223,104 @@ function stampNode(
   return { ...node, children, updatedAt };
 }
 
+// ─── Automatic tombstone bookkeeping ────────────────────────────────
+//
+// Cloud sync cannot tell "the cloud has X and I've never seen it" (the other
+// device added it → graft it back) from "the cloud has X and I deleted it"
+// (→ drop it) unless something says X was deleted. That record is a Tombstone,
+// and — exactly like the updatedAt stamping above — it is written once at the
+// choke point rather than at each delete site, because the deletes that were
+// getting lost were the ones nobody thought of as deletes: undoing a *create*,
+// and emptying the Trash (which threw away the only record there was).
+
+/** Every id that currently exists: task nodes at any depth, plus recurrence ids. */
+function liveIds(s: AppState): Set<string> {
+  const ids = new Set<string>();
+  const walk = (list: Task[]) => {
+    for (const t of list) {
+      ids.add(t.id);
+      walk(t.children);
+    }
+  };
+  walk(s.tasks);
+  // Template *nodes* are deliberately not counted: they can't be deleted on
+  // their own, only edited, and the recurrence is what the merge unions by id.
+  for (const r of s.recurrences) ids.add(r.id);
+  return ids;
+}
+
+/**
+ * Record what just disappeared, and un-record what just came back.
+ *
+ * Both sets are carried forward — the current one *and* whatever `next`
+ * brings. The current one, because undo restores a whole snapshot: a deletion
+ * recorded *after* the step being undone must not be forgotten just because
+ * that step predates it. (Same reasoning as the action log, which undo also
+ * carries forward rather than rewinding.) And `next`'s, because a transform
+ * may record deletions of its own — emptying the Trash marks its entries
+ * purged, and dropping that would let the other device's copy refill it.
+ *
+ * An id that reappears — a restore from the Trash, an undone delete — drops
+ * its tombstone, since it plainly isn't deleted any more. An id back *in the
+ * Trash* (an undone "Empty the trash") keeps its deletion but loses `purged`
+ * locally, so this device doesn't show a Trash its own merge would then empty.
+ */
+function withTombstones(prev: AppState, next: AppState): AppState {
+  const now = Date.now();
+  const carried =
+    next.tombstones === prev.tombstones
+      ? prev.tombstones
+      : pruneTombstones([...next.tombstones, ...prev.tombstones], now);
+  const inTrash = new Set<string>(next.trash.map((e) => e.task.id));
+  const treeMoved = next.tasks !== prev.tasks || next.recurrences !== prev.recurrences;
+  const after = treeMoved ? liveIds(next) : null;
+  const gone: Tombstone[] = [];
+  if (after != null) {
+    // Leaving the tree is a deletion, not a purge — a trashed task keeps its
+    // restorable copy, and an undone create never had one to keep.
+    for (const id of liveIds(prev)) if (!after.has(id)) gone.push({ id, deletedAt: now, purged: false });
+  }
+  let changed = gone.length > 0 || carried !== next.tombstones;
+  const kept: Tombstone[] = [];
+  for (const t of carried) {
+    if (after?.has(t.id) === true) {
+      changed = true;
+      continue;
+    }
+    if (t.purged && inTrash.has(t.id)) {
+      changed = true;
+      kept.push({ ...t, purged: false });
+      continue;
+    }
+    kept.push(t);
+  }
+  if (!changed) return next;
+  return { ...next, tombstones: gone.length > 0 ? pruneTombstones([...gone, ...kept], now) : kept };
+}
+
+/**
+ * Keep the deletion on record when the restorable copy is thrown away, so
+ * "Delete for good" and "Empty the trash" actually stick. Without this the
+ * merge read the other device's Trash back and refilled it.
+ *
+ * Stamped `now` rather than with the original deletion time: the record's job is
+ * to out-vote a stale copy elsewhere, and a Trash entry old enough to have aged
+ * out of {@link pruneTombstones} would otherwise be buried with no record at all.
+ * The cost is that emptying the Trash also beats an edit another device made to
+ * that task in the meantime — which is the right way round for a deliberate
+ * "delete this for good".
+ */
+function buryTrashed(s: AppState, entries: readonly TrashedTask[]): Tombstone[] {
+  const now = Date.now();
+  return pruneTombstones(
+    [
+      ...entries.map((e) => ({ id: e.task.id as string, deletedAt: now, purged: true })),
+      ...s.tombstones,
+    ],
+    now,
+  );
+}
+
 /** The stamped state plus the ids the transform actually touched. */
 interface Stamped {
   state: AppState;
@@ -296,7 +397,9 @@ function update(fn: (s: AppState) => AppState, label: string | null): void {
   // history line for a change that never happened, are both worse than silence.
   if (produced === prev) return;
 
-  const { state: next, touched } = stampTasks(prev, produced);
+  const stamped = stampTasks(prev, produced);
+  const { touched } = stamped;
+  const next = withTombstones(prev, stamped.state);
   if (label == null) {
     state = next;
   } else {
@@ -1026,14 +1129,22 @@ export function restoreFromTrash(taskId: TaskId): void {
 
 export function purgeFromTrash(taskId: TaskId): void {
   const gone = quote(state.trash.find((e) => e.task.id === taskId)?.task);
-  update(
-    (s) => ({ ...s, trash: s.trash.filter((e) => e.task.id !== taskId) }),
-    `Delete ${gone} for good`,
-  );
+  update((s) => {
+    const purged = s.trash.filter((e) => e.task.id === taskId);
+    if (purged.length === 0) return s;
+    return {
+      ...s,
+      trash: s.trash.filter((e) => e.task.id !== taskId),
+      tombstones: buryTrashed(s, purged),
+    };
+  }, `Delete ${gone} for good`);
 }
 
 export function emptyTrash(): void {
-  update((s) => ({ ...s, trash: [] }), `Empty the trash (${state.trash.length})`);
+  update((s) => {
+    if (s.trash.length === 0) return s;
+    return { ...s, trash: [], tombstones: buryTrashed(s, s.trash) };
+  }, `Empty the trash (${state.trash.length})`);
 }
 
 // Both reorders take `visible`: the task ids rendered in the *same section* as
@@ -1427,7 +1538,10 @@ export function acceptRecurrence(recId: RecurrenceId, today: ISODate): TaskId | 
 
 /** Restore a snapshot and record the move. Shared by undo and redo. */
 function applyStep(step: HistoryStep, kind: "undo" | "redo"): void {
-  const restored = restamp(step.state, step.touched);
+  // Tombstones are diffed against the state we're leaving, not the snapshot's
+  // own set — undoing a *create* has to leave a record behind, or the cloud
+  // reads the pushed copy back as a fresh add and the task returns.
+  const restored = withTombstones(state, restamp(step.state, step.touched));
   state = withHistory(restored, state.actionLog, {
     id: nanoid(),
     label: step.label,
