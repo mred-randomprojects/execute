@@ -11,6 +11,7 @@ import {
   todayTasks,
   horizonLabel,
   leftoverLeaves,
+  leftoverTree,
   prevVisibleSiblingId,
   projectSummaries,
   reckoningCards,
@@ -635,5 +636,22 @@ describe("Today shows only live subtrees (no done-only branches)", () => {
     const shown = viewTasks([epic], "today", today);
     expect(shown.map((t) => t.text)).toEqual(["epic"]);
     expect(shown[0].children.map((c) => c.text)).toEqual(["done step", "open step"]);
+  });
+});
+
+describe("leftoverTree", () => {
+  it("keeps open leaves planned before today, with their ancestors", () => {
+    const parent = {
+      ...makeTask("parent"),
+      children: [
+        { ...makeTask("stale leaf"), plannedFor: "2026-09-15" },
+        { ...makeTask("done leaf"), plannedFor: "2026-09-15", completed: true },
+        { ...makeTask("today leaf"), plannedFor: "2026-09-24" },
+      ],
+    };
+    const loose = { ...makeTask("undated") };
+    const tree = leftoverTree([parent, loose], "2026-09-24");
+    expect(tree.map((t) => t.text)).toEqual(["parent"]);
+    expect(tree[0].children.map((t) => t.text)).toEqual(["stale leaf"]);
   });
 });

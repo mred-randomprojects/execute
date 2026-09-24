@@ -54,3 +54,42 @@ Before adding code, ask: **is this domain logic, or platform IO/UI?**
 
 If you're ever tempted to copy logic into the viewer, stop: put it in the core
 and call it from both. That discipline is what keeps A→B a convergence.
+
+## Sync: how it works, and how it failed
+
+The whole `AppState` lives in **one Firestore document**
+(`users/{uid}/data/appData`). Every client writes it the same way:
+`viewer/cloud.ts` `mergeAndSave` — a transaction that reads the document,
+merges (`sync/merge.ts`, per-task last-write-wins + tombstones) and writes the
+**cloud projection** (`sync/cloudDoc.ts` `toCloud`). The desktop also listens
+(`onSnapshot`) and merges every remote change into its local store.
+
+What went wrong in September 2026, and the guard for each:
+
+- **The desktop stopped writing for nine days, and nothing showed it.** A
+  transaction RPC can hang forever after a sleep or a network change, and the
+  push loop waited behind it. → Every push has a timeout, failures retry with
+  backoff, and online/focus/visibility events plus a 60s heartbeat retry
+  anything outstanding. The sidebar shows *when* it last synced and whether
+  local changes are still waiting (amber after 10 minutes).
+- **An older client stripped a newer one's fields.** The phone ran a v16 build
+  against a v17 document, coerced away `tombstones` and wrote the result back.
+  → `mergeAndSave` refuses to write a document whose `schemaVersion` is newer
+  than its own (`OutdatedClientError`); the web shows "Reload to update".
+  Always ship both clients from the same commit.
+- **The document is capped at 1 MiB.** It was ~785 KB and growing, mostly the
+  append-only `log`. → The cloud carries only the last `CLOUD_LOG_DAYS` of the
+  log (the desktop file keeps it all; the merge unions by id), and a write over
+  budget fails with a clear `CloudDocTooLargeError` instead of an opaque one.
+- **A stray `undefined` would reject every write** while the JSON file on disk
+  hid it. → `ignoreUndefinedProperties`.
+- **The phone's Today read as "no tasks".** Carrying yesterday's leftovers
+  forward happens in the desktop's Reckoning; until then they're planned for a
+  day that's gone. → The web's Today lists them under "Earlier", and its header
+  says how old the cloud copy is.
+
+**Known limit — the next architectural step.** One document means every edit
+rewrites (and every listener re-downloads) the whole state, and the 1 MiB cap
+is only pushed back, not removed. The durable fix is a document per task (or
+per project) plus a small metadata doc; the merge rules in `sync/merge.ts`
+already operate per task, so they carry over.

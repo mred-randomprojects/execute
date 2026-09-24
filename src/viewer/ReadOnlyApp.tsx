@@ -4,6 +4,7 @@ import { sinceLabel, todayISO } from "../store/dates";
 import { CaptureBar } from "../components/CaptureBar";
 import {
   groupTasksByProject,
+  leftoverTree,
   todayProgress,
   viewTasks,
   VIEW_TITLES,
@@ -128,6 +129,14 @@ export function ReadOnlyApp({
     [filtered, state.projects],
   );
   const progress = useMemo(() => todayProgress(state.tasks, today), [state.tasks, today]);
+  // Planned for a day that's gone. The desktop's Reckoning carries these
+  // forward when it's opened; until then no date-keyed tab would show them, and
+  // a Today tab that hides everything from yesterday reads as "no tasks".
+  const earlierGroups = useMemo(
+    () =>
+      view === "today" ? groupTasksByProject(leftoverTree(state.tasks, today), state.projects) : [],
+    [state.tasks, state.projects, view, today],
+  );
   const now = useNow();
   const cloudStale = cloudUpdatedAt != null && now - cloudUpdatedAt > STALE_CLOUD_MS;
 
@@ -288,7 +297,7 @@ export function ReadOnlyApp({
 
         <EditorProvider value={editor}>
           <div className="-mx-2 flex-1 overflow-auto">
-            {groups.length === 0 ? (
+            {groups.length === 0 && earlierGroups.length === 0 ? (
               <div className="px-2 py-10 text-center text-[14px] text-ink-faint">
                 Nothing here.
               </div>
@@ -310,6 +319,30 @@ export function ReadOnlyApp({
                   </section>
                 );
               })
+            )}
+            {earlierGroups.length > 0 && (
+              <div className="mt-10 px-2">
+                <div className="mb-1 flex items-baseline justify-between gap-3 border-b border-line pb-2">
+                  <h2 className="font-serif text-[20px] font-medium">Earlier</h2>
+                  <span className="text-[12px] text-ink-faint">
+                    planned for a past day · the desktop carries these forward
+                  </span>
+                </div>
+                {earlierGroups.map((group) => (
+                  <section key={group.project.id}>
+                    <ReadOnlyDivider
+                      name={group.project.name}
+                      color={group.project.color}
+                      count={group.tasks.length}
+                      collapsed={collapsedProjects.has(group.project.id)}
+                      onToggle={() => toggleProject(group.project.id)}
+                    />
+                    {collapsedProjects.has(group.project.id)
+                      ? null
+                      : group.tasks.map((t) => <TaskRow key={t.id} task={t} depth={0} />)}
+                  </section>
+                ))}
+              </div>
             )}
           </div>
         </EditorProvider>

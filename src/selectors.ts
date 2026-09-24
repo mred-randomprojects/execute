@@ -519,6 +519,19 @@ export function leftoverLeaves(tasks: Task[], today: ISODate): Task[] {
   );
 }
 
+/**
+ * The leftover leaves as a tree — each with the ancestors that give it context.
+ * The same set the Reckoning resolves, for surfaces that can't run the Reckoning
+ * (the web companion): until the desktop carries them forward, they're planned
+ * for a day that's gone, and no date-keyed view would show them at all.
+ */
+export function leftoverTree(tasks: Task[], today: ISODate): Task[] {
+  return filterTree(
+    tasks,
+    (t) => t.children.length === 0 && isLive(t) && t.plannedFor != null && t.plannedFor < today
+  );
+}
+
 /** A leftover leaf together with the ancestor chain that gives it context. */
 export interface ReckoningLeaf {
   task: Task;
