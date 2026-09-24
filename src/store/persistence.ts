@@ -40,6 +40,7 @@ import {
   pruneTombstones,
 } from "../types";
 import { normalizeChildProjects } from "./tasks";
+import { repairRanks } from "./placement";
 import type { CalendarEventInput } from "./calendar";
 import type { PresenceSnapshot } from "./presence";
 
@@ -137,6 +138,8 @@ function coerceProject(raw: unknown, index: number): Project {
     name: str(o.name, `Project ${index + 1}`).trim() || `Project ${index + 1}`,
     color: str(o.color, fallbackColor).trim() || fallbackColor,
     createdAt: num(o.createdAt, Date.now()),
+    // v18: pre-v18 projects were never stamped → baseline from createdAt.
+    updatedAt: num(o.updatedAt, num(o.createdAt, 0)),
   };
 }
 
@@ -210,6 +213,10 @@ function coerceTask(raw: unknown): Task {
     // Pre-sync data has no updatedAt → baseline from createdAt so LWW has a sane
     // starting point (a task never edited since creation "changed" at creation).
     updatedAt: num(o.updatedAt, num(o.createdAt, Date.now())),
+    // v18: placement. A pre-v18 task has no rank — `repairRanks` in coerceState
+    // assigns one from its position — and its placement is as old as the task.
+    rank: str(o.rank),
+    movedAt: num(o.movedAt, num(o.createdAt, 0)),
     priority: coercePriority(o.priority),
     plannedFor,
     horizon,
@@ -266,6 +273,8 @@ function coerceRecurrence(raw: unknown): Recurrence {
     template: coerceTask(o.template),
     rule: coerceRule(o.rule),
     createdAt: num(o.createdAt, Date.now()),
+    // v18: pre-v18 recurrences were never stamped → baseline from createdAt.
+    updatedAt: num(o.updatedAt, num(o.createdAt, 0)),
   };
 }
 
@@ -429,7 +438,8 @@ export function coerceState(raw: unknown): AppState {
     // which made the field a lie and `mergeStates`' Math.max of it meaningless.
     schemaVersion: SCHEMA_VERSION,
     projects,
-    tasks: normalizeChildProjects(tasks.map(normalizeProject)),
+    // v18: rank every sibling list (pre-v18 lists have none; see store/placement).
+    tasks: repairRanks(normalizeChildProjects(tasks.map(normalizeProject))),
     recurrences,
     trash: trash.map((entry) => ({
       ...entry,

@@ -37,6 +37,8 @@ function task(id: string, children: Task[] = [], overrides: Partial<Task> = {}):
     children,
     createdAt: 0,
     updatedAt: 0,
+    rank: "",
+    movedAt: 0,
     priority: 4,
     plannedFor: null,
     horizon: null,
@@ -54,8 +56,8 @@ function task(id: string, children: Task[] = [], overrides: Partial<Task> = {}):
 const id = (s: string) => s as TaskId;
 const projectId = (s: string) => s as ProjectId;
 const projects: Project[] = [
-  { id: projectId("work"), name: "Work", color: "#2f4b8f", createdAt: 0 },
-  { id: projectId("home"), name: "Home", color: "#8c4b2f", createdAt: 0 },
+  { id: projectId("work"), name: "Work", color: "#2f4b8f", createdAt: 0, updatedAt: 0 },
+  { id: projectId("home"), name: "Home", color: "#8c4b2f", createdAt: 0, updatedAt: 0 },
 ];
 
 /** Render a tree as nested ids, e.g. "a[b,c[d]]" — handy for asserting shape. */

@@ -43,7 +43,7 @@ import {
 } from "./types";
 
 function proj(id: string, name: string): Project {
-  return { id: id as ProjectId, name, color: "#000", createdAt: 0 };
+  return { id: id as ProjectId, name, color: "#000", createdAt: 0, updatedAt: 0 };
 }
 function task(text: string, projectId: string, plannedFor: string | null = null): Task {
   return { ...makeTask(text, projectId as ProjectId), plannedFor };
@@ -458,7 +458,7 @@ describe("reckoningCards", () => {
 // ─── Recurrences ────────────────────────────────────────────────────
 
 function rec(id: string, rule: RecurrenceRule, template: Task): Recurrence {
-  return { id: id as RecurrenceId, template, rule, createdAt: 0 };
+  return { id: id as RecurrenceId, template, rule, createdAt: 0, updatedAt: 0 };
 }
 /** An accepted instance of recurrence `recId` for `occ`. */
 function instance(recId: string, occ: string, completed: boolean): Task {

@@ -98,6 +98,11 @@ export interface Recurrence {
   template: Task;
   rule: RecurrenceRule;
   createdAt: number;
+  /**
+   * v18: when the rule or template last changed — the merge's clock for
+   * recurrences (newest wins per recurrence). Stamped at the store's choke point.
+   */
+  updatedAt: number;
 }
 
 export interface Project {
@@ -105,6 +110,8 @@ export interface Project {
   name: string;
   color: string;
   createdAt: number;
+  /** v18: when the name or colour last changed — the merge's clock for projects. */
+  updatedAt: number;
 }
 
 export interface Task {
@@ -133,6 +140,17 @@ export interface Task {
    * used by cloud sync for per-task last-write-wins merging. See src/sync/merge.
    */
   updatedAt: number;
+  /**
+   * v18: order among siblings, as a fractional rank (see store/rank). Siblings
+   * are kept sorted by it; "" means not ranked yet. Assigned at the store's
+   * choke point (store/placement), never by hand.
+   */
+  rank: string;
+  /**
+   * v18: when this task's parent or rank last changed — placement's own clock,
+   * so the merge can resolve a move independently of a content edit.
+   */
+  movedAt: number;
   priority: TaskPriority;
   /**
    * The day this task is committed to. `null` = no concrete date.
@@ -487,7 +505,7 @@ export interface AppState {
   days: DayRecord[];
 }
 
-export const SCHEMA_VERSION = 17;
+export const SCHEMA_VERSION = 18;
 export const DEFAULT_PROJECT_ID = "project-inbox" as ProjectId;
 export const PROJECT_ROW_PREFIX = "project:";
 
@@ -520,6 +538,7 @@ export function defaultProject(): Project {
     name: "Inbox",
     color: PROJECT_COLORS[0],
     createdAt: 0,
+    updatedAt: 0,
   };
 }
 

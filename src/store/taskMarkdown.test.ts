@@ -16,6 +16,8 @@ function task(text: string, over: Partial<Task> = {}): Task {
     children: [],
     createdAt: 0,
     updatedAt: 0,
+    rank: "",
+    movedAt: 0,
     priority: 4,
     plannedFor: null,
     horizon: null,

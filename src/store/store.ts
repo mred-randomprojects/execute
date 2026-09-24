@@ -29,6 +29,8 @@ import {
   emptyState,
   pruneTombstones,
 } from "../types";
+import { placeTasks } from "./placement";
+import { jsonEqual } from "../sync/merge";
 import {
   assignProjectDeep,
   cloneWithNewIds,
@@ -321,6 +323,43 @@ function buryTrashed(s: AppState, entries: readonly TrashedTask[]): Tombstone[] 
   );
 }
 
+// ─── Placement + project/recurrence clocks ──────────────────────────
+//
+// The rest of what the merge needs, written at the same choke point: every
+// task's rank/movedAt (store/placement), and `updatedAt` on any project or
+// recurrence whose content changed. Deliberately generic — compare, don't
+// enumerate — so a new project or recurrence field can't be forgotten.
+
+function stampChanged<T extends { id: string; updatedAt: number }>(
+  prev: readonly T[],
+  next: T[],
+  now: number,
+): T[] {
+  if (next === prev) return next;
+  const before = new Map(prev.map((x) => [x.id, x]));
+  let changed = false;
+  const out = next.map((x) => {
+    const was = before.get(x.id);
+    if (was === x) return x;
+    if (was != null && jsonEqual({ ...was, updatedAt: 0 }, { ...x, updatedAt: 0 })) return x;
+    if (x.updatedAt === now) return x;
+    changed = true;
+    return { ...x, updatedAt: now };
+  });
+  return changed ? out : next;
+}
+
+function withSyncStamps(prev: AppState, next: AppState): AppState {
+  const now = Date.now();
+  const tasks = placeTasks(prev.tasks, next.tasks, now);
+  const projects = stampChanged(prev.projects, next.projects, now);
+  const recurrences = stampChanged(prev.recurrences, next.recurrences, now);
+  if (tasks === next.tasks && projects === next.projects && recurrences === next.recurrences) {
+    return next;
+  }
+  return { ...next, tasks, projects, recurrences };
+}
+
 /** The stamped state plus the ids the transform actually touched. */
 interface Stamped {
   state: AppState;
@@ -399,7 +438,7 @@ function update(fn: (s: AppState) => AppState, label: string | null): void {
 
   const stamped = stampTasks(prev, produced);
   const { touched } = stamped;
-  const next = withTombstones(prev, stamped.state);
+  const next = withTombstones(prev, withSyncStamps(prev, stamped.state));
   if (label == null) {
     state = next;
   } else {
@@ -763,6 +802,7 @@ export function createProject(name: string): ProjectId {
         name: cleanName,
         color: nextProjectColor(s.projects.length),
         createdAt: Date.now(),
+        updatedAt: Date.now(),
       },
     ],
   }), titled("New project", cleanName));
@@ -1392,7 +1432,10 @@ export function createRecurrence(
   const template = makeTask(text, projectId);
   update((s) => ({
     ...s,
-    recurrences: [...s.recurrences, { id, template, rule: normalizeRule(rule), createdAt: Date.now() }],
+    recurrences: [
+      ...s.recurrences,
+      { id, template, rule: normalizeRule(rule), createdAt: Date.now(), updatedAt: Date.now() },
+    ],
   }), titled("New recurring task", text));
   return { id, taskId: template.id };
 }
@@ -1540,8 +1583,10 @@ export function acceptRecurrence(recId: RecurrenceId, today: ISODate): TaskId | 
 function applyStep(step: HistoryStep, kind: "undo" | "redo"): void {
   // Tombstones are diffed against the state we're leaving, not the snapshot's
   // own set — undoing a *create* has to leave a record behind, or the cloud
-  // reads the pushed copy back as a fresh add and the task returns.
-  const restored = withTombstones(state, restamp(step.state, step.touched));
+  // reads the pushed copy back as a fresh add and the task returns. Placement
+  // and project/recurrence stamps likewise: the snapshot's old ranks and
+  // contents come back stamped `now`, or the cloud's newer copy would win.
+  const restored = withTombstones(state, withSyncStamps(state, restamp(step.state, step.touched)));
   state = withHistory(restored, state.actionLog, {
     id: nanoid(),
     label: step.label,

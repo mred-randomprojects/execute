@@ -78,7 +78,7 @@ describe("highlightSegments", () => {
 
 describe("searchTasks", () => {
   const inbox = defaultProject();
-  const work: Project = { id: "p-work" as ProjectId, name: "Work", color: "#123456", createdAt: 0 };
+  const work: Project = { id: "p-work" as ProjectId, name: "Work", color: "#123456", createdAt: 0, updatedAt: 0 };
   const projects = [inbox, work];
 
   it("returns nothing for a blank query", () => {

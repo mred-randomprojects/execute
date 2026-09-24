@@ -162,6 +162,7 @@ describe("deleting a recurrence", () => {
           template: makeTask("take the bins out"),
           rule: defaultRule("2026-01-01"),
           createdAt: Date.now(),
+          updatedAt: Date.now(),
         },
       ],
     };

@@ -20,6 +20,8 @@ export function makeTask(
     children: [],
     createdAt: Date.now(),
     updatedAt: Date.now(),
+    rank: "", // assigned when it lands in the tree (store/placement)
+    movedAt: Date.now(),
     priority: 4,
     plannedFor: null,
     horizon: null,
