@@ -23,7 +23,9 @@
     "test:watch": "vitest",
     "icons": "node scripts/generate-icons.mjs",
     "package": "pnpm icons && vite build && electron-forge package",
-    "make": "pnpm icons && vite build && electron-forge make"
+    "make": "pnpm icons && vite build && electron-forge make",
+    "firebase": "scripts/firebase.sh",
+    "deploy:rules": "scripts/firebase.sh deploy --only firestore:rules"
   },
   "dependencies": {
     "@fontsource/ibm-plex-mono": "^5.1.0",

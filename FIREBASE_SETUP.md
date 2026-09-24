@@ -76,9 +76,20 @@ https://mred-randomprojects.github.io/execute/
 
 ## 6. Publish Security Rules
 
-1. In **Firestore Database**, open the **Rules** tab.
-2. Replace the rules with the contents of [firestore.rules](./firestore.rules).
-3. Click **Publish**.
+[firestore.rules](./firestore.rules) is the source of truth; deploy it with the
+Firebase CLI rather than pasting it into the console, so the live rules never
+drift from the repo:
+
+```bash
+pnpm firebase login        # once per machine — opens a browser
+pnpm deploy:rules          # firebase deploy --only firestore:rules
+```
+
+`scripts/firebase.sh` runs the CLI on Node ≥ 20 (it needs it; the app builds on
+18), borrowing the newest nvm-installed Node if the current one is older. The
+project is pinned in `.firebaserc`.
+
+(Console fallback: **Firestore Database → Rules**, paste, **Publish**.)
 
 The important rule is:
 
