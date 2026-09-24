@@ -88,6 +88,14 @@ What went wrong in September 2026, and the guard for each:
   day that's gone. → The web's Today lists them under "Earlier", and its header
   says how old the cloud copy is.
 
+**Placement is data (v18).** Each task carries `rank` (fractional order among
+siblings, `store/rank.ts`) and `movedAt` (when its parent or rank last changed),
+written at the store's choke point by `store/placement.ts`. The merge resolves
+placement per task by `movedAt` and rebuilds the tree (`mergeTrees`), so a move
+on either device survives — before, the writer's tree shape won wholesale.
+Projects and recurrences carry `updatedAt` and merge newest-wins per id. This
+is Phase 0 of the per-task-documents plan.
+
 **Known limit — the next architectural step.** One document means every edit
 rewrites (and every listener re-downloads) the whole state, and the 1 MiB cap
 is only pushed back, not removed. The durable fix is a document per task (or
