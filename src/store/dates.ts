@@ -216,3 +216,14 @@ export function monthElapsed(today: ISODate): number {
 function clamp01(n: number): number {
   return Math.min(1, Math.max(0, n));
 }
+
+/** How long ago a timestamp was, coarsely: "just now", "5m ago", "3h ago", "9d ago". */
+export function sinceLabel(at: number, now: number = Date.now()): string {
+  const s = Math.max(0, Math.floor((now - at) / 1000));
+  if (s < 45) return "just now";
+  const m = Math.round(s / 60);
+  if (m < 60) return `${m}m ago`;
+  const h = Math.round(m / 60);
+  if (h < 36) return `${h}h ago`;
+  return `${Math.round(h / 24)}d ago`;
+}

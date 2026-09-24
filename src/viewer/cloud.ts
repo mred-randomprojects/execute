@@ -1,11 +1,42 @@
 import { doc, getDoc, onSnapshot, runTransaction, setDoc, type Unsubscribe } from "firebase/firestore";
 import { firebaseDb } from "../firebase";
 import type { AppState } from "../types";
+import { SCHEMA_VERSION } from "../types";
 import { coerceState } from "../store/persistence";
 import { mergeStates } from "../sync/merge";
+import {
+  CLOUD_DOC_BUDGET_BYTES,
+  CloudDocTooLargeError,
+  OutdatedClientError,
+  firestoreSize,
+  toCloud,
+} from "../sync/cloudDoc";
 
 function appDataRef(uid: string) {
   return doc(firebaseDb(), "users", uid, "data", "appData");
+}
+
+/** What the raw document says about itself, before coercion normalizes it away. */
+export interface CloudMeta {
+  /** When any client last wrote the document (ms), or null if never stamped. */
+  updatedAt: number | null;
+  /** The schema the writer was on. Above ours → we're the outdated client. */
+  schemaVersion: number;
+}
+
+function metaOf(raw: Record<string, unknown>): CloudMeta {
+  return {
+    updatedAt: typeof raw.updatedAt === "number" ? raw.updatedAt : null,
+    schemaVersion: typeof raw.schemaVersion === "number" ? raw.schemaVersion : 0,
+  };
+}
+
+/** The exact payload written: the cloud projection, stamped, and size-checked. */
+function cloudPayload(state: AppState): AppState & { updatedAt: number } {
+  const payload = { ...toCloud(state), updatedAt: Date.now() };
+  const bytes = firestoreSize(payload);
+  if (bytes > CLOUD_DOC_BUDGET_BYTES) throw new CloudDocTooLargeError(bytes);
+  return payload;
 }
 
 /**
@@ -14,10 +45,13 @@ function appDataRef(uid: string) {
  * never trusts the raw blob. Returns null when the document doesn't exist yet
  * (nothing seeded).
  */
-export async function loadAppState(uid: string): Promise<AppState | null> {
+export async function loadAppState(
+  uid: string,
+): Promise<{ state: AppState; meta: CloudMeta } | null> {
   const snap = await getDoc(appDataRef(uid));
   if (!snap.exists()) return null;
-  return coerceState(snap.data());
+  const raw = snap.data();
+  return { state: coerceState(raw), meta: metaOf(raw) };
 }
 
 /**
@@ -28,7 +62,7 @@ export async function loadAppState(uid: string): Promise<AppState | null> {
  */
 export function subscribeAppState(
   uid: string,
-  onData: (state: AppState | null) => void,
+  onData: (state: AppState | null, meta: CloudMeta | null) => void,
   onError: (e: unknown) => void,
 ): Unsubscribe {
   return onSnapshot(
@@ -39,7 +73,12 @@ export function subscribeAppState(
       // don't flash "No data yet" (or paint null) before the real data lands —
       // wait for either a cached doc or the server's answer.
       if (snap.metadata.fromCache && !snap.exists()) return;
-      onData(snap.exists() ? coerceState(snap.data()) : null);
+      if (!snap.exists()) {
+        onData(null, null);
+        return;
+      }
+      const raw = snap.data();
+      onData(coerceState(raw), metaOf(raw));
     },
     onError,
   );
@@ -52,7 +91,7 @@ export function subscribeAppState(
  * `undefined` (Firestore rejects those); we add an updatedAt stamp for info.
  */
 export async function saveAppState(uid: string, state: AppState): Promise<void> {
-  await setDoc(appDataRef(uid), { ...state, updatedAt: Date.now() });
+  await setDoc(appDataRef(uid), cloudPayload(state));
 }
 
 /**
@@ -61,13 +100,23 @@ export async function saveAppState(uid: string, state: AppState): Promise<void> 
  * With a single writer this is equivalent to an overwrite; once a second device
  * can write, it's what stops the two from clobbering each other. Returns the
  * merged state so the caller can adopt it locally (keeping local ≡ cloud).
+ *
+ * Throws instead of writing when the document was written by a newer schema
+ * ({@link OutdatedClientError}) or the payload is over budget
+ * ({@link CloudDocTooLargeError}) — both used to fail silently, or worse.
  */
 export async function mergeAndSave(uid: string, local: AppState): Promise<AppState> {
   const ref = appDataRef(uid);
   return runTransaction(firebaseDb(), async (tx) => {
     const snap = await tx.get(ref);
-    const merged = snap.exists() ? mergeStates(local, coerceState(snap.data())) : local;
-    tx.set(ref, { ...merged, updatedAt: Date.now() });
+    let merged = local;
+    if (snap.exists()) {
+      const raw = snap.data();
+      const { schemaVersion } = metaOf(raw);
+      if (schemaVersion > SCHEMA_VERSION) throw new OutdatedClientError(schemaVersion, SCHEMA_VERSION);
+      merged = mergeStates(local, coerceState(raw));
+    }
+    tx.set(ref, cloudPayload(merged));
     return merged;
   });
 }

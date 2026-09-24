@@ -81,6 +81,11 @@ function init(): Services {
       // Auto-detecting long-polling falls back to plain HTTP polling on exactly
       // those networks. (Firebase's own recommended fix for this class of hang.)
       experimentalAutoDetectLongPolling: true,
+      // A stray `undefined` anywhere in the ~800 KB state would otherwise make
+      // every write throw — and the JSON file on disk hides it (JSON.stringify
+      // drops undefined keys), so a restart "fixes" it until it recurs. Drop
+      // them on write, exactly as the local file already does.
+      ignoreUndefinedProperties: true,
       // Persist the last-synced snapshot in IndexedDB so repeat opens paint from
       // cache instantly while the network refresh happens in the background — the
       // "open on my phone, glance, tick something off" path is now near-instant.

@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   isoWeekday,
+  sinceLabel,
   monthElapsed,
   monthKey,
   monthKeyOffset,
@@ -55,5 +56,16 @@ describe("period elapsed", () => {
   it("month elapsed scales with the day of month", () => {
     expect(monthElapsed("2026-06-18")).toBeCloseTo(17.5 / 30, 5);
     expect(monthElapsed("2026-02-01")).toBeCloseTo(0.5 / 28, 5);
+  });
+});
+
+describe("sinceLabel", () => {
+  const now = 1_790_000_000_000;
+  it("reads coarsely, never negative", () => {
+    expect(sinceLabel(now + 5_000, now)).toBe("just now");
+    expect(sinceLabel(now - 30_000, now)).toBe("just now");
+    expect(sinceLabel(now - 5 * 60_000, now)).toBe("5m ago");
+    expect(sinceLabel(now - 3 * 3_600_000, now)).toBe("3h ago");
+    expect(sinceLabel(now - 9 * 86_400_000, now)).toBe("9d ago");
   });
 });

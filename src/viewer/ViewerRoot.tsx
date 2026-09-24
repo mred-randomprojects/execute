@@ -3,11 +3,12 @@ import type { User } from "firebase/auth";
 import { AuthProvider, useAuth } from "../auth";
 import { LoginPage } from "../components/LoginPage";
 import type { AppState, Task, TaskId } from "../types";
+import { SCHEMA_VERSION } from "../types";
 import { makeTask, mapById } from "../store/tasks";
 import { parseCapture } from "../store/capture";
 import { todayISO } from "../store/dates";
 import { firebaseConfigured } from "../firebase";
-import { loadAppState, mergeAndSave, subscribeAppState } from "./cloud";
+import { loadAppState, mergeAndSave, subscribeAppState, type CloudMeta } from "./cloud";
 import { ReadOnlyApp } from "./ReadOnlyApp";
 import { SeedPanel } from "./SeedPanel";
 
@@ -82,6 +83,10 @@ function AuthedViewer({ user, onSignOut }: { user: User; onSignOut: () => void }
     new URLSearchParams(window.location.search).has("seed");
 
   const [state, setState] = useState<AppState | null>(null);
+  const [meta, setMeta] = useState<CloudMeta | null>(null);
+  // A write that failed. Shown until the next one succeeds — before, a failed
+  // check-off was only logged, and the next snapshot silently un-did it.
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [phase, setPhase] = useState<"loading" | "ready" | "error">("loading");
   const [errorMsg, setErrorMsg] = useState("");
   const [reloadKey, setReloadKey] = useState(0);
@@ -95,10 +100,11 @@ function AuthedViewer({ user, onSignOut }: { user: User; onSignOut: () => void }
     let cancelled = false;
 
     // First paint from whichever wins. Also keeps updating on every live change.
-    const paint = (s: AppState | null) => {
+    const paint = (s: AppState | null, m: CloudMeta | null) => {
       if (cancelled) return;
       paintedRef.current = true;
       setState(s);
+      setMeta(m);
       setPhase("ready");
     };
     // Only a hard error if we never painted — a live-stream hiccup after we've
@@ -113,7 +119,7 @@ function AuthedViewer({ user, onSignOut }: { user: User; onSignOut: () => void }
     // the mobile networks where the live streaming channel can't establish
     // (see firebase.ts). This is what stops the indefinite "Loading…" hang.
     loadAppState(user.uid)
-      .then(paint)
+      .then((doc) => paint(doc?.state ?? null, doc?.meta ?? null))
       .catch(() => {
         /* the live sub or the timeout backstop will surface any real failure */
       });
@@ -195,11 +201,20 @@ function AuthedViewer({ user, onSignOut }: { user: User; onSignOut: () => void }
   // then reconciles to the server truth (which includes this change).
   const push = (next: AppState) => {
     setState(next);
-    void mergeAndSave(user.uid, next).catch((e: unknown) => {
-      // eslint-disable-next-line no-console
-      console.error("cloud sync failed", e);
-    });
+    mergeAndSave(user.uid, next).then(
+      () => setSaveError(null),
+      (e: unknown) => {
+        // eslint-disable-next-line no-console
+        console.error("cloud sync failed", e);
+        setSaveError(e instanceof Error ? e.message : "Couldn't save that change.");
+      },
+    );
   };
+
+  // This page is older than whatever last wrote the data (the desktop got a new
+  // schema first). Reading still works; writing would strip what it doesn't
+  // know, so mergeAndSave refuses — and a reload fetches the current build.
+  const outdated = meta != null && meta.schemaVersion > SCHEMA_VERSION;
 
   const onToggle = (taskId: TaskId) => {
     push({ ...state, tasks: toggleCompleted(state.tasks, taskId) });
@@ -223,7 +238,15 @@ function AuthedViewer({ user, onSignOut }: { user: User; onSignOut: () => void }
   return (
     <ReadOnlyApp
       state={state}
-      user={user}
+      cloudUpdatedAt={meta?.updatedAt ?? null}
+      notice={
+        outdated
+          ? { text: "A newer version of Execute saved this data. Reload to update before editing.", action: "Reload", onAction: () => window.location.reload() }
+          : saveError != null
+            ? { text: `Couldn't save: ${saveError}`, action: "Dismiss", onAction: () => setSaveError(null) }
+            : null
+      }
+      email={user.email}
       onSignOut={onSignOut}
       onToggle={onToggle}
       onAdd={onAdd}

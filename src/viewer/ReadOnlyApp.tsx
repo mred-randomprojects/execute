@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { User } from "firebase/auth";
 import type { AppState, ProjectId, TaskId } from "../types";
-import { todayISO } from "../store/dates";
+import { sinceLabel, todayISO } from "../store/dates";
 import { CaptureBar } from "../components/CaptureBar";
 import {
   groupTasksByProject,
@@ -67,15 +66,40 @@ function ReadOnlyDivider({
   );
 }
 
+/** A one-line strip under the header for things the user must know about. */
+export interface ViewerNotice {
+  text: string;
+  action: string;
+  onAction: () => void;
+}
+
+/** Re-render every 30s so "updated 5m ago" keeps telling the truth. */
+function useNow(): number {
+  const [now, setNow] = useState(Date.now);
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 30_000);
+    return () => clearInterval(t);
+  }, []);
+  return now;
+}
+
+/** Past this, the cloud copy is old enough that the header says so in colour. */
+const STALE_CLOUD_MS = 24 * 3_600_000;
+
 export function ReadOnlyApp({
   state,
-  user,
+  cloudUpdatedAt,
+  notice,
+  email,
   onSignOut,
   onToggle,
   onAdd,
 }: {
   state: AppState;
-  user: User;
+  /** When any client last wrote the cloud document — how fresh this view is. */
+  cloudUpdatedAt: number | null;
+  notice: ViewerNotice | null;
+  email: string | null;
   onSignOut: () => void;
   onToggle: (id: TaskId) => void;
   onAdd: (text: string, today: boolean) => void;
@@ -104,6 +128,8 @@ export function ReadOnlyApp({
     [filtered, state.projects],
   );
   const progress = useMemo(() => todayProgress(state.tasks, today), [state.tasks, today]);
+  const now = useNow();
+  const cloudStale = cloudUpdatedAt != null && now - cloudUpdatedAt > STALE_CLOUD_MS;
 
   const noop = () => {};
   const editor: Editor = {
@@ -184,9 +210,14 @@ export function ReadOnlyApp({
           <span className="mono rounded-sm bg-surface-2 px-1.5 py-[2px] text-[10px] uppercase tracking-[0.12em] text-ink-faint">
             live
           </span>
+          {cloudUpdatedAt != null && (
+            <span className={`text-[11px] ${cloudStale ? "text-mid" : "text-ink-faint"}`}>
+              updated {sinceLabel(cloudUpdatedAt, now)}
+            </span>
+          )}
         </div>
         <div className="flex items-center gap-3">
-          <span className="hidden text-[12px] text-ink-faint sm:inline">{user.email}</span>
+          <span className="hidden text-[12px] text-ink-faint sm:inline">{email}</span>
           <button
             type="button"
             onClick={onSignOut}
@@ -196,6 +227,19 @@ export function ReadOnlyApp({
           </button>
         </div>
       </header>
+
+      {notice != null && (
+        <div className="flex items-center justify-between gap-3 border-b border-line bg-surface-2 px-6 py-2 text-[13px] text-ink">
+          <span>{notice.text}</span>
+          <button
+            type="button"
+            onClick={notice.onAction}
+            className="shrink-0 rounded border border-line bg-surface px-3 py-1 text-[12px] font-medium hover:bg-surface-3"
+          >
+            {notice.action}
+          </button>
+        </div>
+      )}
 
       <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col px-6 py-8 sm:px-10">
         <div className="mb-5 border-b border-line pb-4">

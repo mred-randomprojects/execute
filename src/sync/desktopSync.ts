@@ -7,18 +7,39 @@ import { firebaseAuth, firebaseConfigured } from "../firebase";
 import { adoptRemote, getReady, getState, setCloudSync, subscribeReady } from "../store/store";
 import { mergeAndSave, subscribeAppState } from "../viewer/cloud";
 import { jsonEqual, mergeStates } from "./merge";
+import { CloudDocTooLargeError, OutdatedClientError, toCloud } from "./cloudDoc";
 
 const clientId = import.meta.env.VITE_GOOGLE_DESKTOP_CLIENT_ID;
 const clientSecret = import.meta.env.VITE_GOOGLE_DESKTOP_CLIENT_SECRET;
 
 const PUSH_DEBOUNCE_MS = 1500;
+/**
+ * A push that hasn't settled by now is abandoned. Firestore's transaction RPCs
+ * have no timeout of their own, and a request caught by a sleep or a network
+ * change can simply never settle — which used to leave `pushing` stuck true, so
+ * every later push quietly bowed out behind it. (That is how the desktop went
+ * nine days without writing, in September 2026, while showing nothing wrong.)
+ * The abandoned transaction may still land later; that's harmless — it's a merge.
+ */
+const PUSH_TIMEOUT_MS = 30_000;
+/** Retry delays after consecutive failures; the last one repeats. */
+const RETRY_BACKOFF_MS = [5_000, 15_000, 60_000, 5 * 60_000];
+/** How often to re-check for unsynced changes (a missed wake/online event). */
+const HEARTBEAT_MS = 60_000;
 
 export type SyncStatus =
   | { kind: "off" } // not the desktop app, or no OAuth client configured
   | { kind: "signedOut" }
-  | { kind: "idle"; email: string | null }
-  | { kind: "syncing"; email: string | null }
-  | { kind: "error"; email: string | null; message: string };
+  | { kind: "idle"; email: string | null; lastSyncedAt: number | null; pending: boolean }
+  | { kind: "syncing"; email: string | null; lastSyncedAt: number | null }
+  | {
+      kind: "error";
+      email: string | null;
+      message: string;
+      lastSyncedAt: number | null;
+      /** When the next automatic retry fires, or null if it won't retry by itself. */
+      retryAt: number | null;
+    };
 
 // ── Observable status (for the sidebar control) ──────────────────────
 let status: SyncStatus = { kind: "off" };
@@ -59,9 +80,51 @@ export function syncAvailable(): boolean {
 }
 
 // ── The push loop ────────────────────────────────────────────────────
+//
+// Local changes are counted, not flagged: `localVersion` ticks on every save,
+// and a push that succeeds marks everything up to the version it *started*
+// with as synced. So a change made while a push is in flight is still pending
+// afterwards, and "unsynced changes" is exact rather than a guess.
 let pushTimer: ReturnType<typeof setTimeout> | null = null;
+let retryTimer: ReturnType<typeof setTimeout> | null = null;
 let pushing = false;
 let dirtyDuringPush = false;
+let localVersion = 0;
+let syncedVersion = 0;
+let lastSyncedAt: number | null = null;
+let failures = 0;
+
+function pending(): boolean {
+  return localVersion > syncedVersion;
+}
+
+function idleStatus(email: string | null): SyncStatus {
+  return { kind: "idle", email, lastSyncedAt, pending: pending() };
+}
+
+function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const t = setTimeout(
+      () => reject(new Error("The cloud didn't answer — will retry.")),
+      ms,
+    );
+    p.then(
+      (v) => {
+        clearTimeout(t);
+        resolve(v);
+      },
+      (e: unknown) => {
+        clearTimeout(t);
+        reject(e);
+      },
+    );
+  });
+}
+
+function clearRetry() {
+  if (retryTimer != null) clearTimeout(retryTimer);
+  retryTimer = null;
+}
 
 async function doPush() {
   const user = firebaseAuth().currentUser;
@@ -72,16 +135,29 @@ async function doPush() {
     dirtyDuringPush = true;
     return;
   }
+  clearRetry();
   pushing = true;
-  setStatus({ kind: "syncing", email: user.email });
+  const version = localVersion;
+  setStatus({ kind: "syncing", email: user.email, lastSyncedAt });
   try {
-    await mergeAndSave(user.uid, getState());
-    setStatus({ kind: "idle", email: user.email });
+    await withTimeout(mergeAndSave(user.uid, getState()), PUSH_TIMEOUT_MS);
+    syncedVersion = Math.max(syncedVersion, version);
+    lastSyncedAt = Date.now();
+    failures = 0;
+    setStatus(idleStatus(user.email));
   } catch (e: unknown) {
+    failures += 1;
+    // Retrying can't fix these two — the user has to act. Everything else
+    // (offline, a timeout, contention) is worth another go, backing off.
+    const hopeless = e instanceof OutdatedClientError || e instanceof CloudDocTooLargeError;
+    const delay = RETRY_BACKOFF_MS[Math.min(failures, RETRY_BACKOFF_MS.length) - 1];
+    if (!hopeless) retryTimer = setTimeout(() => void doPush(), delay);
     setStatus({
       kind: "error",
       email: user.email,
       message: e instanceof Error ? e.message : "Sync failed",
+      lastSyncedAt,
+      retryAt: hopeless ? null : Date.now() + delay,
     });
   } finally {
     pushing = false;
@@ -98,6 +174,32 @@ function schedulePush() {
   if (pushTimer != null) clearTimeout(pushTimer);
   pushTimer = setTimeout(() => void doPush(), PUSH_DEBOUNCE_MS);
 }
+
+/** A local save happened: there's something the cloud doesn't have yet. */
+function onLocalChange() {
+  localVersion += 1;
+  if (status.kind === "idle") setStatus(idleStatus(status.email));
+  schedulePush();
+}
+
+/**
+ * Push now if there's anything outstanding. Called on the events that follow a
+ * sleep or an outage — the network coming back, the window regaining focus —
+ * and on a slow heartbeat, so a missed event can't leave changes stranded.
+ */
+function kick(respectBackoff: boolean) {
+  if (firebaseAuth().currentUser == null || pushing) return;
+  if (status.kind === "error") {
+    // A hopeless error waits for the user; a backing-off one waits its turn,
+    // unless something just changed that makes an early try worthwhile.
+    if (status.retryAt == null) return;
+    if (respectBackoff && status.retryAt > Date.now()) return;
+    void doPush();
+    return;
+  }
+  if (pending()) void doPush();
+}
+const kickNow = () => kick(false);
 
 // ── The pull loop ────────────────────────────────────────────────────
 // The other half of two-way sync: a live subscription to the cloud doc that
@@ -133,13 +235,24 @@ function startPull(uid: string) {
       // If the merge carries anything the cloud lacks (offline/local-only edits),
       // push once to converge the cloud too. Guarded, so a settled state never
       // schedules an endless push↔pull.
-      if (!jsonEqual(merged, remote)) schedulePush();
+      // Compared through the cloud projection: the cloud deliberately carries
+      // less than the device (see toCloud), and comparing the full state would
+      // read that difference as "the cloud is behind" and push forever.
+      if (!jsonEqual(toCloud(merged), remote)) schedulePush();
+      else if (pending() && !pushing) {
+        // The cloud already holds everything local has (another device, or an
+        // earlier push that timed out on our side but landed): nothing to send.
+        syncedVersion = localVersion;
+        if (status.kind === "idle") setStatus(idleStatus(status.email));
+      }
     },
     (e: unknown) => {
       setStatus({
         kind: "error",
         email: firebaseAuth().currentUser?.email ?? null,
         message: e instanceof Error ? e.message : "Sync read failed",
+        lastSyncedAt,
+        retryAt: null,
       });
     },
   );
@@ -168,11 +281,11 @@ export function initAutoSync(): () => void {
   }
   const auth = firebaseAuth();
   const restored = auth.currentUser;
-  setStatus(restored != null ? { kind: "idle", email: restored.email } : { kind: "signedOut" });
+  setStatus(restored != null ? idleStatus(restored.email) : { kind: "signedOut" });
 
   const unsubAuth = onAuthStateChanged(auth, (user) => {
     if (user != null) {
-      setStatus({ kind: "idle", email: user.email });
+      setStatus(idleStatus(user.email));
       if (getReady()) void doPush(); // catch-up push on restored session
     } else {
       setStatus({ kind: "signedOut" });
@@ -182,13 +295,26 @@ export function initAutoSync(): () => void {
   // Also (re)subscribe the moment the store finishes loading — auth may restore
   // before the local load completes, and the pull must wait for readiness.
   const unsubReady = subscribeReady(reconcilePull);
-  setCloudSync(() => schedulePush());
+  setCloudSync(onLocalChange);
+
+  const onVisible = () => {
+    if (document.visibilityState === "visible") kickNow();
+  };
+  window.addEventListener("online", kickNow);
+  window.addEventListener("focus", kickNow);
+  document.addEventListener("visibilitychange", onVisible);
+  const heartbeat = setInterval(() => kick(true), HEARTBEAT_MS);
 
   return () => {
     unsubAuth();
     unsubReady();
     stopPull();
     setCloudSync(null);
+    window.removeEventListener("online", kickNow);
+    window.removeEventListener("focus", kickNow);
+    document.removeEventListener("visibilitychange", onVisible);
+    clearInterval(heartbeat);
+    clearRetry();
     if (pushTimer != null) clearTimeout(pushTimer);
   };
 }
