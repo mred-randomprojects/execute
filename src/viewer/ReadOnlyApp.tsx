@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { AppState, ProjectId, TaskId } from "../types";
+import { findById } from "../store/tasks";
+import { TaskSheet, type TaskPatch } from "./TaskSheet";
 import { sinceLabel, todayISO } from "../store/dates";
 import { CaptureBar } from "../components/CaptureBar";
 import {
@@ -7,7 +9,6 @@ import {
   leftoverTree,
   todayProgress,
   viewTasks,
-  VIEW_TITLES,
   type Period,
   type ViewKind,
 } from "../selectors";
@@ -95,6 +96,7 @@ export function ReadOnlyApp({
   onSignOut,
   onToggle,
   onAdd,
+  onUpdate,
 }: {
   state: AppState;
   /** When any client last wrote the cloud document — how fresh this view is. */
@@ -104,6 +106,7 @@ export function ReadOnlyApp({
   onSignOut: () => void;
   onToggle: (id: TaskId) => void;
   onAdd: (text: string, today: boolean) => void;
+  onUpdate: (id: TaskId, patch: TaskPatch) => void;
 }) {
   const captureRef = useRef<HTMLInputElement>(null);
   const today = todayISO(state.devDateOverride);
@@ -113,6 +116,10 @@ export function ReadOnlyApp({
   // Local-only UI state — navigation, not mutation. Persisting none of it.
   const [cursorId, setCursorId] = useState<TaskId | null>(null);
   const [peekId, setPeekId] = useState<TaskId | null>(null);
+  // The task whose details sheet is open. Tapping a row opens it — on a phone
+  // that's the whole of "select", and the only way to reach a task's fields.
+  const [sheetId, setSheetId] = useState<TaskId | null>(null);
+  const [accountOpen, setAccountOpen] = useState(false);
   const [collapsed, setCollapsed] = useState<Set<TaskId>>(new Set());
   const [collapsedProjects, setCollapsedProjects] = useState<Set<ProjectId>>(new Set());
 
@@ -160,7 +167,7 @@ export function ReadOnlyApp({
     // and there was no way to see a task's details.
     select: (id) => {
       setCursorId(id);
-      setPeekId((p) => (p === id ? null : id));
+      setSheetId(id);
     },
     toggleSelect: setCursorId, // no multi-select in the viewer — just focus
     rangeSelect: setCursorId,
@@ -204,6 +211,8 @@ export function ReadOnlyApp({
     commitReason: noop,
   };
 
+  const sheetTask = sheetId != null ? (findById(state.tasks, sheetId) ?? null) : null;
+
   const toggleProject = (id: ProjectId) =>
     setCollapsedProjects((prev) => {
       const next = new Set(prev);
@@ -214,32 +223,53 @@ export function ReadOnlyApp({
 
   return (
     <div className="flex min-h-dvh flex-col bg-bg text-ink">
-      <header className="flex items-center justify-between border-b border-line px-6 py-3">
-        <div className="flex items-center gap-3">
+      {/* One slim bar that stays put: name, freshness, account. */}
+      <header className="sticky top-0 z-30 flex items-center justify-between border-b border-line bg-bg/95 px-4 py-2.5 backdrop-blur sm:px-6">
+        <div className="flex min-w-0 items-baseline gap-2.5">
           <span className="font-serif text-lg font-medium">execute</span>
-          <span className="mono rounded-sm bg-surface-2 px-1.5 py-[2px] text-[10px] uppercase tracking-[0.12em] text-ink-faint">
-            live
-          </span>
           {cloudUpdatedAt != null && (
-            <span className={`text-[11px] ${cloudStale ? "text-mid" : "text-ink-faint"}`}>
+            <span className={`truncate text-[11px] ${cloudStale ? "text-mid" : "text-ink-faint"}`}>
               updated {sinceLabel(cloudUpdatedAt, now)}
             </span>
           )}
         </div>
-        <div className="flex items-center gap-3">
-          <span className="hidden text-[12px] text-ink-faint sm:inline">{email}</span>
+        <div className="relative">
           <button
             type="button"
-            onClick={onSignOut}
-            className="rounded border border-line bg-surface px-3 py-1 text-[12px] font-medium hover:bg-surface-2"
+            onClick={() => setAccountOpen((o) => !o)}
+            aria-label="Account"
+            aria-expanded={accountOpen}
+            className="grid h-8 w-8 place-items-center rounded-full border border-line bg-surface text-[13px] font-medium text-ink-soft"
           >
-            Sign out
+            {(email ?? "?").slice(0, 1).toUpperCase()}
           </button>
+          {accountOpen && (
+            <>
+              <button
+                type="button"
+                aria-label="Close menu"
+                onClick={() => setAccountOpen(false)}
+                className="fixed inset-0 z-30 cursor-default"
+              />
+              <div className="absolute right-0 top-10 z-40 w-56 rounded-md border border-line bg-surface p-1 shadow-lg">
+                {email != null && (
+                  <p className="truncate px-3 py-2 text-[12px] text-ink-faint">{email}</p>
+                )}
+                <button
+                  type="button"
+                  onClick={onSignOut}
+                  className="w-full rounded-sm px-3 py-2 text-left text-[14px] text-ink hover:bg-surface-2"
+                >
+                  Sign out
+                </button>
+              </div>
+            </>
+          )}
         </div>
       </header>
 
       {notice != null && (
-        <div className="flex items-center justify-between gap-3 border-b border-line bg-surface-2 px-6 py-2 text-[13px] text-ink">
+        <div className="flex items-center justify-between gap-3 border-b border-line bg-surface-2 px-4 py-2 text-[13px] text-ink sm:px-6">
           <span>{notice.text}</span>
           <button
             type="button"
@@ -251,22 +281,19 @@ export function ReadOnlyApp({
         </div>
       )}
 
-      <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col px-6 py-8 sm:px-10">
-        <div className="mb-5 border-b border-line pb-4">
-          <div className="flex items-baseline justify-between gap-3">
-            <h1 className="font-serif text-[32px] font-medium leading-none tracking-tight">
-              {view === "today" ? "Today" : VIEW_TITLES[view]}
-            </h1>
-          </div>
-          <nav aria-label="View" className="mt-3 flex flex-wrap items-center gap-0.5">
+      <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col px-4 pb-10 pt-4 sm:px-10 sm:pt-8">
+        {/* The view switch is the heading: no separate title above it. */}
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <nav aria-label="View" className="flex rounded-md bg-surface-2 p-0.5">
             {TABS.map((t) => (
               <button
                 key={t.key}
                 type="button"
                 onClick={() => setView(t.key)}
+                aria-current={t.key === view ? "page" : undefined}
                 className={[
-                  "mono rounded-sm px-2 py-[4px] text-[10px] font-medium uppercase tracking-[0.1em] transition-colors",
-                  t.key === view ? "bg-surface-3 text-ink" : "text-ink-faint hover:bg-surface-2 hover:text-ink",
+                  "rounded-[5px] px-3.5 py-1.5 text-[14px] font-medium transition-colors",
+                  t.key === view ? "bg-surface text-ink shadow-sm" : "text-ink-faint",
                 ].join(" ")}
               >
                 {t.label}
@@ -274,13 +301,13 @@ export function ReadOnlyApp({
             ))}
           </nav>
           {view === "today" && (
-            <p className="mt-2 text-[14px] text-ink-soft">
+            <p className="shrink-0 text-[13px] text-ink-soft">
               {progress.total > 0 && progress.remaining === 0 ? (
-                <span className="text-good">Inbox zero — every task done.</span>
+                <span className="text-good">All done</span>
               ) : (
                 <span>
                   {progress.remaining} to go
-                  {progress.total > 0 ? ` · ${progress.done}/${progress.total} done` : ""}
+                  {progress.total > 0 ? ` · ${progress.done}/${progress.total}` : ""}
                 </span>
               )}
             </p>
@@ -348,6 +375,17 @@ export function ReadOnlyApp({
           </div>
         </EditorProvider>
       </div>
+      {sheetTask != null && (
+        <TaskSheet
+          task={sheetTask}
+          projects={state.projects}
+          canChangeProject={state.tasks.some((t) => t.id === sheetTask.id)}
+          today={today}
+          onUpdate={(patch) => onUpdate(sheetTask.id, patch)}
+          onToggle={() => onToggle(sheetTask.id)}
+          onClose={() => setSheetId(null)}
+        />
+      )}
     </div>
   );
 }

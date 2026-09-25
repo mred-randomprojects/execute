@@ -3,32 +3,15 @@ import type { User } from "firebase/auth";
 import { AuthProvider, useAuth } from "../auth";
 import { LoginPage } from "../components/LoginPage";
 import type { Task, TaskId } from "../types";
-import { findById, makeTask, mapById } from "../store/tasks";
+import { findById, makeTask } from "../store/tasks";
+import { setCompleted, updateTask } from "./intents";
+import type { TaskPatch } from "./TaskSheet";
 import { parseCapture } from "../store/capture";
 import { todayISO } from "../store/dates";
 import { firebaseConfigured } from "../firebase";
 import { firestoreDocStore } from "../sync/v2/firestoreStore";
 import { ViewerSync, type ViewerSnapshot } from "../sync/v2/viewer";
 import { ReadOnlyApp } from "./ReadOnlyApp";
-
-/**
- * Set one task's completion (an idempotent intent — a retry after a conflict
- * can't flip it twice). Stamped past the version being edited, so the merge
- * treats this edit as the newest for that task even across skewed clocks.
- */
-function setCompleted(tasks: Task[], id: TaskId, completed: boolean): Task[] {
-  return mapById(tasks, id, (t) => {
-    if (t.completed === completed) return t;
-    const now = Date.now();
-    return {
-      ...t,
-      completed,
-      completedAt: completed ? now : null,
-      wontDo: completed ? null : t.wontDo,
-      updatedAt: Math.max(now, t.updatedAt + 1),
-    };
-  });
-}
 
 // UX-level gate only. The REAL enforcement is the Firestore security rules,
 // which reject any read whose auth token isn't this verified email — the client
@@ -212,6 +195,10 @@ function AuthedViewer({ user, onSignOut }: { user: User; onSignOut: () => void }
     run((s) => (findById(s.tasks, task.id) != null ? s : { ...s, tasks: [...s.tasks, task] }));
   };
 
+  const onUpdate = (taskId: TaskId, patch: TaskPatch) => {
+    run((s) => ({ ...s, tasks: updateTask(s.tasks, taskId, patch) }));
+  };
+
   return (
     <ReadOnlyApp
       state={state}
@@ -227,6 +214,7 @@ function AuthedViewer({ user, onSignOut }: { user: User; onSignOut: () => void }
       onSignOut={onSignOut}
       onToggle={onToggle}
       onAdd={onAdd}
+      onUpdate={onUpdate}
     />
   );
 }
