@@ -5,11 +5,13 @@ This app follows the same Firebase pattern as `candito-tool`, `nutriapp`, and
 action):
 
 - Google Authentication for sign-in.
-- Cloud Firestore document per user at `users/{uid}/data/appData`.
-- **One-way sync (phase 1):** the Electron desktop app is the single source of
-  truth and *pushes* its `AppState` up. The web build is a **read-only viewer**.
-  There is no merge step and no web→desktop write path yet — that is a
-  deliberate later phase, only after the viewer is trusted.
+- Cloud Firestore, one small document per item under `users/{uid}/` (sync v2:
+  `tasks`, `projects`, `recurrences`, `tombstones`, `log`, `days`, `meta`).
+- **Two-way sync:** the desktop keeps a local copy and merges; the web
+  companion shows the cloud and writes its edits straight to it. How it works:
+  the "Sync" section of [docs/architecture.md](./docs/architecture.md).
+- The old single document `users/{uid}/data/appData` (sync v1) is frozen as a
+  backup since 2026-09-25 — nothing reads or writes it.
 
 ## 1. Create Or Select The Firebase Project
 
@@ -94,7 +96,7 @@ project is pinned in `.firebaserc`.
 The important rule is:
 
 ```js
-match /users/{userId}/data/appData {
+match /users/{userId}/{document=**} {
   allow read, write: if request.auth != null &&
     request.auth.uid == userId &&
     request.auth.token.email == "maxiredigonda@gmail.com" &&
@@ -126,31 +128,26 @@ VITE_FIREBASE_APP_ID
 
 The deploy workflow (added in a later step) passes these into the build.
 
-## 8. First-Sync Verification (once the Electron push lands)
+## 8. Verifying Sync
 
-Under one-way sync the desktop app is always the source of truth, so migration
-is simple and additive — no merge to get wrong:
-
-1. In the desktop (Electron) app, sign in with Google.
-2. Trigger **Sync now**.
-3. Open Firebase Console > Firestore Database > Data.
-4. Confirm this document exists:
-
-```text
-users/{yourFirebaseUid}/data/appData
-```
-
-5. Click the document and verify it contains `tasks`, `projects`, and
-   `schemaVersion`.
-6. Only then load the web viewer, sign in with the same Google account, and
-   confirm the tasks render.
-7. Confirm an account that is **not** `maxiredigonda@gmail.com` (a second
+1. In the desktop app, sign in with Google. The sidebar's sync control shows
+   the state; it should settle on **Synced to cloud**.
+2. For detail, read `sync-status.json` in the desktop's app-data folder
+   (`~/Library/Application Support/Execute/`): the engine state, how many
+   documents each collection holds in the cloud, and the local counts. It
+   holds counts and states only — never task content.
+3. In Firebase Console > Firestore Database > Data, `users/{uid}/` should hold
+   the collections above, and `meta/format` should read `version: 2`.
+4. Load the web companion, sign in with the same Google account: open tasks
+   and the last 14 days of completed ones should render, and checking one off
+   should show up on the desktop within seconds.
+5. Confirm an account that is **not** `maxiredigonda@gmail.com` (a second
    phone / incognito tab) is refused.
 
 ## 9. Do Not Do This
 
 - Do not publish permissive rules like `allow read, write: if true`.
 - Do not commit `.env.local` or any file containing the Firebase config.
-- Firestore is purely a mirror in phase 1 — nothing here deletes or overwrites
-  the desktop app's local JSON. Keep it that way until a two-way sync is
-  deliberately built.
+- Do not delete documents by hand in the console: a task deleted there has no
+  tombstone, so the desktop reads it as "never uploaded" and puts it back. Delete
+  in the app.

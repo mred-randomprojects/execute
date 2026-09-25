@@ -20,8 +20,9 @@ not a rewrite**. The rules that make that possible:
 - **All platform IO behind one seam.** The only code that knows the platform is
   persistence/sync: `store/persistence.ts` (`loadRaw`/`saveRaw`: Electron file
   vs `localStorage`), the `ExecuteBridge` preload API, and the Firestore layer
-  (`viewer/cloud.ts`, `sync/desktopSync.ts`). New platform differences go here —
-  never into feature code.
+  (`sync/v2/firestoreStore.ts` behind the `DocStore` port, wired by
+  `sync/desktopSync.ts` and `viewer/ViewerRoot.tsx`). New platform differences
+  go here — never into feature code.
 - **No web-specific (or desktop-specific) _logic_.** Merge rules, scheduling
   rules, recurrence, capture parsing — exactly one implementation in the core,
   called from both shells. Only _UI and capabilities_ may differ.
@@ -40,8 +41,9 @@ not a rewrite**. The rules that make that possible:
 - `App` wires the full interactive editor (keyboard engine + every mutation).
   `viewer/ReadOnlyApp` wires a deliberately-stripped editor (view · complete ·
   capture) via a mostly-no-op `Editor` — an **MVP, not a fork**.
-- Persistence: desktop = a local JSON file (via preload IPC); web = Firestore
-  (`viewer/cloud.ts`). The desktop pushes/merges through `sync/desktopSync.ts`.
+- Persistence: desktop = a local JSON file (via preload IPC), synced by the
+  engine in `sync/v2/engine.ts`; web = no local copy — it shows the cloud
+  through `sync/v2/viewer.ts` and writes its edits straight to it.
 
 ## Rule of thumb
 
@@ -55,57 +57,69 @@ Before adding code, ask: **is this domain logic, or platform IO/UI?**
 If you're ever tempted to copy logic into the viewer, stop: put it in the core
 and call it from both. That discipline is what keeps A→B a convergence.
 
-## Sync: how it works, and how it failed
+## Sync: how it works
 
-The whole `AppState` lives in **one Firestore document**
-(`users/{uid}/data/appData`). Every client writes it the same way:
-`viewer/cloud.ts` `mergeAndSave` — a transaction that reads the document,
-merges (`sync/merge.ts`, per-task last-write-wins + tombstones) and writes the
-**cloud projection** (`sync/cloudDoc.ts` `toCloud`). The desktop also listens
-(`onSnapshot`) and merges every remote change into its local store.
+**Sync v2 (since 2026-09-25): one small Firestore document per item.** Under
+`users/{uid}/`: `tasks/{id}` (own fields + `parentId`, `rank`, `movedAt`,
+`trashedAt`), `projects/{id}`, `recurrences/{id}`, `tombstones/{id}`,
+`log/{id}`, `days/{date}`, and `meta/state` · `meta/format` · `meta/heartbeat`.
+The format is `sync/docs.ts` (`toDocs` / `fromDocs` / `diffDocs`, pure).
 
-What went wrong in September 2026, and the guard for each:
+- **One merge.** Devices never merge documents one by one: they read the
+  documents into a state (`fromDocs`) and merge it with their own through
+  `mergeStates` (`sync/merge.ts`). Content is per task by `updatedAt`,
+  placement per task by `movedAt` (siblings sorted by fractional `rank`,
+  `store/rank.ts` / `store/placement.ts`), deletions by tombstones. Exact
+  clock ties resolve by comparing the values, so every device picks the same
+  winner — "keep local" on a tie makes two devices overwrite each other forever.
+- **Clocks only move forward.** Every stamp is at least one past the version
+  it replaces (`store.ts`), so an edit always beats what it edited, even when
+  another device's clock runs ahead.
+- **The desktop** (`sync/v2/engine.ts`, wired by `sync/desktopSync.ts`)
+  listens to every collection except the log, and each round: read → merge →
+  adopt → diff → commit. Commits to existing documents are **guarded**
+  transactions that write only if each document is still what the device
+  merged against (else `StaleViewError`: nothing written, merge first, retry).
+  Transactions fail instead of queueing offline, so a waking laptop can't
+  replay a stale write over a newer one. First-time uploads in bulk and log
+  lines go out as plain batches. Log lines are write-only, past a per-device
+  watermark (listening to thousands would eat the read quota).
+- **The phone** (`sync/v2/viewer.ts`) keeps no local copy and doesn't merge:
+  it loads open tasks and those completed in the last 14 days (plus projects
+  and meta), and writes each edit as an idempotent intent in a guarded
+  transaction, re-applied on a fresh view if the desktop got there first.
+  Writes are field-level patches, so a subtask it shows detached (its parent
+  wasn't loaded) is never written back as a move.
+- **Reads are deterministic.** A cloud document reads the same every round —
+  no "now" or random defaults — or it would look edited and be rewritten
+  forever.
 
-- **The desktop stopped writing for nine days, and nothing showed it.** A
-  transaction RPC can hang forever after a sleep or a network change, and the
-  push loop waited behind it. → Every push has a timeout, failures retry with
-  backoff, and online/focus/visibility events plus a 60s heartbeat retry
-  anything outstanding. The sidebar shows *when* it last synced and whether
-  local changes are still waiting (amber after 10 minutes).
-- **An older client stripped a newer one's fields.** The phone ran a v16 build
-  against a v17 document, coerced away `tombstones` and wrote the result back.
-  → `mergeAndSave` refuses to write a document whose `schemaVersion` is newer
-  than its own (`OutdatedClientError`); the web shows "Reload to update".
-  Always ship both clients from the same commit.
-- **The document is capped at 1 MiB.** It was ~785 KB and growing, mostly the
-  append-only `log`. → The cloud carries only the last `CLOUD_LOG_DAYS` of the
-  log (the desktop file keeps it all; the merge unions by id), and a write over
-  budget fails with a clear `CloudDocTooLargeError` instead of an opaque one.
-- **A stray `undefined` would reject every write** while the JSON file on disk
-  hid it. → `ignoreUndefinedProperties`.
-- **The phone's Today read as "no tasks".** Carrying yesterday's leftovers
-  forward happens in the desktop's Reckoning; until then they're planned for a
-  day that's gone. → The web's Today lists them under "Earlier", and its header
-  says how old the cloud copy is.
+**Guards.** The engine never syncs before the local store loads; stops writing
+if `meta/state.schemaVersion` is newer than its own (the web shows "Reload to
+update"); halts if documents don't read back as written, or if it keeps
+committing with no local edit behind it (quota protection); retries failures
+with backoff and on wake/online/focus. The sidebar shows the state; the desktop
+also writes `sync-status.json` (counts and states, no content) to its app-data
+folder, so sync can be diagnosed from disk.
 
-**Placement is data (v18).** Each task carries `rank` (fractional order among
-siblings, `store/rank.ts`) and `movedAt` (when its parent or rank last changed),
-written at the store's choke point by `store/placement.ts`. The merge resolves
-placement per task by `movedAt` and rebuilds the tree (`mergeTrees`), so a move
-on either device survives — before, the writer's tree shape won wholesale.
-Projects and recurrences carry `updatedAt` and merge newest-wins per id. This
-is Phase 0 of the per-task-documents plan.
+**Testing.** The engine and the viewer talk to a `DocStore` port
+(`sync/v2/port.ts`); tests run them against `MemoryStore`, which mimics the
+Firestore behaviour that matters (whole-collection snapshots, atomic batches,
+guarded commits, lagging views via `hold()`/`release()`), including hundreds of
+randomized two-device runs that must converge and then write nothing.
 
-**The per-item document format (Phase 1).** `sync/docs.ts` defines the v2
-cloud layout — one document per task, project, recurrence, tombstone, log line
-and day, plus `meta/state` — as three pure functions: `toDocs`, `fromDocs`
-(defensively coerced, per-device fields from the local base) and `diffDocs`
-(field-level patches against the device's own previous view). The merge is not
-duplicated: devices read documents into a state and merge with `mergeStates`.
-Real data round-trips exactly (3,568 documents, largest ~1.2 KB).
+**Quota (Spark, free).** Cold start ≈ 1.3k reads on the desktop (collections
+minus the log), ≈ 360 on the phone; a normal edit is one read + one small
+write. The one-time migration was ≈ 3.6k writes.
 
-**Known limit — the next architectural step.** One document means every edit
-rewrites (and every listener re-downloads) the whole state, and the 1 MiB cap
-is only pushed back, not removed. The durable fix is a document per task (or
-per project) plus a small metadata doc; the merge rules in `sync/merge.ts`
-already operate per task, so they carry over.
+### History: the v1 single document, and what broke
+
+Until 2026-09-25 the whole `AppState` lived in one document,
+`users/{uid}/data/appData` (now frozen at `schemaVersion: 1000` as a backup).
+In September 2026 the desktop silently stopped writing it for nine days (a
+hung transaction wedged the push loop), a v16 phone build stripped the v17
+desktop's tombstones, and the ~785 KB document was approaching Firestore's
+1 MiB cap — every edit rewrote all of it and every listener re-downloaded it.
+Those failures are why v2 has timeouts and visible sync health, a schema guard,
+small documents, and guarded writes. The plan and its phases are in the
+"Execute sync v2 — per-task documents" doc.

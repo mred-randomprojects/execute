@@ -6,7 +6,6 @@ import {
 import { firebaseAuth, firebaseConfigured } from "../firebase";
 import { adoptRemote, getReady, getState, setCloudSync, subscribeReady } from "../store/store";
 import type { Task } from "../types";
-import { freezeV1, loadAppState } from "../viewer/cloud";
 import { DocSync, type EngineStatus, type Watermark } from "./v2/engine";
 import { firestoreDocStore } from "./v2/firestoreStore";
 
@@ -14,8 +13,7 @@ import { firestoreDocStore } from "./v2/firestoreStore";
 //
 // Wiring only: sign-in, the local-change hook, wake/online/focus kicks, and the
 // status the sidebar shows. The sync itself — per-item documents, merge,
-// guarded writes, the one-time migration from the v1 document — is the engine
-// in ./v2/engine.
+// guarded writes — is the engine in ./v2/engine.
 
 const clientId = import.meta.env.VITE_GOOGLE_DESKTOP_CLIENT_ID;
 const clientSecret = import.meta.env.VITE_GOOGLE_DESKTOP_CLIENT_SECRET;
@@ -171,14 +169,10 @@ function startEngine(uid: string): void {
     firestoreDocStore(uid),
     { ready: getReady, getLocal: getState, version: () => localVersion, adopt: adoptRemote },
     logWatermark(uid),
-    {
-      // The one-time move off the v1 single document (users/{uid}/data/appData).
-      migration: {
-        loadV1: async () => (await loadAppState(uid))?.state ?? null,
-        freezeV1: () => freezeV1(uid),
-      },
-      onStatus: onEngineStatus,
-    },
+    // No migration hooks any more: the move off the v1 single document ran on
+    // 2026-09-25 (meta/format records it, and v1 is frozen as a backup). On a
+    // cloud without meta/format the engine simply uploads the local state.
+    { onStatus: onEngineStatus },
   );
   engine.start();
 }
