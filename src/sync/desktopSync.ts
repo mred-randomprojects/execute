@@ -247,6 +247,7 @@ function reportSoon(): void {
       status,
       engine: engine?.getStatus() ?? null,
       cloudCounts: engine?.counts() ?? null,
+      stats: engine?.stats() ?? null,
       format: engine?.format() ?? null,
       local,
       localVersion,

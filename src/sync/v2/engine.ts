@@ -88,6 +88,18 @@ export type EngineStatus =
   /** The cloud was written by a newer schema: stopped until this app updates. */
   | { kind: "outdated"; remoteVersion: number };
 
+/** Running totals since start: what the engine has done, for diagnostics and quota. */
+export interface EngineStats {
+  rounds: number;
+  commits: number;
+  docsWritten: number;
+  /** Guarded writes refused because another device changed a document first. */
+  staleRefusals: number;
+  /** Times a merge brought something new from the cloud into the local state. */
+  adopted: number;
+  lastAdoptedAt: number | null;
+}
+
 export interface EngineOptions {
   migration?: Migration;
   onStatus?: (s: EngineStatus) => void;
@@ -180,6 +192,14 @@ export class DocSync {
   private settledVersion: number | null = null;
   private unprompted: number[] = [];
   private status: EngineStatus = { kind: "stopped" };
+  private totals: EngineStats = {
+    rounds: 0,
+    commits: 0,
+    docsWritten: 0,
+    staleRefusals: 0,
+    adopted: 0,
+    lastAdoptedAt: null,
+  };
 
   constructor(
     private readonly store: DocStore,
@@ -190,6 +210,22 @@ export class DocSync {
 
   getStatus(): EngineStatus {
     return this.status;
+  }
+
+  stats(): EngineStats {
+    return { ...this.totals };
+  }
+
+  private async commitCounted(writes: readonly DocWrite[], expect?: ReadonlyMap<string, Expected>): Promise<void> {
+    await this.store.commit(writes, expect);
+    this.totals.commits += 1;
+    this.totals.docsWritten += writes.length;
+  }
+
+  private adoptCounted(next: AppState): void {
+    this.host.adopt(next);
+    this.totals.adopted += 1;
+    this.totals.lastAdoptedAt = Date.now();
   }
 
   /** Per collection, how many documents the listeners currently hold. */
@@ -334,10 +370,12 @@ export class DocSync {
     }
     if (!this.host.ready() || !this.listening()) return;
     this.running = true;
+    this.totals.rounds += 1;
     try {
       await this.round();
       this.failures = 0;
     } catch (e: unknown) {
+      if (e instanceof StaleViewError) this.totals.staleRefusals += 1;
       if (e instanceof StaleViewError && this.staleInARow < MAX_STALE_IN_A_ROW) {
         // Someone else changed a document we were about to write. Its delivery
         // is on the way and calls request(); that round merges it first.
@@ -437,7 +475,7 @@ export class DocSync {
       else guarded.push(w);
     }
     for (let i = 0; i < blind.length; i += MAX_BATCH) {
-      await this.store.commit(blind.slice(i, i + MAX_BATCH));
+      await this.commitCounted(blind.slice(i, i + MAX_BATCH));
     }
     // Log lines only ever go out blind, so they're all in by now: don't let a
     // later failure send every one of them again.
@@ -445,7 +483,7 @@ export class DocSync {
     for (let i = 0; i < guarded.length; i += GUARDED_CHUNK) {
       const chunk = guarded.slice(i, i + GUARDED_CHUNK);
       const expect = new Map(chunk.map((w) => [docKey(w.collection, w.id), this.expected(w.collection, w.id)]));
-      await this.store.commit(chunk, expect);
+      await this.commitCounted(chunk, expect);
     }
   }
 
@@ -479,13 +517,13 @@ export class DocSync {
     if (v1 == null) return;
     const local = this.host.getLocal();
     const merged = mergeStates(local, v1);
-    if (!jsonEqual(merged, local)) this.host.adopt(merged);
+    if (!jsonEqual(merged, local)) this.adoptCounted(merged);
   }
 
   private async writeFormatMarker(): Promise<void> {
     this.setStatus({ kind: "migrating", detail: "Switching over" });
     const since = new Map(this.delivered);
-    await this.store.commit(
+    await this.commitCounted(
       [
         {
           collection: "meta",
@@ -506,7 +544,7 @@ export class DocSync {
     if (migration == null || f == null || f.v1Frozen === true) return;
     try {
       await withTimeout(migration.freezeV1(), V1_TIMEOUT_MS, "Freezing the old cloud copy");
-      await this.store.commit(
+      await this.commitCounted(
         [{ collection: "meta", id: FORMAT_DOC_ID, op: "patch", fields: { v1Frozen: true } }],
         new Map([[docKey("meta", FORMAT_DOC_ID), this.expected("meta", FORMAT_DOC_ID)]]),
       );
@@ -540,7 +578,7 @@ export class DocSync {
       const view = this.cloudView(local);
       const merged = mergeStates(local, view);
       if (!jsonEqual(merged, local)) {
-        this.host.adopt(merged);
+        this.adoptCounted(merged);
         local = merged;
       }
 
@@ -555,7 +593,7 @@ export class DocSync {
         }
         await this.freezeV1IfNeeded();
         if (this.heartbeatDue()) {
-          await this.store.commit([
+          await this.commitCounted([
             { collection: "meta", id: HEARTBEAT_DOC_ID, op: "set", data: { at: this.now() } },
           ]);
         }

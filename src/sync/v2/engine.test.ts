@@ -126,6 +126,11 @@ describe("migration", () => {
     const writes = store.writes;
     await desk.engine.syncNow();
     expect(store.writes).toBe(writes); // settled: nothing more to write
+
+    const stats = desk.engine.stats();
+    expect(stats.docsWritten).toBe(store.writes);
+    expect(stats.commits).toBe(store.commits);
+    expect(stats.staleRefusals).toBe(0);
   });
 
   it("merges the v1 document in first, so the phone's last check-offs survive", async () => {
