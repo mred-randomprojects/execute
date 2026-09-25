@@ -94,10 +94,46 @@ function labelsUnion(a: string[], b: string[]): string[] {
   return out;
 }
 
+/**
+ * Which of two versions wins when their clocks are EQUAL. Never "keep local":
+ * two devices each keeping their own version of a tie would each write it back
+ * over the other's forever. Comparing the values themselves gives both devices
+ * the same answer, so they converge. (Ties are rarer than they look — but rank
+ * repairs, which never touch `movedAt`, produce them routinely.)
+ */
+function laterOfTie<T>(a: T, b: T): T {
+  return stableJson(b) > stableJson(a) ? b : a;
+}
+
+/** JSON with object keys sorted: the same value serializes the same on every device. */
+function stableJson(v: unknown): string {
+  if (Array.isArray(v)) return `[${v.map(stableJson).join(",")}]`;
+  if (v !== null && typeof v === "object") {
+    const o = v as Record<string, unknown>;
+    return `{${Object.keys(o)
+      .sort()
+      .map((k) => `${JSON.stringify(k)}:${stableJson(o[k])}`)
+      .join(",")}}`;
+  }
+  return JSON.stringify(v) ?? "null";
+}
+
+function ownFieldsOf(t: Task): Omit<Task, "children"> {
+  const { children: _children, ...own } = t;
+  return own;
+}
+
 /** Merge one task's OWN fields (keeps `base`'s children + tree position). */
 function mergeOwnFields(base: Task, other: Task | undefined): Task {
   if (other == null) return base;
-  const newer = other.updatedAt > base.updatedAt ? other : base;
+  const newer =
+    other.updatedAt > base.updatedAt
+      ? other
+      : other.updatedAt < base.updatedAt
+        ? base
+        : stableJson(ownFieldsOf(other)) > stableJson(ownFieldsOf(base))
+          ? other
+          : base;
   return {
     ...base,
     text: newer.text,
@@ -123,13 +159,16 @@ function mergeOwnFields(base: Task, other: Task | undefined): Task {
 
 /**
  * Union by id; where both sides have an item, the newer `updatedAt` wins (a tie
- * keeps local). Local order first, then remote-only items in remote order.
+ * goes the same way on every device — see laterOfTie). Local order first, then
+ * remote-only items in remote order.
  */
 function newestById<T extends { id: string; updatedAt: number }>(a: T[], b: T[]): T[] {
   const theirs = new Map(b.map((x) => [x.id, x]));
   const out = a.map((x) => {
     const other = theirs.get(x.id);
-    return other != null && other.updatedAt > x.updatedAt ? other : x;
+    if (other == null || other.updatedAt < x.updatedAt) return x;
+    if (other.updatedAt > x.updatedAt) return other;
+    return laterOfTie(x, other);
   });
   const seen = new Set(a.map((x) => x.id));
   for (const x of b) if (!seen.has(x.id)) out.push(x);
@@ -163,9 +202,9 @@ const byRank = (a: Task, b: Task): number =>
  * Merge two task trees id by id, then rebuild the tree from the result.
  *
  * - Content: `mergeOwnFields` (newest `updatedAt`, labels unioned, counters maxed).
- * - Placement (parent + rank): the side with the newer `movedAt`; a tie keeps
- *   local. So a move made on either device survives, independently of content
- *   edits made on the other.
+ * - Placement (parent + rank): the side with the newer `movedAt`; a tie goes
+ *   the same way on every device (see laterOfTie). So a move made on either
+ *   device survives, independently of content edits made on the other.
  * - A task whose parent was deleted goes with it (a Trash entry recorded only
  *   its root). One whose parent is simply unknown is kept at the top level.
  * - Opposite concurrent moves can form a loop (X under Y here, Y under X there).
@@ -185,7 +224,18 @@ function mergeTrees(
     const r = slotsR.get(id);
     const content = l != null ? mergeOwnFields(l.node, r?.node) : r != null ? r.node : null;
     if (content == null) continue;
-    const place = l == null ? r : r == null ? l : r.node.movedAt > l.node.movedAt ? r : l;
+    const place =
+      l == null
+        ? r
+        : r == null
+          ? l
+          : r.node.movedAt !== l.node.movedAt
+            ? r.node.movedAt > l.node.movedAt
+              ? r
+              : l
+            : stableJson([r.parent, r.node.rank]) > stableJson([l.parent, l.node.rank])
+              ? r
+              : l;
     if (place == null) continue;
     merged.set(id, {
       node: { ...content, rank: place.node.rank, movedAt: place.node.movedAt, children: [] },
