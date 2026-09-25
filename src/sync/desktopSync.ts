@@ -8,6 +8,8 @@ import { adoptRemote, getReady, getState, setCloudSync, subscribeReady } from ".
 import { mergeAndSave, subscribeAppState } from "../viewer/cloud";
 import { jsonEqual, mergeStates } from "./merge";
 import { CloudDocTooLargeError, OutdatedClientError, toCloud } from "./cloudDoc";
+import { ShadowSync, type ShadowStatus, type Watermark } from "./v2/shadow";
+import { firestoreDocStore } from "./v2/firestoreStore";
 
 const clientId = import.meta.env.VITE_GOOGLE_DESKTOP_CLIENT_ID;
 const clientSecret = import.meta.env.VITE_GOOGLE_DESKTOP_CLIENT_SECRET;
@@ -79,6 +81,60 @@ export function syncAvailable(): boolean {
   );
 }
 
+// ── Shadow mode (sync v2, Phase 2) ───────────────────────────────────
+// The per-item v2 documents are kept equal to local beside the v1 document,
+// which stays the source of truth. See src/sync/v2/shadow.ts.
+let shadow: ShadowSync | null = null;
+let shadowUid: string | null = null;
+let shadowStatus: ShadowStatus = { kind: "off" };
+
+export function getShadowStatus(): ShadowStatus {
+  return shadowStatus;
+}
+
+/** The log watermark, per device and per account, in this machine's storage. */
+function logWatermark(uid: string): Watermark {
+  const key = `execute.v2.logWatermark.${uid}`;
+  return {
+    get: () => {
+      try {
+        return Number(localStorage.getItem(key) ?? "0") || 0;
+      } catch {
+        return 0;
+      }
+    },
+    set: (at) => {
+      try {
+        localStorage.setItem(key, String(at));
+      } catch {
+        /* next run re-sends a few log lines; harmless — they're keyed by id */
+      }
+    },
+  };
+}
+
+function startShadow(uid: string) {
+  if (shadowUid === uid && shadow != null) return;
+  stopShadow();
+  shadowUid = uid;
+  shadow = new ShadowSync(firestoreDocStore(uid), logWatermark(uid), (s) => {
+    shadowStatus = s;
+    for (const l of listeners) l();
+  });
+  shadow.start();
+  if (getReady()) void shadow.sync(getState());
+}
+
+function stopShadow() {
+  shadow?.stop();
+  shadow = null;
+  shadowUid = null;
+}
+
+function syncShadow() {
+  if (shadow != null && getReady()) void shadow.sync(getState());
+}
+
 // ── The push loop ────────────────────────────────────────────────────
 //
 // Local changes are counted, not flagged: `localVersion` ticks on every save,
@@ -145,6 +201,7 @@ async function doPush() {
     lastSyncedAt = Date.now();
     failures = 0;
     setStatus(idleStatus(user.email));
+    syncShadow();
   } catch (e: unknown) {
     failures += 1;
     // Retrying can't fix these two — the user has to act. Everything else
@@ -210,6 +267,7 @@ let unsubDoc: (() => void) | null = null;
 let subscribedUid: string | null = null;
 
 function stopPull() {
+  stopShadow();
   if (unsubDoc != null) unsubDoc();
   unsubDoc = null;
   subscribedUid = null;
@@ -219,6 +277,7 @@ function startPull(uid: string) {
   if (subscribedUid === uid && unsubDoc != null) return; // already live for this user
   stopPull();
   subscribedUid = uid;
+  startShadow(uid);
   unsubDoc = subscribeAppState(
     uid,
     (remote) => {
@@ -245,6 +304,9 @@ function startPull(uid: string) {
         syncedVersion = localVersion;
         if (status.kind === "idle") setStatus(idleStatus(status.email));
       }
+      // A change from elsewhere (the phone) needs no v1 push, but the v2 copy
+      // still has to hear about it.
+      syncShadow();
     },
     (e: unknown) => {
       setStatus({

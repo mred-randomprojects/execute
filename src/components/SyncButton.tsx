@@ -1,9 +1,37 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
-import { getStatus, signIn, subscribeStatus, syncNow } from "../sync/desktopSync";
+import {
+  getShadowStatus,
+  getStatus,
+  signIn,
+  subscribeStatus,
+  syncNow,
+} from "../sync/desktopSync";
+import type { ShadowStatus } from "../sync/v2/shadow";
 import { sinceLabel } from "../store/dates";
 
 /** Unsynced changes older than this turn the control amber: something is off. */
 const STALE_MS = 10 * 60_000;
+
+/**
+ * One quiet line about the v2 per-item copy while it runs in shadow mode —
+ * the read-back check that has to stay green before the cut-over.
+ */
+function shadowLine(s: ShadowStatus): { text: string; bad: boolean } | null {
+  switch (s.kind) {
+    case "off":
+      return null;
+    case "starting":
+      return { text: "v2 copy: connecting…", bad: false };
+    case "syncing":
+      return { text: `v2 copy: writing ${s.writes}…`, bad: false };
+    case "inSync":
+      return { text: "v2 copy: in sync", bad: false };
+    case "error":
+      return { text: `v2 copy: ${s.message}`, bad: true };
+    case "halted":
+      return { text: `v2 copy stopped: ${s.message}`, bad: true };
+  }
+}
 
 /** Re-render every 30s so "5m ago" keeps telling the truth. */
 function useNow(): number {
@@ -23,6 +51,7 @@ function useNow(): number {
  */
 export function SyncButton() {
   const status = useSyncExternalStore(subscribeStatus, getStatus);
+  const shadow = shadowLine(useSyncExternalStore(subscribeStatus, getShadowStatus));
   const [signingIn, setSigningIn] = useState(false);
   const now = useNow();
 
@@ -107,6 +136,11 @@ export function SyncButton() {
           }`}
         >
           {detail}
+        </span>
+      )}
+      {shadow != null && (
+        <span className={`px-2.5 text-[11px] ${shadow.bad ? "text-bad" : "text-ink-faint"}`}>
+          {shadow.text}
         </span>
       )}
     </div>
