@@ -46,6 +46,12 @@ export interface Editor {
   //    subtree; every drop is a single undoable move. `canDrag` gates the whole
   //    affordance (off in the read-only viewer and the recurring view).
   canDrag: boolean;
+  /**
+   * Touch layout (the phone): the title gets the row's full width and wraps,
+   * the row's badges sit on a line under it, tap targets are larger, and the
+   * desktop-only tools (copy-id chip, zoom-in) aren't rendered at all.
+   */
+  touch: boolean;
   /** The row currently being dragged (for dimming), or null. */
   dragId: TaskId | null;
   beginDrag: (id: TaskId) => void;

@@ -2090,6 +2090,7 @@ export function App() {
     toggleSelect: (id) => setSelection((s) => toggleSelected(s, id, flatIds)),
     rangeSelect: (id) => setSelection((s) => rangeTo(s, id, flatIds)),
     canDrag: true,
+    touch: false,
     dragId,
     beginDrag: (id) => setDragId(id),
     endDrag: () => setDragId(null),
@@ -2211,6 +2212,7 @@ export function App() {
     toggleSelect: setFocus, // recurrence view navigates one template at a time
     rangeSelect: setFocus,
     canDrag: false,
+    touch: false,
     dragId: null,
     beginDrag: () => {},
     endDrag: () => {},

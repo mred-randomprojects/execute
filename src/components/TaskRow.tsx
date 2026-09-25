@@ -249,6 +249,200 @@ export function TaskRow({ task, depth }: { task: Task; depth: number }) {
     if (isFocused) rowRef.current?.scrollIntoView?.({ block: "nearest" });
   }, [isFocused, ed.scrollTick]);
 
+  const title = (
+    editing ? (
+      <RowInput task={task} />
+    ) : (
+      <span
+        onClick={(e) => {
+          // A modified click is a selection gesture (handled by the row) —
+          // don't drop into title editing.
+          if (e.metaKey || e.ctrlKey || e.shiftKey) return;
+          if (isFocused) ed.startEdit(task.id);
+        }}
+        className={[
+          ed.touch ? "text-[15px] leading-[22px]" : "flex-1 text-[14px]",
+          peeking || ed.touch
+            ? "whitespace-pre-wrap [overflow-wrap:anywhere]"
+            : "truncate",
+          peeking && !ed.touch ? "leading-relaxed" : "",
+          task.completed || wontDo
+            ? "text-ink-faint line-through"
+            : waiting != null || dimNotToday
+              ? "text-ink-soft"
+              : "text-ink",
+          task.text === "" ? "text-ink-faint" : "",
+        ].join(" ")}
+      >
+        {task.text === "" ? "Untitled" : renderInline(task.text)}
+      </span>
+    )
+  );
+
+  // Everything after the title: reason, waiting, Now, notes, progress, deferral,
+  // estimate, calendar, desktop tools, date/horizon. Inline on the desktop; on
+  // its own wrapping line under the title in touch layout.
+  const meta = (
+    <>
+      {/* Won't-do reason: an inline field right after a fresh skip; otherwise
+          the recorded reason (or a "why?" prompt when none yet). The focused
+          row shows a `w` keycap so the edit shortcut is discoverable. */}
+      {!editing && reasonEditing ? (
+        <ReasonInput task={task} />
+      ) : !editing && wontDo && (hasReason || isFocused) ? (
+        <span
+          onClick={() => isFocused && ed.startReason(task.id)}
+          className="flex min-w-0 max-w-[50%] shrink items-center gap-1.5"
+        >
+          {hasReason ? (
+            <span className="min-w-0 truncate text-[12px] italic text-ink-faint" title={reasonText}>
+              — {reasonText}
+            </span>
+          ) : (
+            <span className="text-[12px] text-ink-faint">why?</span>
+          )}
+          {isFocused && <span className="kbd shrink-0">w</span>}
+        </span>
+      ) : null}
+
+      {/* Blocked on someone else: dimmed like a resolved row, because it isn't
+          work you can do — but never struck through, because it isn't done. */}
+      {!editing && waitingEditing ? (
+        <WaitingInput task={task} />
+      ) : !editing && waiting != null ? (
+        <button
+          tabIndex={-1}
+          onClick={(e) => {
+            e.stopPropagation();
+            e.currentTarget.blur();
+            ed.clearWaiting(task.id);
+          }}
+          title={`Waiting since ${new Date(waiting.since).toLocaleDateString()} — click to unblock`}
+          className={[
+            "mono flex shrink-0 items-center gap-1 rounded-sm px-1.5 py-[1px] text-[10px] font-medium",
+            waitingDays >= WAITING_STALE_DAYS
+              ? "bg-bad-soft text-bad"
+              : "bg-surface-2 text-ink-soft",
+          ].join(" ")}
+        >
+          waiting{waiting.who != null && waiting.who.trim() !== "" ? `: ${waiting.who}` : ""}
+          {waitingDays >= 1 && <span className="opacity-70">· {waitingDays}d</span>}
+        </button>
+      ) : null}
+
+      {isCurrent && !editing && (
+        <span className="mono shrink-0 rounded-sm bg-accent px-1.5 py-[1px] text-[10px] font-medium uppercase tracking-[0.12em] text-white">
+          Now
+        </span>
+      )}
+
+      {!editing && task.notes.trim() !== "" && (
+        <button
+          tabIndex={-1}
+          onClick={(e) => {
+            e.stopPropagation();
+            e.currentTarget.blur();
+            ed.togglePeek(task.id);
+          }}
+          className="flex shrink-0 items-center gap-1 text-ink-faint transition hover:text-ink"
+          title="Has details — peek in place (p)"
+          aria-label="Peek details"
+        >
+          <span aria-hidden="true">¶</span>
+          {isFocused && !peeking && <span className="kbd">p</span>}
+        </button>
+      )}
+
+      {progress != null && progress.total > 0 && (
+        <span className="mono shrink-0 text-[11px] text-ink-faint">
+          {progress.done}/{progress.total}
+        </span>
+      )}
+
+      {/* The deferral ledger, in the ordinary list — not just inside the gate.
+          Only while the task is still open: once it's resolved the history is
+          a curiosity, and the row has enough on it already. */}
+      {isOpen(task) && !editing && <DeferralBadges task={task} />}
+
+      {task.estimatedMinutes != null && isOpen(task) && !editing && (
+        <BlockPips minutes={task.estimatedMinutes} className="opacity-80" />
+      )}
+
+      {/* Calendar cue: this task has been blocked out on the calendar. Accented
+          when the event is today — the "what did I schedule for today" glance. */}
+      {task.scheduledAt != null && isOpen(task) && !editing && (
+        <span
+          className={[
+            "mono flex shrink-0 items-center gap-1 rounded-sm px-1.5 py-[1px] text-[10px] font-medium",
+            isOnDay(task.scheduledAt, ed.today)
+              ? "bg-accent-soft text-accent"
+              : "bg-surface-2 text-ink-faint",
+          ].join(" ")}
+          title={`On your calendar · ${new Date(task.scheduledAt).toLocaleString()}`}
+        >
+          <CalIcon />
+          {clockLabelFromMs(task.scheduledAt)}
+        </span>
+      )}
+
+      {!editing && !ed.touch && (
+        <button
+          tabIndex={-1}
+          onClick={(e) => {
+            e.stopPropagation();
+            e.currentTarget.blur();
+            void copyText(task.id);
+          }}
+          className={[
+            "mono shrink-0 rounded-sm bg-surface-2 px-1 py-[1px] text-[10px] text-ink-faint transition hover:text-ink",
+            isFocused ? "opacity-100" : "opacity-0 group-hover:opacity-100",
+          ].join(" ")}
+          aria-label={`Task id ${task.id} — click to copy`}
+          title={`${task.id} · click to copy`}
+        >
+          {task.id.slice(0, 4)}
+        </button>
+      )}
+
+      {!ed.touch && (
+        <button
+          tabIndex={-1}
+          onClick={(e) => {
+            e.stopPropagation();
+            e.currentTarget.blur();
+            ed.zoomInto(task.id);
+          }}
+          className="grid h-5 w-5 shrink-0 place-items-center rounded-sm text-ink-faint opacity-0 transition hover:text-ink group-hover:opacity-100"
+          aria-label="Zoom into task"
+          title="Zoom in (⌥↵)"
+        >
+          <FocusIcon />
+        </button>
+      )}
+
+      {task.plannedFor != null && isOpen(task) && ed.view !== "today" && (
+        <span
+          className={[
+            "mono shrink-0 rounded-sm px-1.5 py-[1px] text-[10px] font-medium",
+            task.plannedFor < ed.today
+              ? "bg-bad-soft text-bad"
+              : plannedToday
+                ? "bg-accent-soft text-accent"
+                : "bg-surface-2 text-ink-faint",
+          ].join(" ")}
+        >
+          {relativeLabel(task.plannedFor, ed.today)}
+        </span>
+      )}
+
+      {task.horizon != null && !ed.bucketed && isOpen(task) && ed.view !== "today" && (
+        <span className="mono shrink-0 rounded-sm bg-surface-2 px-1.5 py-[1px] text-[10px] font-medium text-ink-soft">
+          {horizonLabel(task, ed.today)}
+        </span>
+      )}
+    </>
+  );
+
   return (
     <>
       <div
@@ -293,8 +487,9 @@ export function TaskRow({ task, depth }: { task: Task; depth: number }) {
           setDropPos(null);
         }}
         className={[
-          "group relative flex gap-2 rounded-sm py-[5px] pr-2 cursor-default select-none",
-          peeking ? "items-start" : "items-center",
+          "group relative flex gap-2 rounded-sm pr-2 cursor-default select-none",
+          ed.touch ? "py-2" : "py-[5px]",
+          peeking || ed.touch ? "items-start" : "items-center",
           isCurrent
             ? "bg-accent-soft/40 ring-1 ring-inset ring-accent/40"
             : inSelection && !editing
@@ -328,9 +523,9 @@ export function TaskRow({ task, depth }: { task: Task; depth: number }) {
             e.currentTarget.blur();
             if (hasChildren) ed.toggleCollapse(task.id);
           }}
-          className={`flex h-4 w-4 items-center justify-center text-ink-faint ${
-            hasChildren ? "visible" : "invisible"
-          }`}
+          className={`flex w-4 shrink-0 items-center justify-center text-ink-faint ${
+            ed.touch ? "h-[22px]" : "h-4"
+          } ${hasChildren ? "visible" : "invisible"}`}
           aria-label={isCollapsed ? "Expand" : "Collapse"}
         >
           <Caret open={!isCollapsed} />
@@ -353,7 +548,12 @@ export function TaskRow({ task, depth }: { task: Task; depth: number }) {
                 : "Mark complete"
           }
           className={[
-            "flex h-[17px] w-[17px] shrink-0 items-center justify-center rounded-sm border transition-colors",
+            "flex shrink-0 items-center justify-center rounded-sm border transition-colors",
+            // Touch: a bigger box, and an invisible halo that widens the tap
+            // target without pushing the title away.
+            ed.touch
+              ? "relative h-[22px] w-[22px] after:absolute after:-inset-2.5 after:content-['']"
+              : "h-[17px] w-[17px]",
             task.completed
               ? "border-good bg-good text-white"
               : wontDo
@@ -364,186 +564,16 @@ export function TaskRow({ task, depth }: { task: Task; depth: number }) {
           {wontDo ? <XIcon /> : <CheckIcon />}
         </button>
 
-        {editing ? (
-          <RowInput task={task} />
+        {ed.touch ? (
+          <div className="flex min-w-0 flex-1 flex-col gap-1">
+            {title}
+            <div className="flex flex-wrap items-center gap-1.5 empty:hidden">{meta}</div>
+          </div>
         ) : (
-          <span
-            onClick={(e) => {
-              // A modified click is a selection gesture (handled by the row) —
-              // don't drop into title editing.
-              if (e.metaKey || e.ctrlKey || e.shiftKey) return;
-              if (isFocused) ed.startEdit(task.id);
-            }}
-            className={[
-              "flex-1 text-[14px]",
-              peeking
-                ? "whitespace-pre-wrap [overflow-wrap:anywhere] leading-relaxed"
-                : "truncate",
-              task.completed || wontDo
-                ? "text-ink-faint line-through"
-                : waiting != null || dimNotToday
-                  ? "text-ink-soft"
-                  : "text-ink",
-              task.text === "" ? "text-ink-faint" : "",
-            ].join(" ")}
-          >
-            {task.text === "" ? "Untitled" : renderInline(task.text)}
-          </span>
-        )}
-
-        {/* Won't-do reason: an inline field right after a fresh skip; otherwise
-            the recorded reason (or a "why?" prompt when none yet). The focused
-            row shows a `w` keycap so the edit shortcut is discoverable. */}
-        {!editing && reasonEditing ? (
-          <ReasonInput task={task} />
-        ) : !editing && wontDo && (hasReason || isFocused) ? (
-          <span
-            onClick={() => isFocused && ed.startReason(task.id)}
-            className="flex min-w-0 max-w-[50%] shrink items-center gap-1.5"
-          >
-            {hasReason ? (
-              <span className="min-w-0 truncate text-[12px] italic text-ink-faint" title={reasonText}>
-                — {reasonText}
-              </span>
-            ) : (
-              <span className="text-[12px] text-ink-faint">why?</span>
-            )}
-            {isFocused && <span className="kbd shrink-0">w</span>}
-          </span>
-        ) : null}
-
-        {/* Blocked on someone else: dimmed like a resolved row, because it isn't
-            work you can do — but never struck through, because it isn't done. */}
-        {!editing && waitingEditing ? (
-          <WaitingInput task={task} />
-        ) : !editing && waiting != null ? (
-          <button
-            tabIndex={-1}
-            onClick={(e) => {
-              e.stopPropagation();
-              e.currentTarget.blur();
-              ed.clearWaiting(task.id);
-            }}
-            title={`Waiting since ${new Date(waiting.since).toLocaleDateString()} — click to unblock`}
-            className={[
-              "mono flex shrink-0 items-center gap-1 rounded-sm px-1.5 py-[1px] text-[10px] font-medium",
-              waitingDays >= WAITING_STALE_DAYS
-                ? "bg-bad-soft text-bad"
-                : "bg-surface-2 text-ink-soft",
-            ].join(" ")}
-          >
-            waiting{waiting.who != null && waiting.who.trim() !== "" ? `: ${waiting.who}` : ""}
-            {waitingDays >= 1 && <span className="opacity-70">· {waitingDays}d</span>}
-          </button>
-        ) : null}
-
-        {isCurrent && !editing && (
-          <span className="mono shrink-0 rounded-sm bg-accent px-1.5 py-[1px] text-[10px] font-medium uppercase tracking-[0.12em] text-white">
-            Now
-          </span>
-        )}
-
-        {!editing && task.notes.trim() !== "" && (
-          <button
-            tabIndex={-1}
-            onClick={(e) => {
-              e.stopPropagation();
-              e.currentTarget.blur();
-              ed.togglePeek(task.id);
-            }}
-            className="flex shrink-0 items-center gap-1 text-ink-faint transition hover:text-ink"
-            title="Has details — peek in place (p)"
-            aria-label="Peek details"
-          >
-            <span aria-hidden="true">¶</span>
-            {isFocused && !peeking && <span className="kbd">p</span>}
-          </button>
-        )}
-
-        {progress != null && progress.total > 0 && (
-          <span className="mono shrink-0 text-[11px] text-ink-faint">
-            {progress.done}/{progress.total}
-          </span>
-        )}
-
-        {/* The deferral ledger, in the ordinary list — not just inside the gate.
-            Only while the task is still open: once it's resolved the history is
-            a curiosity, and the row has enough on it already. */}
-        {isOpen(task) && !editing && <DeferralBadges task={task} />}
-
-        {task.estimatedMinutes != null && isOpen(task) && !editing && (
-          <BlockPips minutes={task.estimatedMinutes} className="opacity-80" />
-        )}
-
-        {/* Calendar cue: this task has been blocked out on the calendar. Accented
-            when the event is today — the "what did I schedule for today" glance. */}
-        {task.scheduledAt != null && isOpen(task) && !editing && (
-          <span
-            className={[
-              "mono flex shrink-0 items-center gap-1 rounded-sm px-1.5 py-[1px] text-[10px] font-medium",
-              isOnDay(task.scheduledAt, ed.today)
-                ? "bg-accent-soft text-accent"
-                : "bg-surface-2 text-ink-faint",
-            ].join(" ")}
-            title={`On your calendar · ${new Date(task.scheduledAt).toLocaleString()}`}
-          >
-            <CalIcon />
-            {clockLabelFromMs(task.scheduledAt)}
-          </span>
-        )}
-
-        {!editing && (
-          <button
-            tabIndex={-1}
-            onClick={(e) => {
-              e.stopPropagation();
-              e.currentTarget.blur();
-              void copyText(task.id);
-            }}
-            className={[
-              "mono shrink-0 rounded-sm bg-surface-2 px-1 py-[1px] text-[10px] text-ink-faint transition hover:text-ink",
-              isFocused ? "opacity-100" : "opacity-0 group-hover:opacity-100",
-            ].join(" ")}
-            aria-label={`Task id ${task.id} — click to copy`}
-            title={`${task.id} · click to copy`}
-          >
-            {task.id.slice(0, 4)}
-          </button>
-        )}
-
-        <button
-          tabIndex={-1}
-          onClick={(e) => {
-            e.stopPropagation();
-            e.currentTarget.blur();
-            ed.zoomInto(task.id);
-          }}
-          className="grid h-5 w-5 shrink-0 place-items-center rounded-sm text-ink-faint opacity-0 transition hover:text-ink group-hover:opacity-100"
-          aria-label="Zoom into task"
-          title="Zoom in (⌥↵)"
-        >
-          <FocusIcon />
-        </button>
-
-        {task.plannedFor != null && isOpen(task) && ed.view !== "today" && (
-          <span
-            className={[
-              "mono shrink-0 rounded-sm px-1.5 py-[1px] text-[10px] font-medium",
-              task.plannedFor < ed.today
-                ? "bg-bad-soft text-bad"
-                : plannedToday
-                  ? "bg-accent-soft text-accent"
-                  : "bg-surface-2 text-ink-faint",
-            ].join(" ")}
-          >
-            {relativeLabel(task.plannedFor, ed.today)}
-          </span>
-        )}
-
-        {task.horizon != null && !ed.bucketed && isOpen(task) && ed.view !== "today" && (
-          <span className="mono shrink-0 rounded-sm bg-surface-2 px-1.5 py-[1px] text-[10px] font-medium text-ink-soft">
-            {horizonLabel(task, ed.today)}
-          </span>
+          <>
+            {title}
+            {meta}
+          </>
         )}
       </div>
 

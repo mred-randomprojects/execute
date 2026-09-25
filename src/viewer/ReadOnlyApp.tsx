@@ -165,6 +165,7 @@ export function ReadOnlyApp({
     toggleSelect: setCursorId, // no multi-select in the viewer — just focus
     rangeSelect: setCursorId,
     canDrag: false, // no drag-to-move in the read-only viewer
+    touch: true, // phone layout: full-width wrapping titles, badges below, bigger targets
     dragId: null,
     beginDrag: noop,
     endDrag: noop,
@@ -296,7 +297,7 @@ export function ReadOnlyApp({
         </div>
 
         <EditorProvider value={editor}>
-          <div className="-mx-2 flex-1 overflow-auto">
+          <div className="-mx-2 flex-1">
             {groups.length === 0 && earlierGroups.length === 0 ? (
               <div className="px-2 py-10 text-center text-[14px] text-ink-faint">
                 Nothing here.
