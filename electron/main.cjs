@@ -44,6 +44,20 @@ function readStore() {
   }
 }
 
+// Sync health report (see preload `reportSyncStatus`): overwritten on every
+// change of sync state, so it always describes the latest.
+const SYNC_STATUS_FILE = path.join(app.getPath("userData"), "sync-status.json");
+
+function writeJsonAtomic(file, data) {
+  try {
+    const tmp = `${file}.${process.pid}.tmp`;
+    fs.writeFileSync(tmp, JSON.stringify(data, null, 2), "utf8");
+    fs.renameSync(tmp, file);
+  } catch {
+    /* diagnostics are best effort */
+  }
+}
+
 function writeStore(data) {
   const json = JSON.stringify(data);
   const tmp = `${STORE_FILE}.${process.pid}.tmp`;
@@ -457,6 +471,10 @@ function registerIpc() {
     return true;
   });
   ipcMain.handle("store:load", () => readStore());
+  ipcMain.handle("sync:status", (_event, report) => {
+    writeJsonAtomic(SYNC_STATUS_FILE, report ?? {});
+    return true;
+  });
   ipcMain.handle("store:save", (_event, data) => {
     writeStore(data);
     return true;

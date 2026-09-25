@@ -67,6 +67,8 @@ interface ExecuteBridge {
   // Presence (desktop only): push what's left today + the settings, so the shell
   // can keep the menu bar, dock badge, login item and daily nudges honest.
   updatePresence?: (snapshot: PresenceSnapshot) => Promise<boolean>;
+  /** Write the sync health report (desktop only; counts and states, no content). */
+  reportSyncStatus?: (report: object) => Promise<boolean>;
   /** Subscribe to the global capture shortcut. Returns an unsubscribe. */
   onFocusCapture?: (fn: () => void) => () => void;
   /** Subscribe to "open the shutdown ritual" (the evening nudge was clicked). */

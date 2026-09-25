@@ -18,6 +18,9 @@ contextBridge.exposeInMainWorld("execute", {
   // the dock badge, the login item and the two daily nudges. This pushes a
   // snapshot down whenever what's-left-today (or a setting) changes.
   updatePresence: (snapshot) => ipcRenderer.invoke("presence:update", snapshot),
+  // Sync health, written to sync-status.json in the app-data folder: counts and
+  // states only (never task text), so a sync problem can be diagnosed from disk.
+  reportSyncStatus: (report) => ipcRenderer.invoke("sync:status", report),
   // The global capture shortcut fires in the main process; this is how it reaches
   // the capture bar. Returns an unsubscribe so React effects can clean up.
   onFocusCapture: (fn) => {

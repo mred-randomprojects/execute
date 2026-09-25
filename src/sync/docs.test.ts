@@ -126,6 +126,23 @@ describe("the per-item document format", () => {
     ]); // no parentId, no rank: the cloud keeps the real placement
   });
 
+  it("reads the same documents the same way every time (no 'now' defaults)", async () => {
+    // A value that changes between two reads of one document looks like an
+    // edit, and the engine would write it back every round.
+    const raw = {
+      ...asRaw(toDocs(emptyState())),
+      tasks: new Map<string, unknown>([
+        ["partial", { text: "no timestamps", rank: "V", wontDo: { reason: "nope" } }],
+      ]),
+      projects: new Map<string, unknown>([["p1", { name: "No dates" }]]),
+      recurrences: new Map<string, unknown>([["r1", { template: { text: "t" }, rule: {} }]]),
+    };
+    const first = fromDocs(raw, emptyState());
+    await tick();
+    const second = fromDocs(raw, emptyState());
+    expect(jsonEqual(first, second)).toBe(true);
+  });
+
   it("reads defensively: junk documents are skipped or coerced, not trusted", () => {
     const raw = {
       ...asRaw(toDocs(emptyState())),

@@ -139,10 +139,56 @@ const numOrNull = (x: unknown): number | null =>
 const numOr = (x: unknown, fallback: number): number => numOrNull(x) ?? fallback;
 const byId = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
 
+/**
+ * Timestamps as read from the cloud: a missing or malformed one becomes 0, never
+ * "now". The local-file reader may default to "now" (it runs once); a cloud
+ * document is read on every sync round, and a value that changes between two
+ * reads of the same document looks like an edit — which the engine would then
+ * dutifully write back, round after round.
+ */
+function fixedTimes(v: Record<string, unknown>, keys: readonly string[]): Record<string, unknown> {
+  const out: Record<string, unknown> = { ...v };
+  for (const k of keys) if (typeof out[k] !== "number" || !Number.isFinite(out[k])) out[k] = 0;
+  return out;
+}
+
+const TASK_TIMES = ["createdAt", "updatedAt", "movedAt"] as const;
+
+/** A task's own timestamps, and the ones nested in its won't-do / waiting-on. */
+function fixedTaskTimes(v: Record<string, unknown>): Record<string, unknown> {
+  const out = fixedTimes(v, TASK_TIMES);
+  if (isObject(out.wontDo)) out.wontDo = fixedTimes(out.wontDo, ["at"]);
+  if (isObject(out.waitingOn)) out.waitingOn = fixedTimes(out.waitingOn, ["since"]);
+  return out;
+}
+
+/**
+ * A recurrence's timestamps, including its template task tree's — and ids for
+ * template tasks that lack one, derived from the recurrence's own id rather
+ * than freshly random (the reader's default), for the same reason.
+ */
+function fixedRecurrence(v: Record<string, unknown>): Record<string, unknown> {
+  const out = fixedTimes(v, ["createdAt", "updatedAt"]);
+  const recId = typeof v.id === "string" ? v.id : "recurrence";
+  const tree = (t: unknown, path: string): unknown => {
+    if (!isObject(t)) return t;
+    const fixed = fixedTaskTimes(t);
+    if (typeof fixed.id !== "string" || fixed.id === "") fixed.id = `${recId}~${path}`;
+    if (Array.isArray(fixed.children)) fixed.children = fixed.children.map((c, i) => tree(c, `${path}.${i}`));
+    return fixed;
+  };
+  if (isObject(out.template)) out.template = tree(out.template, "t");
+  return out;
+}
+
 /** Each value with its document id written in as `key`, dropping non-objects. */
-function withIds(docs: ReadonlyMap<string, unknown>, key: string): Record<string, unknown>[] {
+function withIds(
+  docs: ReadonlyMap<string, unknown>,
+  key: string,
+  times: readonly string[] = [],
+): Record<string, unknown>[] {
   const out: Record<string, unknown>[] = [];
-  for (const [id, v] of docs) if (isObject(v)) out.push({ ...v, [key]: id });
+  for (const [id, v] of docs) if (isObject(v)) out.push({ ...fixedTimes(v, times), [key]: id });
   return out;
 }
 
@@ -155,7 +201,7 @@ function readTasks(docs: ReadonlyMap<string, unknown>): {
   const trashedAt = new Map<TaskId, number>();
   for (const [id, raw] of docs) {
     if (!isObject(raw)) continue;
-    const node = coerceTask({ ...raw, id, children: [] });
+    const node = coerceTask({ ...fixedTaskTimes(raw), id, children: [] });
     const trashed = numOrNull(raw.trashedAt);
     if (trashed != null) trashedAt.set(node.id, trashed);
     slots.set(node.id, {
@@ -213,16 +259,18 @@ export function fromDocs(raw: RawDocs, base: AppState): AppState {
   const { tasks, trash } = readTasks(raw.tasks);
   const meta = isObject(raw.meta) ? raw.meta : {};
 
-  const projects = withIds(raw.projects, "id").sort(
+  const projects = withIds(raw.projects, "id", ["createdAt", "updatedAt"]).sort(
     (a, b) =>
       Number(b.id === DEFAULT_PROJECT_ID) - Number(a.id === DEFAULT_PROJECT_ID) ||
       numOr(a.createdAt, 0) - numOr(b.createdAt, 0) ||
       byId(String(a.id), String(b.id)),
   );
-  const recurrences = withIds(raw.recurrences, "id").sort(
+  const recurrences = withIds(raw.recurrences, "id")
+    .map(fixedRecurrence)
+    .sort(
     (a, b) => numOr(a.createdAt, 0) - numOr(b.createdAt, 0) || byId(String(a.id), String(b.id)),
   );
-  const log = withIds(raw.log, "id").sort(
+  const log = withIds(raw.log, "id", ["at"]).sort(
     (a, b) => numOr(b.at, 0) - numOr(a.at, 0) || byId(String(a.id), String(b.id)),
   );
   const days = withIds(raw.days, "date").sort((a, b) => byId(String(a.date), String(b.date)));

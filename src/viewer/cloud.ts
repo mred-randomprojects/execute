@@ -1,4 +1,4 @@
-import { doc, getDoc, onSnapshot, runTransaction, setDoc, type Unsubscribe } from "firebase/firestore";
+import { doc, getDoc, onSnapshot, runTransaction, setDoc, updateDoc, type Unsubscribe } from "firebase/firestore";
 import { firebaseDb } from "../firebase";
 import type { AppState } from "../types";
 import { SCHEMA_VERSION } from "../types";
@@ -119,4 +119,21 @@ export async function mergeAndSave(uid: string, local: AppState): Promise<AppSta
     tx.set(ref, cloudPayload(merged));
     return merged;
   });
+}
+
+/**
+ * The schema version written into the v1 document once sync v2 has taken over.
+ * Every client since v18 refuses to write a document from a newer schema, so
+ * this stops outdated copies of the app from writing to a document nothing
+ * reads any more — while leaving its content intact as a backup.
+ */
+export const V1_FROZEN_SCHEMA = 1000;
+
+/** Mark the v1 document superseded (idempotent; a no-op if there is none). */
+export async function freezeV1(uid: string): Promise<void> {
+  const ref = appDataRef(uid);
+  const snap = await getDoc(ref);
+  if (!snap.exists()) return;
+  if (snap.data().schemaVersion === V1_FROZEN_SCHEMA) return;
+  await updateDoc(ref, { schemaVersion: V1_FROZEN_SCHEMA, movedTo: "sync v2: users/{uid}/tasks, …" });
 }
