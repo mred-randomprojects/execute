@@ -2,27 +2,30 @@ import { useEffect, useRef, useState } from "react";
 import type { User } from "firebase/auth";
 import { AuthProvider, useAuth } from "../auth";
 import { LoginPage } from "../components/LoginPage";
-import type { AppState, Task, TaskId } from "../types";
-import { SCHEMA_VERSION } from "../types";
-import { makeTask, mapById } from "../store/tasks";
+import type { Task, TaskId } from "../types";
+import { findById, makeTask, mapById } from "../store/tasks";
 import { parseCapture } from "../store/capture";
 import { todayISO } from "../store/dates";
 import { firebaseConfigured } from "../firebase";
-import { loadAppState, mergeAndSave, subscribeAppState, type CloudMeta } from "./cloud";
+import { firestoreDocStore } from "../sync/v2/firestoreStore";
+import { ViewerSync, type ViewerSnapshot } from "../sync/v2/viewer";
 import { ReadOnlyApp } from "./ReadOnlyApp";
-import { SeedPanel } from "./SeedPanel";
 
-/** Flip completion on one task (pure), stamping updatedAt so the LWW merge
- * treats this edit as the newest for that task. */
-function toggleCompleted(tasks: Task[], id: TaskId): Task[] {
+/**
+ * Set one task's completion (an idempotent intent — a retry after a conflict
+ * can't flip it twice). Stamped past the version being edited, so the merge
+ * treats this edit as the newest for that task even across skewed clocks.
+ */
+function setCompleted(tasks: Task[], id: TaskId, completed: boolean): Task[] {
   return mapById(tasks, id, (t) => {
-    const completed = !t.completed;
+    if (t.completed === completed) return t;
+    const now = Date.now();
     return {
       ...t,
       completed,
-      completedAt: completed ? Date.now() : null,
+      completedAt: completed ? now : null,
       wontDo: completed ? null : t.wontDo,
-      updatedAt: Date.now(),
+      updatedAt: Math.max(now, t.updatedAt + 1),
     };
   });
 }
@@ -77,72 +80,49 @@ function Gate() {
 }
 
 function AuthedViewer({ user, onSignOut }: { user: User; onSignOut: () => void }) {
-  // ?seed → the one-time upload flow instead of the reader.
-  const seedMode =
-    typeof window !== "undefined" &&
-    new URLSearchParams(window.location.search).has("seed");
-
-  const [state, setState] = useState<AppState | null>(null);
-  const [meta, setMeta] = useState<CloudMeta | null>(null);
-  // A write that failed. Shown until the next one succeeds — before, a failed
-  // check-off was only logged, and the next snapshot silently un-did it.
-  const [saveError, setSaveError] = useState<string | null>(null);
+  const [snap, setSnap] = useState<ViewerSnapshot>({ phase: "loading" });
   const [phase, setPhase] = useState<"loading" | "ready" | "error">("loading");
   const [errorMsg, setErrorMsg] = useState("");
   const [reloadKey, setReloadKey] = useState(0);
-  const paintedRef = useRef(false);
+  // A write that failed. Shown until the next one succeeds, so a check-off that
+  // didn't save can't quietly disappear.
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const syncRef = useRef<ViewerSync | null>(null);
 
   useEffect(() => {
-    if (seedMode) return;
-    paintedRef.current = false;
     setPhase("loading");
     setErrorMsg("");
-    let cancelled = false;
-
-    // First paint from whichever wins. Also keeps updating on every live change.
-    const paint = (s: AppState | null, m: CloudMeta | null) => {
-      if (cancelled) return;
-      paintedRef.current = true;
-      setState(s);
-      setMeta(m);
-      setPhase("ready");
-    };
-    // Only a hard error if we never painted — a live-stream hiccup after we've
-    // already shown data shouldn't blow the screen away.
-    const fail = (msg: string) => {
-      if (cancelled || paintedRef.current) return;
-      setErrorMsg(msg);
-      setPhase("error");
-    };
-
-    // Fast, hang-proof first paint: a one-shot REST read that returns even on
-    // the mobile networks where the live streaming channel can't establish
-    // (see firebase.ts). This is what stops the indefinite "Loading…" hang.
-    loadAppState(user.uid)
-      .then((doc) => paint(doc?.state ?? null, doc?.meta ?? null))
-      .catch(() => {
-        /* the live sub or the timeout backstop will surface any real failure */
-      });
-
-    // Live subscription: reflects desktop edits and our own writes as they land.
-    const unsub = subscribeAppState(user.uid, paint, (e) =>
-      fail(e instanceof Error ? e.message : "Failed to load your data."),
+    let painted = false;
+    const sync = new ViewerSync(
+      firestoreDocStore(user.uid),
+      (s) => {
+        setSnap(s);
+        if (s.phase !== "loading") {
+          painted = true;
+          setPhase("ready");
+        }
+      },
+      (e) => {
+        // A live-stream hiccup after we've shown data shouldn't blank the page.
+        if (painted) return;
+        setErrorMsg(e instanceof Error ? e.message : "Failed to load your data.");
+        setPhase("error");
+      },
     );
-
+    syncRef.current = sync;
+    sync.start();
     // Backstop: never spin forever. If nothing has painted, offer a retry.
-    const timer = setTimeout(
-      () => fail("This is taking longer than usual — check your connection and try again."),
-      8000,
-    );
-
+    const timer = setTimeout(() => {
+      if (painted) return;
+      setErrorMsg("This is taking longer than usual — check your connection and try again.");
+      setPhase("error");
+    }, 10_000);
     return () => {
-      cancelled = true;
       clearTimeout(timer);
-      unsub();
+      sync.stop();
+      syncRef.current = null;
     };
-  }, [user.uid, seedMode, reloadKey]);
-
-  if (seedMode) return <SeedPanel user={user} onSignOut={onSignOut} />;
+  }, [user.uid, reloadKey]);
 
   if (phase === "loading") {
     return (
@@ -157,9 +137,6 @@ function AuthedViewer({ user, onSignOut }: { user: User; onSignOut: () => void }
       <Centered>
         <h1 className="font-serif text-2xl font-medium">Couldn't load</h1>
         <p className="max-w-sm text-sm text-ink-soft">{errorMsg}</p>
-        <p className="max-w-sm text-[12px] text-ink-faint">
-          If this says permission denied, re-publish the Firestore rules.
-        </p>
         <div className="flex items-center gap-2">
           <button
             onClick={() => setReloadKey((k) => k + 1)}
@@ -178,30 +155,31 @@ function AuthedViewer({ user, onSignOut }: { user: User; onSignOut: () => void }
     );
   }
 
-  if (state == null) {
+  if (snap.phase === "notMigrated") {
     return (
       <Centered>
-        <h1 className="font-serif text-2xl font-medium">No data yet</h1>
+        <h1 className="font-serif text-2xl font-medium">Moving your data</h1>
         <p className="max-w-sm text-sm text-ink-soft">
-          Nothing has been synced to the cloud. Seed it once from the desktop
-          store file at <code className="text-[12px]">?seed</code>.
+          Your tasks are moving to a new sync format. Open Execute on your Mac to
+          finish — this page updates by itself when it's done.
         </p>
-        <button
-          onClick={onSignOut}
-          className="rounded border border-line bg-surface px-4 py-2 text-sm font-medium hover:bg-surface-2"
-        >
-          Sign out
-        </button>
       </Centered>
     );
   }
 
-  // Checking a task off: apply optimistically, then push through the merge
-  // (per-task LWW) so a concurrent desktop edit can't clobber it. onSnapshot
-  // then reconciles to the server truth (which includes this change).
-  const push = (next: AppState) => {
-    setState(next);
-    mergeAndSave(user.uid, next).then(
+  if (snap.phase !== "ready") {
+    return (
+      <Centered>
+        <p className="text-sm text-ink-faint">Loading your tasks…</p>
+      </Centered>
+    );
+  }
+
+  const state = snap.state;
+  const run = (edit: Parameters<ViewerSync["apply"]>[0]) => {
+    const sync = syncRef.current;
+    if (sync == null) return;
+    sync.apply(edit).then(
       () => setSaveError(null),
       (e: unknown) => {
         // eslint-disable-next-line no-console
@@ -211,18 +189,17 @@ function AuthedViewer({ user, onSignOut }: { user: User; onSignOut: () => void }
     );
   };
 
-  // This page is older than whatever last wrote the data (the desktop got a new
-  // schema first). Reading still works; writing would strip what it doesn't
-  // know, so mergeAndSave refuses — and a reload fetches the current build.
-  const outdated = meta != null && meta.schemaVersion > SCHEMA_VERSION;
-
   const onToggle = (taskId: TaskId) => {
-    push({ ...state, tasks: toggleCompleted(state.tasks, taskId) });
+    const task = findById(state.tasks, taskId);
+    if (task == null) return;
+    const completed = !task.completed;
+    run((s) => ({ ...s, tasks: setCompleted(s.tasks, taskId, completed) }));
   };
 
   // Capture from the phone. Reuses the shared parser + makeTask (no viewer-only
   // logic); a new task lands in the Inbox project, planned for today when the
-  // Today tab is active, otherwise undated.
+  // Today tab is active, otherwise undated. Created once, so a retry adds the
+  // same task rather than a second one.
   const onAdd = (text: string, today: boolean) => {
     const parsed = parseCapture(text);
     if (parsed.text.trim() === "") return;
@@ -232,15 +209,15 @@ function AuthedViewer({ user, onSignOut }: { user: User; onSignOut: () => void }
       completedAt: parsed.completed ? Date.now() : null,
       plannedFor: today ? todayISO(state.devDateOverride) : null,
     };
-    push({ ...state, tasks: [...state.tasks, task] });
+    run((s) => (findById(s.tasks, task.id) != null ? s : { ...s, tasks: [...s.tasks, task] }));
   };
 
   return (
     <ReadOnlyApp
       state={state}
-      cloudUpdatedAt={meta?.updatedAt ?? null}
+      cloudUpdatedAt={snap.updatedAt}
       notice={
-        outdated
+        snap.outdated
           ? { text: "A newer version of Execute saved this data. Reload to update before editing.", action: "Reload", onAction: () => window.location.reload() }
           : saveError != null
             ? { text: `Couldn't save: ${saveError}`, action: "Dismiss", onAction: () => setSaveError(null) }
