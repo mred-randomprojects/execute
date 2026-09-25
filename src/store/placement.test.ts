@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import {
+  adoptRemote,
   addChild,
   addTaskAfter,
   createProject,
@@ -130,5 +131,28 @@ describe("project clocks", () => {
     const project = getState().projects.find((p) => p.id === id);
     expect(project?.name).toBe("Work");
     expect(project?.updatedAt ?? 0).toBeGreaterThan(renamed);
+  });
+});
+
+describe("clock skew: an edit always wins over the version it edited", () => {
+  it("content, placement and undo all stamp past a clock that runs ahead", async () => {
+    const a = addTaskAfter(null, "a");
+    const b = addTaskAfter(a, "b");
+    // The other device's clock is an hour ahead; its copies arrive via sync.
+    const future = Date.now() + 3_600_000;
+    adoptRemote({
+      ...getState(),
+      tasks: getState().tasks.map((t) => ({ ...t, updatedAt: future, movedAt: future })),
+    });
+
+    setText(a, "edited here, later");
+    expect(find(a).updatedAt).toBeGreaterThan(future);
+
+    moveBefore(b, a);
+    expect(find(b).movedAt).toBeGreaterThan(future);
+
+    const beforeUndo = find(b).movedAt;
+    undo(); // the move
+    expect(find(b).movedAt).toBeGreaterThan(beforeUndo);
   });
 });

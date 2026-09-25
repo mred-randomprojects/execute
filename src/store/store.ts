@@ -220,7 +220,9 @@ function stampNode(
   const before = prevById.get(node.id);
   const ownChanged = before == null || !sameOwnFields(before, node);
   if (ownChanged) touched.add(node.id);
-  const updatedAt = ownChanged ? now : node.updatedAt;
+  // Never behind the version being edited: that version may carry another
+  // device's clock, and if it runs ahead, `now` would lose the merge to it.
+  const updatedAt = ownChanged ? Math.max(now, (before?.updatedAt ?? -Infinity) + 1) : node.updatedAt;
   if (children === node.children && updatedAt === node.updatedAt) return node;
   return { ...node, children, updatedAt };
 }
@@ -342,9 +344,11 @@ function stampChanged<T extends { id: string; updatedAt: number }>(
     const was = before.get(x.id);
     if (was === x) return x;
     if (was != null && jsonEqual({ ...was, updatedAt: 0 }, { ...x, updatedAt: 0 })) return x;
-    if (x.updatedAt === now) return x;
+    // Never behind the version being replaced (see stampNode).
+    const stamp = Math.max(now, (was?.updatedAt ?? -Infinity) + 1);
+    if (x.updatedAt >= stamp) return x;
     changed = true;
-    return { ...x, updatedAt: now };
+    return { ...x, updatedAt: stamp };
   });
   return changed ? out : next;
 }
@@ -396,14 +400,19 @@ function stampTasks(prev: AppState, next: AppState): Stamped {
  * device changed in the meantime — that one stays older, loses LWW, and heals on
  * the next pull.
  */
-function restamp(target: AppState, touched: Set<TaskId>): AppState {
+function restamp(target: AppState, touched: Set<TaskId>, current: AppState): AppState {
   if (touched.size === 0) return target;
   const now = Date.now();
+  // Past the version being replaced, which may be newer than `now` (another
+  // device's clock) — or the merge would hand the undone change straight back.
+  const currentById = new Map<TaskId, Task>();
+  indexById(current.tasks, currentById);
+  const stamp = (id: TaskId) => Math.max(now, (currentById.get(id)?.updatedAt ?? -Infinity) + 1);
   const walk = (nodes: Task[]): Task[] =>
     nodes.map((t) => {
       const children = t.children.length > 0 ? walk(t.children) : t.children;
       if (!touched.has(t.id)) return children === t.children ? t : { ...t, children };
-      return { ...t, children, updatedAt: now };
+      return { ...t, children, updatedAt: stamp(t.id) };
     });
   return { ...target, tasks: walk(target.tasks) };
 }
@@ -1586,7 +1595,7 @@ function applyStep(step: HistoryStep, kind: "undo" | "redo"): void {
   // reads the pushed copy back as a fresh add and the task returns. Placement
   // and project/recurrence stamps likewise: the snapshot's old ranks and
   // contents come back stamped `now`, or the cloud's newer copy would win.
-  const restored = withTombstones(state, withSyncStamps(state, restamp(step.state, step.touched)));
+  const restored = withTombstones(state, withSyncStamps(state, restamp(step.state, step.touched, state)));
   state = withHistory(restored, state.actionLog, {
     id: nanoid(),
     label: step.label,

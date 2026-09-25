@@ -16,11 +16,12 @@ import { rankList } from "./rank";
 interface Where {
   parent: TaskId | null;
   rank: string;
+  movedAt: number;
 }
 
 function indexPlacement(tasks: Task[], parent: TaskId | null, out: Map<TaskId, Where>): void {
   for (const t of tasks) {
-    out.set(t.id, { parent, rank: t.rank });
+    out.set(t.id, { parent, rank: t.rank, movedAt: t.movedAt });
     indexPlacement(t.children, t.id, out);
   }
 }
@@ -34,7 +35,8 @@ function indexPlacement(tasks: Task[], parent: TaskId | null, out: Map<TaskId, W
  * - Only tasks that were already under the same parent may keep their rank —
  *   a new, pasted, duplicated or re-parented task always gets a fresh one (a
  *   duplicate starts with its original's rank, which must not win).
- * - `movedAt = now` for every task whose parent or rank ends up different from
+ * - `movedAt = now` (or just past the previous placement's clock, if that is
+ *   ahead) for every task whose parent or rank ends up different from
  *   `prev`, including new ones. That covers undo: restoring an old order brings
  *   back old ranks, and stamping them `now` is what stops the cloud's copy of
  *   the move being undone from winning the next merge.
@@ -57,7 +59,9 @@ export function placeTasks(prev: Task[], next: Task[], now: number): Task[] {
       const rank = ranks[i];
       const was = before.get(t.id);
       const moved = was == null || was.parent !== parent || was.rank !== rank;
-      const movedAt = moved ? now : t.movedAt;
+      // Past the placement being replaced — which may carry a clock that runs
+      // ahead of this device's — so a move always wins over what it moved.
+      const movedAt = moved ? Math.max(now, (was?.movedAt ?? -Infinity) + 1) : t.movedAt;
       if (children === t.children && rank === t.rank && movedAt === t.movedAt) return t;
       changed = true;
       return { ...t, children, rank, movedAt };
