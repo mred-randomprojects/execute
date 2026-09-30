@@ -1283,6 +1283,44 @@ describe("Multi-select", () => {
   });
 });
 
+describe("Select all (⌘a)", () => {
+  /** A task row is "done" when its title carries the strikethrough. */
+  const isStruck = (text: string) =>
+    screen.getByText(text).closest(".line-through") != null;
+
+  it("takes the cursor's project first, then every project on a second press", async () => {
+    render(<App />);
+    await screen.findByPlaceholderText("Add a task for today…");
+    act(() => createProject("Errands"));
+    await addTask("inbox one");
+    await addTask("inbox two");
+    await addTask("post the parcel");
+    blurActive();
+
+    // File the third task under Errands, so the outline holds two projects.
+    await runCommand(CMD.project);
+    const picker = await screen.findByRole("dialog", { name: "Project" });
+    fireEvent.click(within(picker).getByText("Errands"));
+    await screen.findByText("Errands");
+
+    blurActive();
+    fireEvent.keyDown(document.body, { key: "3" }); // All — grouped by project
+    await screen.findByText("inbox one");
+
+    // The cursor is on the filed task, so the first ⌘a takes Errands alone.
+    fireEvent.keyDown(document.body, { key: "a", metaKey: true });
+    fireEvent.keyDown(document.body, { key: "Enter", metaKey: true }); // complete them
+    await waitFor(() => expect(isStruck("post the parcel")).toBe(true));
+    expect(isStruck("inbox one")).toBe(false);
+
+    // The second press widens to every project.
+    fireEvent.keyDown(document.body, { key: "a", metaKey: true });
+    fireEvent.keyDown(document.body, { key: "Enter", metaKey: true });
+    await waitFor(() => expect(isStruck("inbox one")).toBe(true));
+    expect(isStruck("inbox two")).toBe(true);
+  });
+});
+
 describe("Detail panel", () => {
   it("opens in preview, then Tab dives into the notes editor", async () => {
     render(<App />);

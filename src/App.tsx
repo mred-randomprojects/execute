@@ -150,6 +150,7 @@ import {
   nearestSurvivor,
   rangeTo,
   selectAfterRemoving,
+  selectAll,
   selectOne,
   toggleSelected,
   type Selection,
@@ -785,6 +786,9 @@ export function App() {
   // left the view (planned away with `t`, rescheduled, completed+hidden…), land
   // on the nearest surviving neighbor — preferring the row above — instead of
   // snapping to the top. `prevFlatIdsRef` holds the order before this change.
+  // What the last ⌘a selected — see `selectAll` (ui/selection) for why the ring
+  // can't be read back off the selection itself.
+  const selectAllRingRef = useRef<OutlineId[] | null>(null);
   const prevFlatIdsRef = useRef<OutlineId[]>(flatIds);
   useEffect(() => {
     const prev = prevFlatIdsRef.current;
@@ -1294,6 +1298,26 @@ export function App() {
     },
     selectDown: () => setSelection((s) => moveSelection(s, flatIds, "down", true)),
     selectUp: () => setSelection((s) => moveSelection(s, flatIds, "up", true)),
+    // ⌘a — this project's tasks, then (pressed again) every project's. Project
+    // *headers* are never selected: every bulk action reads `selectedTaskIds`,
+    // and a header in the set would only ever be a row the action skips.
+    selectAll: () => {
+      const taskIds = outlineRows.flatMap((r) => (r.kind === "task" ? [r.taskId] : []));
+      const scoped =
+        currentProjectId == null
+          ? taskIds
+          : taskIds.filter(
+              (id) => findById(state.tasks, id)?.projectId === currentProjectId
+            );
+      setSelection((s) => {
+        const next = selectAll(s, flatIds, scoped, taskIds, selectAllRingRef.current);
+        // Remember what this press produced: it's how the next one knows it is
+        // the *second* ⌘a and should widen. Anything else that moves the
+        // selection leaves this stale, and a stale ring simply fails to match.
+        selectAllRingRef.current = next.selectedIds;
+        return next;
+      });
+    },
     reorderUp: () => applyReorder("up"),
     reorderDown: () => applyReorder("down"),
     // → expands a collapsed project/task first (outliner convention), then
@@ -1930,6 +1954,7 @@ export function App() {
     "cursor.last": cmd.cursorLast,
     "select.down": cmd.selectDown,
     "select.up": cmd.selectUp,
+    "select.all": cmd.selectAll,
     "reorder.down": cmd.reorderDown,
     "reorder.up": cmd.reorderUp,
     "panel.open": cmd.panelOpen,

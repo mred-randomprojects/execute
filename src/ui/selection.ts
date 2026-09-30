@@ -177,3 +177,49 @@ export function selectAfterRemoving(
   const fallback = indexes.length > 0 ? Math.min(...indexes) : 0;
   return selectOne(remaining[clamp(fallback, remaining.length)], remaining);
 }
+
+/**
+ * ⌘a — select everything, one ring at a time.
+ *
+ * The first press takes the rows in `scoped` (the focused row's project, in the
+ * view as it currently stands); the next press widens to `all`. Two rings, and
+ * pressing again cycles back — so over-shooting is one keystroke to undo, not a
+ * trip back through ↑/↓.
+ *
+ * `previous` is what the last ⌘a produced (null if the last thing that moved the
+ * selection wasn't ⌘a). The ring can't be inferred from the selection alone: a
+ * project holding a single task is already "all of this project" the moment the
+ * cursor lands on it, and inferring would skip its first ring entirely.
+ *
+ * Focus is deliberately left where it was (as long as it survives into the new
+ * set): it's what decides the project the *next* press scopes to, and moving it
+ * to the top of the selection would silently re-aim the shortcut at whichever
+ * project happened to sort first.
+ */
+export function selectAll(
+  sel: Selection,
+  visible: readonly OutlineId[],
+  scoped: readonly OutlineId[],
+  all: readonly OutlineId[],
+  previous: readonly OutlineId[] | null
+): Selection {
+  const scopedIds = uniqueVisible(scoped, visible);
+  const allIds = uniqueVisible(all, visible);
+  // Widen only when this press follows one that already selected the project —
+  // and the selection hasn't moved since.
+  const widen =
+    scopedIds.length === 0 ||
+    (previous != null &&
+      sameIds(sel.selectedIds, previous) &&
+      sameIds(sel.selectedIds, scopedIds));
+  const target = widen ? allIds : scopedIds;
+  if (target.length === 0) return sel;
+  const focusedId =
+    sel.focusedId != null && target.includes(sel.focusedId) ? sel.focusedId : target[0];
+  return { focusedId, anchorId: target[0], selectedIds: target };
+}
+
+/** Same rows, same order — both sides come out of `uniqueVisible`. */
+function sameIds(a: readonly OutlineId[], b: readonly OutlineId[]): boolean {
+  return a.length === b.length && a.every((id, i) => id === b[i]);
+}

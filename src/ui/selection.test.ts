@@ -1,11 +1,13 @@
 import { describe, it, expect } from "vitest";
-import type { TaskId } from "../types";
+import type { OutlineId, TaskId } from "../types";
+import type { Selection } from "./selection";
 import {
   emptySelection,
   moveSelection,
   nearestSurvivor,
   rangeTo,
   selectAfterRemoving,
+  selectAll,
   selectOne,
   toggleSelected,
 } from "./selection";
@@ -121,5 +123,77 @@ describe("rangeTo (⇧-click)", () => {
   it("selects backwards too", () => {
     const s = rangeTo(selectOne(id("c"), visible), id("a"), visible);
     expect(s.selectedIds).toEqual(ids("a", "b", "c"));
+  });
+});
+
+describe("selectAll (⌘a)", () => {
+  // A view holding two projects: a/b under one header, c/d under the next.
+  const rows = ids("pA", "a", "b", "pB", "c", "d");
+  const one = ids("a", "b");
+  const every = ids("a", "b", "c", "d");
+
+  /** The App's ⌘a: repeated presses, carrying the ring the way App.tsx does. */
+  function presses(
+    start: Selection,
+    times: number,
+    visibleRows = rows,
+    scoped = one,
+    all = every
+  ): Selection {
+    let sel = start;
+    let ring: readonly OutlineId[] | null = null;
+    for (let i = 0; i < times; i++) {
+      sel = selectAll(sel, visibleRows, scoped, all, ring);
+      ring = sel.selectedIds;
+    }
+    return sel;
+  }
+
+  it("takes the focused row's project first, leaving the headers out", () => {
+    const s = presses(selectOne(id("a"), rows), 1);
+    expect(s.selectedIds).toEqual(one);
+    expect(s.focusedId).toBe("a");
+  });
+
+  it("widens to every project on the second press", () => {
+    const s = presses(selectOne(id("a"), rows), 2);
+    expect(s.selectedIds).toEqual(every);
+    // Focus stays put, so a third press can scope back to the same project.
+    expect(s.focusedId).toBe("a");
+  });
+
+  it("cycles back to the project, so over-shooting costs one keystroke", () => {
+    expect(presses(selectOne(id("a"), rows), 3).selectedIds).toEqual(one);
+  });
+
+  it("gives a one-task project its own ring before widening", () => {
+    // The whole project is already selected the moment the cursor lands on it;
+    // the ring must still take two presses to reach the other projects.
+    const solo = ids("a");
+    expect(presses(selectOne(id("a"), rows), 1, rows, solo).selectedIds).toEqual(solo);
+    expect(presses(selectOne(id("a"), rows), 2, rows, solo).selectedIds).toEqual(every);
+  });
+
+  it("does not widen when something else moved the selection in between", () => {
+    const first = selectAll(selectOne(id("a"), rows), rows, one, every, null);
+    const moved = moveSelection(first, rows, "down", false); // an ↑/↓ in between
+    const again = selectAll(moved, rows, one, every, first.selectedIds);
+    expect(again.selectedIds).toEqual(one);
+  });
+
+  it("goes straight to everything when the cursor has no project", () => {
+    expect(presses(selectOne(id("a"), rows), 1, rows, []).selectedIds).toEqual(every);
+  });
+
+  it("is a no-op in a view with no task rows at all", () => {
+    const projectsOnly = ids("pA", "pB");
+    const start = selectOne(id("pA"), projectsOnly);
+    expect(selectAll(start, projectsOnly, [], [], null)).toBe(start);
+  });
+
+  it("ignores rows that are no longer visible", () => {
+    // `b` was filtered out between renders; it must not come back in the set.
+    const shrunk = ids("pA", "a", "pB", "c", "d");
+    expect(presses(selectOne(id("a"), shrunk), 1, shrunk).selectedIds).toEqual(ids("a"));
   });
 });
