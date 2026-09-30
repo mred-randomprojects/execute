@@ -156,7 +156,7 @@ import {
 } from "./ui/selection";
 import { keymap } from "./keyboard/keymap";
 import { useKeyboard } from "./keyboard/useKeyboard";
-import type { AppMode, ContextState } from "./keyboard/types";
+import type { ContextState } from "./keyboard/types";
 import { EditorProvider, type Editor } from "./ui/editor";
 import { copyText } from "./ui/clipboard";
 import { Sidebar } from "./components/Sidebar";
@@ -260,8 +260,6 @@ export function App() {
   const [collapsedProjects, setCollapsedProjects] = useState<Set<ProjectId>>(new Set());
   const [zoom, setZoom] = useState<ZoomTarget | null>(null);
   const [hideCompleted, setHideCompleted] = useState(false);
-  const [mode, setMode] = useState<AppMode>("normal");
-  const [movingId, setMovingId] = useState<TaskId | null>(null);
   // Bumped on a keyboard reorder so the focused row scrolls back into view.
   const [scrollTick, setScrollTick] = useState(0);
   const bumpScroll = () => setScrollTick((n) => n + 1);
@@ -947,11 +945,6 @@ export function App() {
     setEditingProjectId(projectId);
   };
 
-  const exitMove = () => {
-    setMode("normal");
-    setMovingId(null);
-  };
-
   // Tab nests a task under the row visually above it — its previous *visible*
   // sibling in the current (filtered) view — never under a sibling the view is
   // hiding. So we resolve the parent from the displayed forest, not the raw tree.
@@ -1570,27 +1563,6 @@ export function App() {
       if (focusedProjectId != null) zoomInto({ kind: "project", id: focusedProjectId });
       else if (focusedTaskId != null) zoomInto({ kind: "task", id: focusedTaskId });
     },
-    moveEnter: () => {
-      if (view === "recurring") return;
-      if (focusedTaskId != null) {
-        setMovingId(focusedTaskId);
-        setMode("move");
-      }
-    },
-    moveDropSibling: () => {
-      if (movingId != null && focusedTaskId != null) moveBefore(movingId, focusedTaskId);
-      else if (movingId != null && focusedProjectId != null) {
-        setProjectForMany([movingId], focusedProjectId);
-      }
-      exitMove();
-    },
-    moveDropChild: () => {
-      if (movingId != null && focusedTaskId != null) moveAsChild(movingId, focusedTaskId);
-      else if (movingId != null && focusedProjectId != null) {
-        setProjectForMany([movingId], focusedProjectId);
-      }
-      exitMove();
-    },
     captureFocus: () => captureRef.current?.focus(),
     toggleHideCompleted: () => setHideCompleted((v) => !v),
     helpToggle: () => setShowHelp((v) => !v),
@@ -1634,8 +1606,7 @@ export function App() {
       else if (showCalendar) {
         setShowCalendar(false);
         setCalendarTargetId(null);
-      } else if (mode === "move") exitMove();
-      else if (breakingDownId != null && shutdownActive) setBreakingDownId(null);
+      } else if (breakingDownId != null && shutdownActive) setBreakingDownId(null);
       else if (shutdownOpen) setShutdownOpen(false);
       else if (planOpen) setPlanOpen(false);
       else if (waitingEditId != null) setWaitingEditId(null);
@@ -1901,7 +1872,7 @@ export function App() {
     // Only from a settled outline: the rituals own the screen, and a jump would
     // land in a view they'd immediately paint over. (In "normal" none of these
     // hold; the guard is for the ⌘f-while-editing binding.)
-    if (reckoningActive || shutdownActive || planActive || mode === "move") return;
+    if (reckoningActive || shutdownActive || planActive) return;
     setShowSearch(true);
   };
   // Jump to any task from the finder: leave focus mode, show it in All (which
@@ -1947,8 +1918,11 @@ export function App() {
     boardMode,
     shutdownActive,
     planActive,
-    mode,
   };
+  // Only actions the keymap actually binds. Everything the outline used to fire
+  // from a bare letter (schedule, won't-do, blocked, estimate, project, repeat,
+  // the rituals…) is reached through the ⌘k palette, which calls `cmd.*`
+  // directly — so it never needs an entry here.
   const actionMap: Record<string, () => void> = {
     "cursor.down": cmd.cursorDown,
     "cursor.up": cmd.cursorUp,
@@ -1963,25 +1937,14 @@ export function App() {
     "edit.start": cmd.editStart,
     "task.new": cmd.taskNew,
     "task.toggle": cmd.taskToggle,
-    "task.scheduleLater": cmd.scheduleLater,
-    "task.scheduleEarlier": cmd.scheduleEarlier,
     "task.peek": cmd.taskPeek,
     "period.next": cmd.periodNext,
     "period.prev": cmd.periodPrev,
     "task.indent": cmd.taskIndent,
     "task.outdent": cmd.taskOutdent,
     "task.trash": cmd.taskTrash,
-    "task.collapse": cmd.taskCollapse,
-    "task.current": cmd.taskCurrent,
-    "task.reason": cmd.taskReason,
-    "task.waiting": cmd.taskWaiting,
     "zoom.in": cmd.zoomIn,
-    "move.enter": cmd.moveEnter,
-    "move.dropSibling": cmd.moveDropSibling,
-    "move.dropChild": cmd.moveDropChild,
-    "move.cancel": cmd.dismiss,
     "capture.focus": cmd.captureFocus,
-    "filter.hideCompleted": cmd.toggleHideCompleted,
     "undo": undo,
     "redo": redo,
     "help.toggle": cmd.helpToggle,
@@ -1994,11 +1957,6 @@ export function App() {
     },
     "palette.open": cmd.paletteOpen,
     "search.open": openSearch,
-    "schedule.open": cmd.scheduleOpen,
-    "project.open": cmd.projectOpen,
-    "estimate.open": openEstimatePicker,
-    "recurrence.repeat": cmd.repeatOpen,
-    "later.toggleLayout": cmd.toggleLaterLayout,
     "view.today": cmd.gotoView("today"),
     "view.backlog": cmd.gotoView("backlog"),
     "view.all": cmd.gotoView("all"),
@@ -2019,10 +1977,8 @@ export function App() {
       const c = currentReckCard();
       if (c != null) cmd.reckPostponeAll(c);
     },
-    "plan.open": cmd.planOpen,
     "plan.accept": () => cmd.planAccept(),
     "plan.push": () => cmd.planPush(),
-    "shutdown.open": cmd.shutOpen,
     "shut.complete": () => cmd.shutComplete(),
     "shut.carry": () => cmd.shutCarry(),
     "shut.postpone": () => cmd.shutPostpone(),
@@ -2083,8 +2039,6 @@ export function App() {
     reasonEditId,
     peekId,
     collapsed,
-    mode,
-    movingId,
     scrollTick,
     select: setFocus,
     toggleSelect: (id) => setSelection((s) => toggleSelected(s, id, flatIds)),
@@ -2205,8 +2159,6 @@ export function App() {
     peekId: null, // templates carry no notes worth peeking; the panel covers them
     togglePeek: () => {},
     collapsed,
-    mode,
-    movingId,
     scrollTick,
     select: setFocus,
     toggleSelect: setFocus, // recurrence view navigates one template at a time
@@ -2426,17 +2378,17 @@ export function App() {
   };
 
   const commands: Command[] = [
-    { id: "search", label: "Search tasks", aliases: ["find"], hint: "f", run: openSearch },
+    { id: "search", label: "Search tasks", aliases: ["find"], hint: "⌘f", run: openSearch },
     { id: "today", label: "Go to Today", hint: "1", run: cmd.gotoView("today") },
     { id: "backlog", label: "Go to Backlog", hint: "2", run: cmd.gotoView("backlog") },
     { id: "all", label: "Go to All", hint: "3", run: cmd.gotoView("all") },
     { id: "projects", label: "Go to Projects", hint: "4", run: cmd.gotoView("projects") },
     { id: "recurring", label: "Go to Recurring", hint: "5", run: cmd.gotoView("recurring") },
     { id: "trash", label: "Go to Trash", hint: "6", run: cmd.gotoView("trash") },
-    { id: "new", label: "New task", hint: "o", run: cmd.taskNew },
+    { id: "new", label: "New task", hint: "n", run: cmd.taskNew },
     { id: "details", label: "Open details panel", hint: "→", run: openPanel },
     { id: "peek", label: "Peek: unwrap task in place", aliases: ["preview"], hint: "p", run: cmd.taskPeek },
-    { id: "toggle", label: "Complete / uncomplete task", hint: "space", run: cmd.taskToggle },
+    { id: "toggle", label: "Complete / uncomplete task", hint: "⌘↵", run: cmd.taskToggle },
     {
       id: "wontdo",
       label:
@@ -2444,23 +2396,21 @@ export function App() {
           ? "Won’t do · edit the reason"
           : "Won’t do (skip) · add a reason",
       aliases: ["wont do", "skip", "reason"],
-      hint: "w",
       run: cmd.taskReason,
     },
-    { id: "sched-later", label: "Schedule: one step later", aliases: ["defer", "postpone"], hint: "t", run: cmd.scheduleLater },
-    { id: "sched-earlier", label: "Schedule: one step sooner", aliases: ["advance"], hint: "⇧ t", run: cmd.scheduleEarlier },
+    { id: "sched-later", label: "Schedule: one step later", aliases: ["defer", "postpone"], run: cmd.scheduleLater },
+    { id: "sched-earlier", label: "Schedule: one step sooner", aliases: ["advance"], run: cmd.scheduleEarlier },
     {
       id: "current",
       label:
         focusedTaskId != null && state.currentTaskId === focusedTaskId
           ? "Clear current (focus) task"
           : "Set as current (focus) task",
-      hint: "c",
       run: cmd.taskCurrent,
     },
-    // Scheduling, reachable from the palette (the `s` picker is the keyboard path).
-    // All act on the focused/selected task(s); no-op when nothing is targeted.
-    { id: "sched-open", label: "Schedule… (type a day or a date)", aliases: ["schedule", "when", "reschedule", "defer"], hint: "s", run: cmd.scheduleOpen },
+    // Scheduling. All act on the focused/selected task(s); no-op when nothing
+    // is targeted.
+    { id: "sched-open", label: "Schedule… (type a day or a date)", aliases: ["schedule", "when", "reschedule", "defer"], run: cmd.scheduleOpen },
     { id: "sched-today", label: "Schedule: Today", aliases: ["schedule"], run: () => applySchedule("today") },
     { id: "sched-tomorrow", label: "Schedule: Tomorrow", aliases: ["schedule"], run: () => applySchedule("tomorrow") },
     { id: "sched-this-week", label: "Schedule: This week", aliases: ["schedule"], run: () => applySchedule("thisWeek") },
@@ -2469,7 +2419,7 @@ export function App() {
     { id: "sched-next-month", label: "Schedule: Next month", aliases: ["schedule"], run: () => applySchedule("nextMonth") },
     { id: "sched-someday", label: "Schedule: Someday", aliases: ["schedule"], run: () => applySchedule("someday") },
     { id: "sched-inbox", label: "Schedule: Inbox (untriage)", aliases: ["schedule"], run: () => applySchedule("inbox") },
-    { id: "estimate", label: "Estimate effort (blocks of ~20m)…", aliases: ["estimate", "effort", "blocks", "time", "size"], hint: "e", run: openEstimatePicker },
+    { id: "estimate", label: "Estimate effort (blocks of ~20m)…", aliases: ["estimate", "effort", "blocks", "time", "size"], run: openEstimatePicker },
     { id: "add-to-calendar", label: "Add to calendar…", aliases: ["calendar", "cal", "event", "gcal", "schedule event", "block time"], run: openCalendarPicker },
     { id: "capacity-up", label: `Daily capacity: raise (${state.dailyCapacityBlocks} → ${state.dailyCapacityBlocks + 1} blocks)`, aliases: ["capacity", "budget"], run: () => setDailyCapacityBlocks(state.dailyCapacityBlocks + 1) },
     { id: "capacity-down", label: `Daily capacity: lower (${state.dailyCapacityBlocks} → ${Math.max(1, state.dailyCapacityBlocks - 1)} blocks)`, aliases: ["capacity", "budget"], run: () => setDailyCapacityBlocks(state.dailyCapacityBlocks - 1) },
@@ -2538,7 +2488,6 @@ export function App() {
       id: "plan",
       label: "Plan the day…",
       aliases: ["plan", "plan today", "morning", "commit", "start the day"],
-      hint: "⇧q",
       run: cmd.planOpen,
     },
     {
@@ -2551,15 +2500,33 @@ export function App() {
       id: "shutdown",
       label: "Close the day (shutdown)…",
       aliases: ["shutdown", "close the day", "end of day", "evening", "wrap up", "eod"],
-      hint: "q",
       run: cmd.shutOpen,
     },
-    { id: "move", label: "Move task (re-parent)", hint: "m", run: cmd.moveEnter },
     { id: "zoom", label: "Zoom in / focus", hint: "⌥↵", run: cmd.zoomIn },
+    {
+      id: "waiting",
+      label:
+        focusedTask?.waitingOn != null
+          ? "Unblock — no longer waiting on anyone"
+          : "Blocked: waiting on someone else…",
+      aliases: ["waiting", "blocked", "block", "waiting on", "stuck", "unblock"],
+      run: cmd.taskWaiting,
+    },
+    {
+      id: "repeat",
+      label: "Set repeat (recurring)…",
+      aliases: ["repeat", "recurring", "recur", "every", "daily", "weekly"],
+      run: cmd.repeatOpen,
+    },
+    {
+      id: "later-layout",
+      label: "Later: group by date / project",
+      aliases: ["later", "layout", "group", "group by", "backlog layout"],
+      run: cmd.toggleLaterLayout,
+    },
     {
       id: "hide-completed",
       label: hideCompleted ? "Show completed & won't-do tasks" : "Hide completed & won't-do tasks",
-      hint: "h",
       run: cmd.toggleHideCompleted,
     },
     {
@@ -2592,7 +2559,6 @@ export function App() {
       id: "project-set",
       label: "File under a project…",
       aliases: ["project", "move to project", "file"],
-      hint: "⇧p",
       run: cmd.projectOpen,
     },
     ...state.projects.map((project) => ({

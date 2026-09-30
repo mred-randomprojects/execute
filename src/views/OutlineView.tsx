@@ -550,7 +550,7 @@ function RecurringSuggestions({
       <div className="mb-1 flex items-center justify-between border-t border-line pt-3">
         <span className="eyebrow">Recurring today</span>
         <span className="text-[11px] text-ink-faint">
-          <span className="kbd">t</span> add to today
+          <span className="kbd">⌘k</span> add to today
         </span>
       </div>
       <p className="mb-1.5 text-[12px] text-ink-faint">
@@ -918,8 +918,7 @@ export function OutlineView({
             <div className="mb-1 flex items-center justify-between border-t border-line pt-3">
               <span className="eyebrow">Suggested for today</span>
               <span className="text-[11px] text-ink-faint">
-                <span className="kbd">t</span> plan today ·{" "}
-                <span className="kbd">s</span> reschedule
+                <span className="kbd">⌘k</span> plan today · reschedule
               </span>
             </div>
             <p className="mb-1.5 text-[12px] text-ink-faint">
@@ -940,7 +939,7 @@ export function OutlineView({
             <div className="mb-1 flex items-center justify-between border-t border-line pt-3">
               <span className="eyebrow">Waiting on others</span>
               <span className="text-[11px] text-ink-faint">
-                <span className="kbd">b</span> unblock
+                <span className="kbd">⌘k</span> unblock
               </span>
             </div>
             <p className="mb-1.5 text-[12px] text-ink-faint">

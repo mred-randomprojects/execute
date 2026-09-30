@@ -5,6 +5,18 @@ import type { KeyBinding } from "./types";
 // help overlay automatically. Inline capture keys (Enter/Tab/Up/Down inside a
 // row's input) are handled locally by the input and documented in the help
 // overlay's static "Editing" section.
+//
+// ── The bare-letter rule ────────────────────────────────────────────
+// A bare letter is only allowed where it CANNOT fire by accident: inside a
+// modal ritual (the Reckoning, Shutdown, Plan, the board) that owns the whole
+// screen and prints the letter on the action chip you're looking at. In the
+// outline — where you're browsing, and a stray keypress lands on a real task —
+// bare letters are reserved for things that don't mutate anything: `n` (new),
+// `p` (peek), the view digits, and the period brackets. Everything else goes
+// through ⌘k, which is searchable, undoable-by-name and impossible to hit by
+// accident. That is why there is no `t`, `w`, `b`, `c`, `h`, `g`, `s`, `e`,
+// `r`, `q` or `m` here: each one mutated a task or swallowed the keyboard on a
+// single unmodified keypress.
 
 export const keymap: KeyBinding[] = [
   // ── global ────────────────────────────────────────────────────────
@@ -13,15 +25,12 @@ export const keymap: KeyBinding[] = [
   { key: "Meta+Z", action: "redo", context: "global", displayKey: "⌘ ⇧ z", description: "redo", section: "General" },
   { key: "Meta+y", action: "history.toggle", context: ["normal", "reckoning", "board"], displayKey: "⌘ y", description: "history — everything you just did", section: "General" },
   { key: "?", action: "help.toggle", context: ["normal", "reckoning", "board"], displayKey: "?", description: "keyboard help", section: "General" },
-  { key: "Meta+k", action: "palette.open", context: ["normal", "reckoning", "board", "editing"], displayKey: "⌘ k", description: "command palette", section: "General" },
-  { key: "f", action: "search.open", context: "normal", displayKey: "f / ⌘ f", description: "find — search all tasks (subsequence: “byml” → “Buy milk”)", section: "General" },
-  { key: "Meta+f", action: "search.open", context: ["normal", "editing"] },
+  { key: "Meta+k", action: "palette.open", context: ["normal", "reckoning", "board", "editing"], displayKey: "⌘ k", description: "command palette — everything lives here", section: "General" },
+  { key: "Meta+f", action: "search.open", context: ["normal", "editing"], displayKey: "⌘ f", description: "find — search all tasks (subsequence: “byml” → “Buy milk”)", section: "General" },
 
   // ── history panel ─────────────────────────────────────────────────
   { key: "ArrowDown", action: "history.down", context: "history", displayKey: "↑ / ↓", description: "walk the history", section: "History" },
-  { key: "j", action: "history.down", context: "history" },
   { key: "ArrowUp", action: "history.up", context: "history" },
-  { key: "k", action: "history.up", context: "history" },
   { key: "Enter", action: "history.jump", context: "history", displayKey: "↵", description: "rewind to just before this action (or replay it)", section: "History" },
   { key: "Meta+y", action: "dismiss", context: "history" },
 
@@ -34,65 +43,42 @@ export const keymap: KeyBinding[] = [
   { key: "6", action: "view.trash", context: "normal", displayKey: "6", description: "go to Trash", section: "Views" },
   { key: "]", action: "period.next", context: "normal", displayKey: "[ / ]", description: "period tab: earlier / later (Today ↔ Tomorrow ↔ …)", section: "Views" },
   { key: "[", action: "period.prev", context: "normal" },
-  { key: "h", action: "filter.hideCompleted", context: "normal", displayKey: "h", description: "hide / show completed & won't-do", section: "Views" },
-  { key: "g", action: "later.toggleLayout", context: "normal", displayKey: "g", description: "Later: group by date / project", section: "Views" },
 
   // ── navigation (normal) ───────────────────────────────────────────
-  { key: "ArrowDown", action: "cursor.down", context: "normal", displayKey: "↓ / j", description: "move down", section: "Navigation" },
-  { key: "j", action: "cursor.down", context: "normal" },
-  { key: "ArrowUp", action: "cursor.up", context: "normal", displayKey: "↑ / k", description: "move up", section: "Navigation" },
-  { key: "k", action: "cursor.up", context: "normal" },
+  { key: "ArrowDown", action: "cursor.down", context: "normal", displayKey: "↓", description: "move down", section: "Navigation" },
+  { key: "ArrowUp", action: "cursor.up", context: "normal", displayKey: "↑", description: "move up", section: "Navigation" },
   { key: "Shift+ArrowDown", action: "select.down", context: "normal", displayKey: "⇧ ↓", description: "extend selection down", section: "Navigation" },
   { key: "Shift+ArrowUp", action: "select.up", context: "normal", displayKey: "⇧ ↑", description: "extend selection up", section: "Navigation" },
   { key: "Meta+ArrowUp", action: "cursor.first", context: "normal", displayKey: "⌘ ↑", description: "jump to first item", section: "Navigation" },
   { key: "Meta+ArrowDown", action: "cursor.last", context: "normal", displayKey: "⌘ ↓", description: "jump to last item", section: "Navigation" },
-  { key: "ArrowRight", action: "panel.open", context: "normal", displayKey: "→ / l", description: "expand · descend · details panel", section: "Navigation" },
-  { key: "l", action: "panel.open", context: "normal" },
+  { key: "ArrowRight", action: "panel.open", context: "normal", displayKey: "→", description: "expand · descend · details panel", section: "Navigation" },
   { key: "ArrowLeft", action: "panel.back", context: "normal", displayKey: "←", description: "collapse · out to parent · close panel", section: "Navigation" },
 
   // ── actions (normal) ──────────────────────────────────────────────
+  // Bare keys here are non-mutating by design — see the rule at the top.
   { key: "Enter", action: "edit.start", context: "normal", displayKey: "↵", description: "edit task title", section: "Tasks" },
-  { key: "a", action: "task.new", context: "normal", displayKey: "a / n / o", description: "new task below", section: "Tasks" },
-  { key: "n", action: "task.new", context: "normal" },
-  { key: "o", action: "task.new", context: "normal" },
+  { key: "n", action: "task.new", context: "normal", displayKey: "n", description: "new task below", section: "Tasks" },
   { key: "/", action: "capture.focus", context: ["normal", "reckoning", "board"] },
-  { key: "e", action: "estimate.open", context: "normal", displayKey: "e", description: "estimate effort (blocks of ~20m)", section: "Tasks" },
-  { key: " ", action: "task.toggle", context: "normal", displayKey: "space", description: "complete / uncomplete", section: "Tasks" },
   { key: "Meta+Enter", action: "task.toggle", context: ["normal", "editing"], displayKey: "⌘ ↵", description: "complete / uncomplete", section: "Tasks" },
-  { key: "t", action: "task.scheduleLater", context: "normal", displayKey: "t", description: "schedule one step later (today → tomorrow → … → inbox, wraps)", section: "Tasks" },
-  { key: "T", action: "task.scheduleEarlier", context: "normal", displayKey: "⇧ t", description: "schedule one step sooner (… → tomorrow → today → inbox)", section: "Tasks" },
-  { key: "s", action: "schedule.open", context: "normal", displayKey: "s", description: "schedule — type when: “next week”, “friday”, “aug 20”…", section: "Tasks" },
-  { key: "P", action: "project.open", context: "normal", displayKey: "⇧ p", description: "file under a project (works on recurring tasks too)", section: "Tasks" },
-  { key: "r", action: "recurrence.repeat", context: "normal", displayKey: "r", description: "set repeat (in Recurring)", section: "Tasks" },
   { key: "Tab", action: "task.indent", context: "normal", displayKey: "tab", description: "indent (make subtask) · edit notes when the panel is open", section: "Tasks" },
   { key: "Shift+Tab", action: "task.outdent", context: "normal", displayKey: "⇧ tab", description: "outdent", section: "Tasks" },
   { key: "Alt+ArrowUp", action: "reorder.up", context: "normal", displayKey: "⌥ ↑", description: "move task up", section: "Tasks" },
   { key: "Alt+ArrowDown", action: "reorder.down", context: "normal", displayKey: "⌥ ↓", description: "move task down", section: "Tasks" },
   { key: "Backspace", action: "task.trash", context: "normal", displayKey: "⌫", description: "won’t do · press again to trash", section: "Tasks", noRepeat: true },
-  { key: "w", action: "task.reason", context: "normal", displayKey: "w", description: "won’t do · edit the reason (why)", section: "Tasks" },
-  { key: "b", action: "task.waiting", context: "normal", displayKey: "b", description: "blocked — waiting on someone else (again to unblock)", section: "Tasks" },
   { key: "p", action: "task.peek", context: "normal", displayKey: "p", description: "peek — unwrap the title + notes in place", section: "Tasks" },
-  { key: "c", action: "task.current", context: "normal", displayKey: "c", description: "set / clear current (focus) task", section: "Tasks" },
   { key: "Alt+Enter", action: "zoom.in", context: "normal", displayKey: "⌥ ↵", description: "zoom in / focus (esc backs out)", section: "Tasks" },
-  { key: "m", action: "move.enter", context: "normal", displayKey: "m", description: "move mode (re-parent)", section: "Tasks" },
-  { key: "q", action: "shutdown.open", context: "normal", displayKey: "q", description: "close the day — decide tonight, not tomorrow morning", section: "Tasks" },
-  { key: "Q", action: "plan.open", context: "normal", displayKey: "⇧ q", description: "plan the day — what's asking for today, against your capacity", section: "Tasks" },
 
   // ── plan (the morning ritual; shutdown's other half) ─────────────
+  // Modal: it owns the screen and prints these letters on its chips.
   { key: "ArrowDown", action: "cursor.down", context: "plan", displayKey: "↑ / ↓", description: "next / previous", section: "Plan" },
-  { key: "j", action: "cursor.down", context: "plan" },
   { key: "ArrowUp", action: "cursor.up", context: "plan" },
-  { key: "k", action: "cursor.up", context: "plan" },
   { key: "t", action: "plan.accept", context: "plan", displayKey: "t / ↵", description: "take it on today", section: "Plan" },
   { key: "Enter", action: "plan.accept", context: "plan" },
   { key: "s", action: "plan.push", context: "plan", displayKey: "s", description: "not today — pick another day", section: "Plan" },
-  { key: "Q", action: "dismiss", context: "plan" },
 
   // ── shutdown (the evening ritual) ─────────────────────────────────
   { key: "ArrowDown", action: "cursor.down", context: "shutdown", displayKey: "↑ / ↓", description: "next / previous task", section: "Shutdown" },
-  { key: "j", action: "cursor.down", context: "shutdown" },
   { key: "ArrowUp", action: "cursor.up", context: "shutdown" },
-  { key: "k", action: "cursor.up", context: "shutdown" },
   { key: "e", action: "shut.complete", context: "shutdown", displayKey: "e", description: "mark it done", section: "Shutdown" },
   { key: "t", action: "shut.carry", context: "shutdown", displayKey: "t", description: "carry it to tomorrow", section: "Shutdown" },
   { key: "b", action: "shut.breakdown", context: "shutdown", displayKey: "b", description: "break it into something you'd actually do tomorrow", section: "Shutdown" },
@@ -100,22 +86,10 @@ export const keymap: KeyBinding[] = [
   { key: "w", action: "shut.wontDo", context: "shutdown", displayKey: "w", description: "won’t do — a decision, not a failure", section: "Shutdown" },
   { key: "d", action: "shut.drop", context: "shutdown", displayKey: "d", description: "drop it", section: "Shutdown", noRepeat: true },
   { key: "T", action: "shut.carryAll", context: "shutdown", displayKey: "⇧ t", description: "carry everything left to tomorrow", section: "Shutdown" },
-  { key: "q", action: "dismiss", context: "shutdown" },
-
-  // ── move mode ─────────────────────────────────────────────────────
-  { key: "ArrowDown", action: "cursor.down", context: "move", displayKey: "↑ / ↓", description: "choose position", section: "Move mode" },
-  { key: "j", action: "cursor.down", context: "move" },
-  { key: "ArrowUp", action: "cursor.up", context: "move" },
-  { key: "k", action: "cursor.up", context: "move" },
-  { key: "Enter", action: "move.dropSibling", context: "move", displayKey: "↵", description: "drop before cursor", section: "Move mode" },
-  { key: "Meta+Enter", action: "move.dropChild", context: "move", displayKey: "⌘ ↵", description: "drop as child of cursor", section: "Move mode" },
-  { key: "Escape", action: "move.cancel", context: "move", displayKey: "esc", description: "cancel move", section: "Move mode" },
 
   // ── reckoning gate ────────────────────────────────────────────────
   { key: "ArrowDown", action: "cursor.down", context: "reckoning", displayKey: "↑ / ↓", description: "next / previous task", section: "The Reckoning" },
-  { key: "j", action: "cursor.down", context: "reckoning" },
   { key: "ArrowUp", action: "cursor.up", context: "reckoning" },
-  { key: "k", action: "cursor.up", context: "reckoning" },
   { key: "ArrowRight", action: "reck.nextCard", context: "reckoning", displayKey: "← / →", description: "previous / next group", section: "The Reckoning" },
   { key: "ArrowLeft", action: "reck.prevCard", context: "reckoning" },
   { key: "e", action: "reck.complete", context: "reckoning", displayKey: "e", description: "mark it done", section: "The Reckoning" },
@@ -128,17 +102,13 @@ export const keymap: KeyBinding[] = [
   { key: "v", action: "board.toggle", context: "reckoning", displayKey: "v", description: "switch to the planning board", section: "The Reckoning" },
 
   // ── planning board (the reckoning's two-panel skin) ──────────────
-  { key: "ArrowDown", action: "board.cursorDown", context: "board", displayKey: "↑ / ↓ / j / k", description: "move within a column", section: "Planning board" },
-  { key: "j", action: "board.cursorDown", context: "board" },
+  { key: "ArrowDown", action: "board.cursorDown", context: "board", displayKey: "↑ / ↓", description: "move within a column", section: "Planning board" },
   { key: "ArrowUp", action: "board.cursorUp", context: "board" },
-  { key: "k", action: "board.cursorUp", context: "board" },
   { key: "Tab", action: "board.switchColumn", context: "board", displayKey: "tab", description: "switch column (leftovers ↔ today)", section: "Planning board" },
   { key: "Shift+Tab", action: "board.switchColumn", context: "board" },
-  { key: "ArrowRight", action: "board.pull", context: "board", displayKey: "→ / l / ↵", description: "pull a leftover into today", section: "Planning board" },
-  { key: "l", action: "board.pull", context: "board" },
+  { key: "ArrowRight", action: "board.pull", context: "board", displayKey: "→ / ↵", description: "pull a leftover into today", section: "Planning board" },
   { key: "Enter", action: "board.pull", context: "board" },
-  { key: "ArrowLeft", action: "board.sendBack", context: "board", displayKey: "← / h", description: "send a today task back to leftovers", section: "Planning board" },
-  { key: "h", action: "board.sendBack", context: "board" },
+  { key: "ArrowLeft", action: "board.sendBack", context: "board", displayKey: "←", description: "send a today task back to leftovers", section: "Planning board" },
   { key: "s", action: "board.push", context: "board", displayKey: "s", description: "postpone — name the day you'll do it", section: "Planning board" },
   { key: "e", action: "board.complete", context: "board", displayKey: "e", description: "mark it done", section: "Planning board" },
   { key: "b", action: "board.breakdown", context: "board", displayKey: "b", description: "break it down", section: "Planning board" },

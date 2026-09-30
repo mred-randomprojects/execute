@@ -1,16 +1,15 @@
 const NORMAL_HINTS: Array<[string, string]> = [
-  ["j / k", "move"],
+  ["↑ / ↓", "move"],
   ["↵", "edit"],
   ["→", "details"],
-  ["space / ⌘↵", "done"],
-  ["a / n", "new"],
-  ["t", "plan"],
-  ["⌘k", "more"],
+  ["⌘↵", "done"],
+  ["n", "new"],
+  ["⌘k", "everything else"],
   ["?", "help"],
 ];
 
 const RECKONING_HINTS: Array<[string, string]> = [
-  ["j / k", "select"],
+  ["↑ / ↓", "select"],
   ["e", "done"],
   ["b", "break down"],
   ["s", "postpone"],
@@ -19,7 +18,7 @@ const RECKONING_HINTS: Array<[string, string]> = [
 ];
 
 const SHUTDOWN_HINTS: Array<[string, string]> = [
-  ["j / k", "select"],
+  ["↑ / ↓", "select"],
   ["e", "done"],
   ["t", "tomorrow"],
   ["b", "break down"],

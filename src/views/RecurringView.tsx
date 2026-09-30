@@ -217,8 +217,8 @@ export function RecurringView({
         </h1>
         <p className="mt-2 text-[14px] text-ink-soft">
           Tasks that come back on a schedule. They surface in Today when due — you decide whether to
-          take them on. Press <span className="kbd">r</span> to set the repeat,{" "}
-          <span className="kbd">⇧p</span> to file it under a project.
+          take them on. Use <span className="kbd">⌘k</span> to set the repeat or file it
+          under a project.
         </p>
       </header>
 
@@ -235,8 +235,8 @@ export function RecurringView({
       <div className="-mx-2 flex-1 overflow-auto">
         {groups.length === 0 ? (
           <div className="px-2 py-10 text-center text-[14px] text-ink-faint">
-            No recurring tasks yet. Capture one above, add steps with <span className="kbd">o</span>,
-            then set its repeat with <span className="kbd">r</span>.
+            No recurring tasks yet. Capture one above, add steps with <span className="kbd">n</span>,
+            then set its repeat from <span className="kbd">⌘k</span>.
           </div>
         ) : (
           groups.map((group) => (
