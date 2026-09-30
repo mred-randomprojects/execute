@@ -2045,16 +2045,32 @@ describe("Cascade a schedule change to subtasks", () => {
     expect(screen.getByText("pebble")).toBeTruthy();
   });
 
-  it("Enter keeps the safe default: only the task itself is rescheduled", async () => {
+  it("Enter takes the subtree: the default is the answer that keeps the two agreeing", async () => {
     await seedParentChild();
 
     await runCommand(CMD.schedOpen);
     const picker = await screen.findByRole("dialog", { name: "Schedule" });
     fireEvent.click(within(picker).getByText("This week"));
     await screen.findByText("Also schedule its subtask?");
-    // The Enter default is spelled out (and visually emphasized) as its own button.
-    expect(screen.getByText("Just this task")).toBeTruthy();
+    // What Enter does is spelled out (and visually emphasized) on its own button.
+    expect(screen.getByText("Subtasks too")).toBeTruthy();
     fireEvent.keyDown(document.activeElement as HTMLElement, { key: "Enter" });
+
+    blurActive();
+    fireEvent.keyDown(document.body, { key: "2" }); // Later
+    expect(await screen.findByText("big rock")).toBeTruthy();
+    expect(await screen.findByText("pebble")).toBeTruthy();
+  });
+
+  it("esc moves just this task, leaving the subtask on its own day", async () => {
+    await seedParentChild();
+
+    await runCommand(CMD.schedOpen);
+    const picker = await screen.findByRole("dialog", { name: "Schedule" });
+    fireEvent.click(within(picker).getByText("This week"));
+    await screen.findByText("Also schedule its subtask?");
+    expect(screen.getByText("Just this task")).toBeTruthy();
+    fireEvent.keyDown(document.activeElement as HTMLElement, { key: "Escape" });
 
     // The subtask stays planned for today…
     expect(await screen.findByText("pebble")).toBeTruthy();

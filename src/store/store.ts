@@ -30,6 +30,7 @@ import {
   pruneTombstones,
 } from "../types";
 import { placeTasks } from "./placement";
+import { widenStaleParents } from "./bounds";
 import { jsonEqual } from "../sync/merge";
 import {
   assignProjectDeep,
@@ -428,6 +429,12 @@ function withHistory(
   return { ...s, actionLog: [entry, ...log].slice(0, ACTION_LOG_LIMIT) };
 }
 
+/** The state with no parent left stranded behind its open children (see bounds). */
+function withBoundedParents(s: AppState): AppState {
+  const tasks = widenStaleParents(s.tasks, todayISO(s.devDateOverride));
+  return tasks === s.tasks ? s : { ...s, tasks };
+}
+
 /**
  * Apply a transform. `label` is the sentence this change goes down as in the
  * history (`Complete “Buy milk”`) — and passing it is what makes the change
@@ -439,7 +446,19 @@ function withHistory(
  */
 function update(fn: (s: AppState) => AppState, label: string | null): void {
   const prev = state;
-  const produced = fn(prev);
+  // Every write passes through the parent-date bound (see store/bounds): each
+  // scheduling surface in the app writes dates onto leaves, so without this a
+  // carried-forward subtask strands its parent on a day that has gone, with
+  // nothing left in the app able to move it. Applied here rather than at the
+  // dozen schedule sites for the same reason updatedAt is — one choke point
+  // can't be forgotten by the next one — and it is idempotent and
+  // structure-sharing, so a write that doesn't break the bound pays nothing.
+  // (The day's own rollover bookkeeping is a write too, which is what repairs a
+  // parent that went stale overnight without the user touching anything.)
+  // Undo deliberately doesn't run it (applyStep restores the snapshot as it
+  // was): an undo that "helpfully" kept part of the change isn't one.
+  const raw = fn(prev);
+  const produced = raw === prev ? raw : withBoundedParents(raw);
   // A guard that bailed (`markWontDo` on an already-skipped task, and friends)
   // returns `s` untouched. Stop here: an undo step that does nothing, and a
   // history line for a change that never happened, are both worse than silence.

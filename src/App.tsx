@@ -1080,9 +1080,12 @@ export function App() {
   };
 
   // Deliberate schedule sets (picker, palette, panel) on a task with subtasks
-  // offer to carry the subtree along. Default is no — Enter and esc both apply
-  // the choice to just the targeted task(s); each branch is one store update,
-  // so a single ⌘z reverts it entirely.
+  // offer to carry the subtree along, and the *default* is yes: a parent's date
+  // is a bound over its subtree (see store/bounds), so moving the parent while
+  // its subtasks stay put is the answer that leaves the two disagreeing — and
+  // it was the one Enter picked. Esc still applies the choice to just the
+  // targeted task(s). Each branch is one store update, so a single ⌘z reverts
+  // it entirely.
   const applyScheduleAsking = (ids: TaskId[], choice: ScheduleChoice) => {
     const subtree: TaskId[] = [];
     for (const id of ids) {
@@ -1095,11 +1098,11 @@ export function App() {
     if (subtree.length === 0) return applyScheduleTo(ids, choice);
     setConfirm({
       title: subtree.length === 1 ? "Also schedule its subtask?" : `Also schedule its ${subtree.length} subtasks?`,
-      body: "Subtasks keep their own schedules unless you include them (y).",
+      body: "Esc moves just this task and leaves their own schedules alone.",
       confirmLabel: "Subtasks too",
       cancelLabel: "Just this task",
       tone: "neutral",
-      enterAction: "cancel",
+      enterAction: "confirm",
       onConfirm: () => applyScheduleTo([...ids, ...subtree], choice),
       onCancel: () => applyScheduleTo(ids, choice),
     });
