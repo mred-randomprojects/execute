@@ -2,6 +2,7 @@ import { describe, it, expect, afterEach } from "vitest";
 import { toCombo, findBinding } from "./types";
 import type { KeyBinding } from "./types";
 import { getActiveContext } from "./useKeyboard";
+import { keymap } from "./keymap";
 
 function fakeEvent(overrides: Partial<KeyboardEvent>): KeyboardEvent {
   return {
@@ -94,7 +95,6 @@ describe("getActiveContext", () => {
     shutdownActive: false,
     planActive: false,
     showReview: false,
-    mode: "normal" as const,
   };
 
   it("defaults to normal", () => {
@@ -142,13 +142,8 @@ describe("getActiveContext", () => {
       getActiveContext({ ...base, showPalette: true, reckoningActive: true })
     ).toBe("palette");
   });
-  it("reckoning beats move and normal", () => {
-    expect(
-      getActiveContext({ ...base, reckoningActive: true, mode: "move" })
-    ).toBe("reckoning");
-  });
-  it("move when reordering", () => {
-    expect(getActiveContext({ ...base, mode: "move" })).toBe("move");
+  it("reckoning beats normal", () => {
+    expect(getActiveContext({ ...base, reckoningActive: true })).toBe("reckoning");
   });
 });
 
@@ -169,7 +164,6 @@ describe("getActiveContext — focus zones", () => {
     shutdownActive: false,
     planActive: false,
     showReview: false,
-    mode: "normal" as const,
   };
 
   afterEach(() => {
@@ -194,5 +188,62 @@ describe("getActiveContext — focus zones", () => {
   it("a plain button outside any keyzone stays normal (mouse→keyboard handoff)", () => {
     focus(`<button data-test>Backlog</button>`);
     expect(getActiveContext(base)).toBe("normal");
+  });
+});
+
+// ─── The bare-letter rule ────────────────────────────────────────────
+// A single unmodified letter in the outline fires while you are *browsing*, so
+// it lands on a real task with no warning. Those keys are therefore limited to
+// things that change nothing you'd have to undo. Anything that mutates a task
+// or takes over the keyboard lives behind ⌘k instead.
+//
+// This is a guard, not a style preference: `m` (move mode) used to swallow the
+// keyboard with no on-screen exit, and `t` / `w` / `b` / `c` all mutated the
+// focused task on one keypress. Adding a letter here should take a deliberate
+// argument, which is what failing this test forces.
+describe("the bare-letter rule", () => {
+  /** Bare letters allowed in the outline, and why each one is harmless. */
+  const ALLOWED_IN_NORMAL: Record<string, string> = {
+    n: "new task — creates an empty row you're immediately editing; esc discards it",
+    p: "peek — a pure view toggle, presses again to close",
+  };
+
+  const bareLetters = (context: string) =>
+    keymap
+      .filter((b) => {
+        const ctx = Array.isArray(b.context) ? b.context : [b.context];
+        return ctx.includes(context as never);
+      })
+      .filter((b) => /^[a-zA-Z]$/.test(b.key))
+      .map((b) => b.key);
+
+  it("the outline binds only the letters on the allowlist", () => {
+    const unexpected = bareLetters("normal").filter(
+      (k) => !(k in ALLOWED_IN_NORMAL)
+    );
+    expect(unexpected).toEqual([]);
+  });
+
+  it("keeps ritual letters out of the outline, so no letter has two meanings", () => {
+    // The rituals (Reckoning, Shutdown, Plan, board) are modal takeovers that
+    // print their letters on the action chips, so a bare letter is safe there —
+    // but only as long as the same letter means nothing in the outline.
+    // Case-folded: `t` in the outline would still collide with the rituals' `⇧t`.
+    const ritual = new Set(
+      ["reckoning", "shutdown", "plan", "board"]
+        .flatMap(bareLetters)
+        .map((k) => k.toLowerCase())
+    );
+    const clashes = bareLetters("normal").filter((k) =>
+      ritual.has(k.toLowerCase())
+    );
+    expect(clashes).toEqual([]);
+  });
+
+  it("every context can always be escaped", () => {
+    const escape = keymap.find(
+      (b) => b.key === "Escape" && b.context === "global"
+    );
+    expect(escape).toBeDefined();
   });
 });

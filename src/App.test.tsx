@@ -59,7 +59,7 @@ describe("App integration", () => {
     await screen.findByText("keyboard task");
 
     (input as HTMLInputElement).blur(); // leave the capture bar → normal context
-    fireEvent.keyDown(document.body, { key: " " });
+    fireEvent.keyDown(document.body, { key: "Enter", metaKey: true });
 
     await waitFor(() =>
       expect(screen.getByLabelText("Mark incomplete")).toBeTruthy()
@@ -74,7 +74,7 @@ describe("App integration", () => {
     await screen.findByText("planned today");
 
     (input as HTMLInputElement).blur();
-    fireEvent.keyDown(document.body, { key: "t" });
+    await runCommand(CMD.schedLater);
 
     await waitFor(() => expect(screen.queryByText("planned today")).toBeNull());
   });
@@ -110,9 +110,8 @@ describe("App integration", () => {
 });
 
 describe("The morning plan", () => {
-  const openPlan = () => {
-    blurActive();
-    fireEvent.keyDown(document.body, { key: "Q", shiftKey: true });
+  const openPlan = async () => {
+    await runCommand(CMD.plan);
   };
 
   it("offers this week's undated work, and commits it with one key", async () => {
@@ -120,13 +119,13 @@ describe("The morning plan", () => {
     await addTask("draft the memo");
     blurActive();
     // Push it to "this week" — chosen for the week, but given no day.
-    fireEvent.keyDown(document.body, { key: "s" });
+    await runCommand(CMD.schedOpen);
     const when = await screen.findByLabelText("When");
     fireEvent.change(when, { target: { value: "this week" } });
     fireEvent.keyDown(when, { key: "Enter" });
     await waitFor(() => expect(screen.queryByLabelText("When")).toBeNull());
 
-    openPlan();
+    await openPlan();
     expect(await screen.findByText("What is today?")).toBeTruthy();
     expect(screen.getByText("draft the memo")).toBeTruthy();
 
@@ -141,13 +140,13 @@ describe("The morning plan", () => {
     render(<App />);
     await addTask("draft the memo");
     blurActive();
-    fireEvent.keyDown(document.body, { key: "s" });
+    await runCommand(CMD.schedOpen);
     const when = await screen.findByLabelText("When");
     fireEvent.change(when, { target: { value: "this week" } });
     fireEvent.keyDown(when, { key: "Enter" });
     await waitFor(() => expect(screen.queryByLabelText("When")).toBeNull());
 
-    openPlan();
+    await openPlan();
     // The meter is the point of the ritual, so it's above the list.
     expect(await screen.findByText(/0 \/ 12 blocks/)).toBeTruthy();
   });
@@ -155,7 +154,7 @@ describe("The morning plan", () => {
   it("doesn't re-offer work you already gave a day to", async () => {
     render(<App />);
     await addTask("already chosen"); // capture lands it on today
-    openPlan();
+    await openPlan();
     expect(await screen.findByText("Nothing waiting to be planned.")).toBeTruthy();
   });
 
@@ -165,7 +164,7 @@ describe("The morning plan", () => {
     act(() => setDevDateOverride(addDays(todayISO(null), 1)));
     await screen.findByText("Unfinished from before today");
 
-    openPlan();
+    await openPlan();
     expect(screen.getByText("Unfinished from before today")).toBeTruthy();
     expect(screen.queryByText("What is today?")).toBeNull();
   });
@@ -178,7 +177,7 @@ describe("The weekly review", () => {
     // Decline it with a reason — the app has always recorded these and never
     // shown them anywhere but one task's own history.
     blurActive();
-    fireEvent.keyDown(document.body, { key: "w" });
+    await runCommand(CMD.wontDo);
     const why = await screen.findByPlaceholderText(/why\?/);
     fireEvent.change(why, { target: { value: "waiting on finance" } });
     fireEvent.keyDown(why, { key: "Enter" });
@@ -222,7 +221,7 @@ describe("Waiting on someone else", () => {
     render(<App />);
     await addTask("hear back from Ana");
     blurActive();
-    fireEvent.keyDown(document.body, { key: "b" });
+    await runCommand(CMD.waiting);
 
     const field = await screen.findByLabelText("Waiting on");
     fireEvent.change(field, { target: { value: "Ana" } });
@@ -239,7 +238,7 @@ describe("Waiting on someone else", () => {
     render(<App />);
     await addTask("hear back from legal");
     blurActive();
-    fireEvent.keyDown(document.body, { key: "b" });
+    await runCommand(CMD.waiting);
     fireEvent.keyDown(await screen.findByLabelText("Waiting on"), { key: "Enter" });
     await screen.findByText(/waiting/);
 
@@ -255,11 +254,11 @@ describe("Waiting on someone else", () => {
     render(<App />);
     await addTask("hear back from Ana");
     blurActive();
-    fireEvent.keyDown(document.body, { key: "b" });
+    await runCommand(CMD.waiting);
     fireEvent.keyDown(await screen.findByLabelText("Waiting on"), { key: "Enter" });
     await screen.findByText(/waiting/);
 
-    fireEvent.keyDown(document.body, { key: "b" });
+    await runCommand(CMD.waiting);
     await waitFor(() => expect(screen.queryByText(/waiting/)).toBeNull());
     expect(screen.getByText("1 to go · 0/1 done")).toBeTruthy();
   });
@@ -268,7 +267,7 @@ describe("Waiting on someone else", () => {
     render(<App />);
     await addTask("hear back from Ana");
     blurActive();
-    fireEvent.keyDown(document.body, { key: "b" });
+    await runCommand(CMD.waiting);
     fireEvent.keyDown(await screen.findByLabelText("Waiting on"), { key: "Enter" });
     await screen.findByText(/waiting/);
 
@@ -321,7 +320,7 @@ describe("Coming back to a wall", () => {
 describe("Over-commitment", () => {
   /** `e` → the estimate picker → N blocks, on whatever the cursor is on. */
   async function estimateCursor(blocks: number) {
-    fireEvent.keyDown(document.body, { key: "e" });
+    await runCommand(CMD.estimate);
     const dialog = await screen.findByRole("dialog", { name: "Estimate" });
     fireEvent.keyDown(dialog, { key: String(blocks) });
     await waitFor(() =>
@@ -336,7 +335,7 @@ describe("Over-commitment", () => {
     blurActive();
 
     await estimateCursor(8);
-    fireEvent.keyDown(document.body, { key: "k" }); // up to the first task
+    fireEvent.keyDown(document.body, { key: "ArrowUp" }); // up to the first task
     await estimateCursor(8); // 16 blocks against a 12-block day
 
     expect(await screen.findByText(/16 of 12 blocks committed/)).toBeTruthy();
@@ -354,15 +353,14 @@ describe("Over-commitment", () => {
 });
 
 describe("The evening shutdown", () => {
-  const openShutdown = () => {
-    blurActive();
-    fireEvent.keyDown(document.body, { key: "q" });
+  const openShutdown = async () => {
+    await runCommand(CMD.shutdown);
   };
 
   it("carries an unfinished task to tomorrow, closing today", async () => {
     render(<App />);
     await addTask("finish the deck");
-    openShutdown();
+    await openShutdown();
     expect(await screen.findByText("Close the day")).toBeTruthy();
 
     fireEvent.keyDown(document.body, { key: "t" }); // → tomorrow
@@ -381,7 +379,7 @@ describe("The evening shutdown", () => {
     // it the night before.
     render(<App />);
     await addTask("write the memo");
-    openShutdown();
+    await openShutdown();
     fireEvent.keyDown(document.body, { key: "t" });
     await screen.findByText("The day is closed.");
     fireEvent.keyDown(document.body, { key: "Escape" });
@@ -398,7 +396,7 @@ describe("The evening shutdown", () => {
     // — but the task really has been promised twice, whichever hour you admit it.
     render(<App />);
     await addTask("chase the quote");
-    openShutdown();
+    await openShutdown();
     fireEvent.keyDown(document.body, { key: "t" });
     await screen.findByText("The day is closed.");
     fireEvent.keyDown(document.body, { key: "Escape" });
@@ -410,7 +408,7 @@ describe("The evening shutdown", () => {
   it("declines a task outright with w — a decision, not a failure", async () => {
     render(<App />);
     await addTask("that thing I never wanted");
-    openShutdown();
+    await openShutdown();
     fireEvent.keyDown(document.body, { key: "w" });
     expect(await screen.findByText("The day is closed.")).toBeTruthy();
   });
@@ -421,7 +419,7 @@ describe("The evening shutdown", () => {
     act(() => setDevDateOverride(addDays(todayISO(null), 1)));
     await screen.findByText("Unfinished from before today");
 
-    openShutdown();
+    await openShutdown();
     // Still the gate: two full-screen rituals fighting over the keyboard is
     // worse than either.
     expect(screen.getByText("Unfinished from before today")).toBeTruthy();
@@ -432,7 +430,7 @@ describe("The evening shutdown", () => {
     render(<App />);
     await addTask("one");
     await addTask("two");
-    openShutdown();
+    await openShutdown();
     await screen.findByText("Close the day");
 
     fireEvent.keyDown(document.body, { key: "T", shiftKey: true }); // ⇧t — carry all
@@ -777,7 +775,7 @@ describe("The Reckoning (rollover ritual)", () => {
     await addTask("book flights");
     blurActive();
     fireEvent.keyDown(document.body, { key: "Tab" }); // book flights → under trip
-    fireEvent.keyDown(document.body, { key: "o" }); // new sibling under trip
+    fireEvent.keyDown(document.body, { key: "n" }); // new sibling under trip
     const sub = await screen.findByPlaceholderText("Task…");
     fireEvent.change(sub, { target: { value: "reserve hotel" } });
     fireEvent.keyDown(sub, { key: "Escape" });
@@ -820,6 +818,36 @@ function blurActive() {
   (document.activeElement as HTMLElement | null)?.blur();
 }
 
+// Run a command from the ⌘k palette. The outline no longer binds bare letters to
+// anything that mutates a task, so the palette is the keyboard path for
+// scheduling, won't-do, blocked, estimates, projects, repeat and the rituals.
+async function runCommand(label: RegExp) {
+  blurActive();
+  fireEvent.keyDown(document.body, { key: "k", metaKey: true });
+  const list = await screen.findByRole("listbox", { name: "Commands" });
+  const option = await within(list).findByText(label);
+  fireEvent.click(option);
+  await waitFor(() =>
+    expect(screen.queryByPlaceholderText("Type a command…")).toBeNull()
+  );
+}
+
+const CMD = {
+  schedLater: /^Schedule: one step later$/,
+  schedEarlier: /^Schedule: one step sooner$/,
+  schedOpen: /^Schedule… \(type a day or a date\)$/,
+  wontDo: /^Won.t do/,
+  waiting: /^(Blocked: waiting on someone else…|Unblock — no longer waiting on anyone)$/,
+  current: /^(Set as current \(focus\) task|Clear current \(focus\) task)$/,
+  hideCompleted: /^(Hide|Show) completed & won.t-do tasks$/,
+  estimate: /^Estimate effort/,
+  project: /^File under a project…$/,
+  repeat: /^Set repeat \(recurring\)…$/,
+  laterLayout: /^Later: group by date \/ project$/,
+  plan: /^Plan the day…$/,
+  shutdown: /^Close the day \(shutdown\)…$/,
+};
+
 describe("Cursor after a task leaves the view", () => {
   it("lands on the row above when `t` unplans the focused task (not the top)", async () => {
     render(<App />);
@@ -830,11 +858,11 @@ describe("Cursor after a task leaves the view", () => {
     blurActive();
 
     fireEvent.keyDown(document.body, { key: "ArrowUp" }); // focus charlie
-    fireEvent.keyDown(document.body, { key: "t" }); // defer → leaves Today, focus → bravo
+    await runCommand(CMD.schedLater);
     await waitFor(() => expect(screen.queryByText("charlie")).toBeNull());
 
     fireEvent.keyDown(document.body, { key: "ArrowDown" }); // bravo → delta (charlie's old slot)
-    fireEvent.keyDown(document.body, { key: "t" }); // defer delta
+    await runCommand(CMD.schedLater);
     await waitFor(() => expect(screen.queryByText("delta")).toBeNull());
 
     // Had the cursor snapped to the top, the second `t` would have unplanned alpha/bravo.
@@ -854,7 +882,7 @@ describe("Jump navigation (⌘↑ / ⌘↓)", () => {
     // ⌘↑ → first row (project header); ↓ → alpha; `t` removes it.
     fireEvent.keyDown(document.body, { key: "ArrowUp", metaKey: true });
     fireEvent.keyDown(document.body, { key: "ArrowDown" });
-    fireEvent.keyDown(document.body, { key: "t" });
+    await runCommand(CMD.schedLater);
     await waitFor(() => expect(screen.queryByText("alpha")).toBeNull());
     // Had ⌘↑ reordered instead of jumping, alpha would still be here.
     expect(screen.getByText("bravo")).toBeTruthy();
@@ -862,7 +890,7 @@ describe("Jump navigation (⌘↑ / ⌘↓)", () => {
 
     // ⌘↓ → last item (charlie); `t` removes it.
     fireEvent.keyDown(document.body, { key: "ArrowDown", metaKey: true });
-    fireEvent.keyDown(document.body, { key: "t" });
+    await runCommand(CMD.schedLater);
     await waitFor(() => expect(screen.queryByText("charlie")).toBeNull());
     expect(screen.getByText("bravo")).toBeTruthy();
   });
@@ -969,7 +997,7 @@ describe("Won't do (intentionally skipped)", () => {
     blurActive(); // focus it, still open
 
     // `w` on an open task marks it won't-do and opens the reason field.
-    fireEvent.keyDown(document.body, { key: "w" });
+    await runCommand(CMD.wontDo);
     expect(await screen.findByLabelText(/won.t do/i)).toBeTruthy();
     const field = screen.getByPlaceholderText(/why\?/i);
     fireEvent.change(field, { target: { value: "too busy" } });
@@ -977,7 +1005,7 @@ describe("Won't do (intentionally skipped)", () => {
     expect(await screen.findByText(/too busy/)).toBeTruthy();
 
     // `w` again re-opens the same reason for editing — no click needed.
-    fireEvent.keyDown(document.body, { key: "w" });
+    await runCommand(CMD.wontDo);
     const field2 = screen.getByPlaceholderText(/why\?/i);
     fireEvent.change(field2, { target: { value: "not a priority" } });
     fireEvent.keyDown(field2, { key: "Enter" });
@@ -994,7 +1022,7 @@ describe("Today view: drops done-only subtrees", () => {
     blurActive();
     fireEvent.keyDown(document.body, { key: "Tab" }); // "do today" → child of "umbrella"
     fireEvent.keyDown(document.body, { key: "ArrowUp" }); // focus the parent
-    fireEvent.keyDown(document.body, { key: "t" }); // defer the parent (not for today)
+    await runCommand(CMD.schedLater);
     fireEvent.keyDown(document.body, { key: "ArrowDown" }); // back to the child
 
     // While the child is open, the parent shows as context.
@@ -1002,7 +1030,7 @@ describe("Today view: drops done-only subtrees", () => {
 
     // Completing it leaves no open today-work under the parent → the whole
     // subtree drops from Today (no hide-completed needed).
-    fireEvent.keyDown(document.body, { key: " " });
+    fireEvent.keyDown(document.body, { key: "Enter", metaKey: true });
     await waitFor(() => {
       expect(screen.queryByText("do today")).toBeNull();
       expect(screen.queryByText("umbrella")).toBeNull();
@@ -1013,7 +1041,7 @@ describe("Today view: drops done-only subtrees", () => {
     render(<App />);
     await addTask("shipped it");
     blurActive();
-    fireEvent.keyDown(document.body, { key: " " }); // complete it
+    fireEvent.keyDown(document.body, { key: "Enter", metaKey: true }); // complete it
     // A top-level today task lingers when done (progress / satisfaction), unlike a
     // done sub-step of a non-today epic.
     await waitFor(() => expect(screen.getByLabelText("Mark incomplete")).toBeTruthy());
@@ -1050,7 +1078,7 @@ describe("Trivial editing", () => {
     await addTask("anchor");
     blurActive();
 
-    fireEvent.keyDown(document.body, { key: "o" }); // new empty task below
+    fireEvent.keyDown(document.body, { key: "n" }); // new empty task below
     const empty = await screen.findByPlaceholderText("Task…");
     fireEvent.keyDown(empty, { key: "Escape" }); // leave it untitled
 
@@ -1072,7 +1100,7 @@ describe("Indent respects the filtered view", () => {
     // two visible tasks. This is the trap: "second"'s raw previous sibling is
     // the hidden "mid".
     fireEvent.keyDown(document.body, { key: "ArrowUp" }); // second → mid
-    fireEvent.keyDown(document.body, { key: "t" }); // defer mid
+    await runCommand(CMD.schedLater);
     await waitFor(() => expect(screen.queryByText("mid")).toBeNull());
 
     // Focus reconciles to the project header; descend to "second" and indent.
@@ -1112,7 +1140,7 @@ describe("Reorder", () => {
 
     // Hide "mid" between the two visible tasks (raw order: first, mid, second).
     fireEvent.keyDown(document.body, { key: "ArrowUp" }); // second → mid
-    fireEvent.keyDown(document.body, { key: "t" }); // defer mid → cursor lands on "first" (row above)
+    await runCommand(CMD.schedLater);
     await waitFor(() => expect(screen.queryByText("mid")).toBeNull());
 
     // Cursor is on "first" now. Its raw next sibling is the hidden "mid";
@@ -1363,11 +1391,11 @@ describe("Detail panel", () => {
     await addTask("child");
     blurActive();
     fireEvent.keyDown(document.body, { key: "Tab" }); // child → subtask of parent
-    fireEvent.keyDown(document.body, { key: " " }); // complete the (focused) child
+    fireEvent.keyDown(document.body, { key: "Enter", metaKey: true }); // complete the (focused) child
 
     // Hide completed: the child vanishes from the outline, and the parent — its
     // only child now hidden — looks childless in the list.
-    fireEvent.keyDown(document.body, { key: "h" });
+    await runCommand(CMD.hideCompleted);
     await waitFor(() => expect(screen.queryByText("child")).toBeNull());
 
     // → opens the parent's detail panel, which still shows the whole subtree.
@@ -1398,7 +1426,7 @@ describe("Suggested for today", () => {
 
     // The task kept focus (still in the outline flow), so `t` accepts it: it
     // becomes a real Today commitment and the suggestion group disappears.
-    fireEvent.keyDown(document.body, { key: "t" });
+    await runCommand(CMD.schedLater);
     await waitFor(() =>
       expect(screen.queryByText("Suggested for today")).toBeNull()
     );
@@ -1427,7 +1455,7 @@ describe("Capture ↔ list navigation", () => {
     fireEvent.keyDown(input, { key: "ArrowDown" });
     fireEvent.keyDown(document.body, { key: "ArrowDown" }); // project row → first task
 
-    fireEvent.keyDown(document.body, { key: " " }); // complete focused task
+    fireEvent.keyDown(document.body, { key: "Enter", metaKey: true }); // complete focused task
     await waitFor(() =>
       expect(screen.getByLabelText("Mark incomplete")).toBeTruthy()
     );
@@ -1459,7 +1487,7 @@ describe("Keyboard-only outline control", () => {
     fireEvent.keyDown(secondInput, { key: "Escape" });
     expect(await screen.findByText("second")).toBeTruthy();
 
-    fireEvent.keyDown(document.body, { key: "a" });
+    fireEvent.keyDown(document.body, { key: "n" });
     const thirdInput = await screen.findByPlaceholderText("Task…");
     fireEvent.change(thirdInput, { target: { value: "third" } });
     fireEvent.keyDown(thirdInput, { key: "Escape" });
@@ -1483,7 +1511,7 @@ describe("Keyboard-only outline control", () => {
     fireEvent.click(label); // focus the project row
     fireEvent.keyDown(document.body, { key: "ArrowRight" }); // → opens (zooms into) it
 
-    fireEvent.keyDown(document.body, { key: "a" }); // add the first task
+    fireEvent.keyDown(document.body, { key: "n" }); // add the first task
     const taskInput = await screen.findByPlaceholderText("Task…");
     fireEvent.change(taskInput, { target: { value: "first project task" } });
     fireEvent.keyDown(taskInput, { key: "Escape" });
@@ -1604,7 +1632,7 @@ describe("Schedule picker (s)", () => {
     await addTask("call the bank"); // captured into Today
     blurActive();
 
-    fireEvent.keyDown(document.body, { key: "s" }); // open the schedule picker
+    await runCommand(CMD.schedOpen);
     const picker = await screen.findByRole("dialog", { name: "Schedule" });
     fireEvent.click(within(picker).getByText("Tomorrow"));
 
@@ -1624,7 +1652,7 @@ describe("Schedule picker (s)", () => {
     await addTask("draft the proposal");
     blurActive();
 
-    fireEvent.keyDown(document.body, { key: "s" });
+    await runCommand(CMD.schedOpen);
     const picker = await screen.findByRole("dialog", { name: "Schedule" });
     const when = within(picker).getByLabelText("When");
     fireEvent.change(when, { target: { value: "next week" } });
@@ -1648,7 +1676,7 @@ describe("Schedule picker (s)", () => {
     await addTask("dentist");
     blurActive();
 
-    fireEvent.keyDown(document.body, { key: "s" });
+    await runCommand(CMD.schedOpen);
     const picker = await screen.findByRole("dialog", { name: "Schedule" });
     const when = within(picker).getByLabelText("When");
     fireEvent.change(when, { target: { value: "friday" } });
@@ -1669,7 +1697,7 @@ describe("Schedule picker (s)", () => {
     await addTask("something");
     blurActive();
 
-    fireEvent.keyDown(document.body, { key: "s" });
+    await runCommand(CMD.schedOpen);
     const picker = await screen.findByRole("dialog", { name: "Schedule" });
     fireEvent.change(within(picker).getByLabelText("When"), { target: { value: "zzz" } });
 
@@ -1797,14 +1825,14 @@ describe("Hide completed", () => {
     await addTask("finish me"); // focus = finish me
     blurActive();
 
-    fireEvent.keyDown(document.body, { key: " " }); // complete "finish me"
-    fireEvent.keyDown(document.body, { key: "h" }); // hide completed
+    fireEvent.keyDown(document.body, { key: "Enter", metaKey: true }); // complete "finish me"
+    await runCommand(CMD.hideCompleted);
 
     await waitFor(() => expect(screen.queryByText("finish me")).toBeNull());
     expect(screen.getByText("keep me")).toBeTruthy();
     expect(screen.getByText(/resolved hidden/)).toBeTruthy(); // indicator pill
 
-    fireEvent.keyDown(document.body, { key: "h" }); // show again
+    await runCommand(CMD.hideCompleted);
     expect(await screen.findByText("finish me")).toBeTruthy();
   });
 
@@ -1817,12 +1845,12 @@ describe("Hide completed", () => {
     fireEvent.keyDown(document.body, { key: "Backspace" }); // → won't do
     expect(await screen.findByLabelText(/won.t do/i)).toBeTruthy();
     blurActive(); // leave the inline reason field
-    fireEvent.keyDown(document.body, { key: "h" });
+    await runCommand(CMD.hideCompleted);
 
     await waitFor(() => expect(screen.queryByText("skip me")).toBeNull());
     expect(screen.getByText("keep me")).toBeTruthy();
 
-    fireEvent.keyDown(document.body, { key: "h" }); // show again
+    await runCommand(CMD.hideCompleted);
     expect(await screen.findByText("skip me")).toBeTruthy();
   });
 });
@@ -1873,7 +1901,7 @@ describe("Scheduling (the s picker)", () => {
     await addTask("write spec"); // planned today by default
     blurActive();
 
-    fireEvent.keyDown(document.body, { key: "s" }); // open the scheduler
+    await runCommand(CMD.schedOpen);
     const picker = await screen.findByRole("dialog", { name: "Schedule" });
     fireEvent.click(within(picker).getByText("This week")); // pick the bucket
 
@@ -1891,7 +1919,7 @@ describe("Scheduling (the s picker)", () => {
     await addTask("prep slides"); // planned today by default
     blurActive();
 
-    fireEvent.keyDown(document.body, { key: "t" }); // today → tomorrow
+    await runCommand(CMD.schedLater);
     await waitFor(() => expect(screen.queryByText("prep slides")).toBeNull());
 
     fireEvent.keyDown(document.body, { key: "3" }); // All
@@ -1907,19 +1935,19 @@ describe("Scheduling (the s picker)", () => {
     fireEvent.keyDown(document.body, { key: "3" }); // All — stays visible while stepping
     await screen.findByText("stepper");
 
-    fireEvent.keyDown(document.body, { key: "t" }); // today → tomorrow
+    await runCommand(CMD.schedLater);
     expect(await screen.findByText("tomorrow")).toBeTruthy();
 
-    fireEvent.keyDown(document.body, { key: "t" }); // tomorrow → this week (fuzzy)
+    await runCommand(CMD.schedLater);
     await waitFor(() => expect(screen.queryByText("tomorrow")).toBeNull());
 
-    fireEvent.keyDown(document.body, { key: "T", shiftKey: true }); // this week → back to tomorrow
+    await runCommand(CMD.schedEarlier);
     expect(await screen.findByText("tomorrow")).toBeTruthy();
 
-    fireEvent.keyDown(document.body, { key: "T", shiftKey: true }); // tomorrow → today
+    await runCommand(CMD.schedEarlier);
     expect(await screen.findByText("today")).toBeTruthy();
 
-    fireEvent.keyDown(document.body, { key: "T", shiftKey: true }); // today → inbox (wrap = unplan)
+    await runCommand(CMD.schedEarlier);
     await waitFor(() => expect(screen.queryByText("today")).toBeNull());
   });
 
@@ -1927,7 +1955,7 @@ describe("Scheduling (the s picker)", () => {
     render(<App />);
     await addTask("later thing");
     blurActive();
-    fireEvent.keyDown(document.body, { key: "s" });
+    await runCommand(CMD.schedOpen);
     const picker = await screen.findByRole("dialog", { name: "Schedule" });
     fireEvent.click(within(picker).getByText("Someday"));
 
@@ -1959,7 +1987,7 @@ describe("Cascade a schedule change to subtasks", () => {
   it("y applies the choice to the whole subtree, and one ⌘z reverts it all", async () => {
     await seedParentChild();
 
-    fireEvent.keyDown(document.body, { key: "s" }); // the deliberate path prompts
+    await runCommand(CMD.schedOpen);
     const picker = await screen.findByRole("dialog", { name: "Schedule" });
     fireEvent.click(within(picker).getByText("This week"));
     await screen.findByText("Also schedule its subtask?");
@@ -1982,7 +2010,7 @@ describe("Cascade a schedule change to subtasks", () => {
   it("Enter keeps the safe default: only the task itself is rescheduled", async () => {
     await seedParentChild();
 
-    fireEvent.keyDown(document.body, { key: "s" });
+    await runCommand(CMD.schedOpen);
     const picker = await screen.findByRole("dialog", { name: "Schedule" });
     fireEvent.click(within(picker).getByText("This week"));
     await screen.findByText("Also schedule its subtask?");
@@ -2008,7 +2036,7 @@ describe("Period tabs (home view)", () => {
     await addTask("pack bags"); // planned today
     blurActive();
 
-    fireEvent.keyDown(document.body, { key: "t" }); // defer → tomorrow, leaves Today
+    await runCommand(CMD.schedLater);
     await waitFor(() => expect(screen.queryByText("pack bags")).toBeNull());
 
     fireEvent.keyDown(document.body, { key: "]" }); // Today → Tomorrow tab
@@ -2123,10 +2151,10 @@ describe("Schedule inheritance in the views", () => {
     await addTask("frutas");
     blurActive();
     fireEvent.keyDown(document.body, { key: "Tab" }); // frutas → subtask
-    fireEvent.keyDown(document.body, { key: "T", shiftKey: true }); // unplan the child (own schedule: none)
+    await runCommand(CMD.schedEarlier);
     fireEvent.keyDown(document.body, { key: "ArrowUp" }); // focus the parent
 
-    fireEvent.keyDown(document.body, { key: "s" });
+    await runCommand(CMD.schedOpen);
     const picker = await screen.findByRole("dialog", { name: "Schedule" });
     fireEvent.click(within(picker).getByText("This week"));
     await screen.findByText("Also schedule its subtask?");
@@ -2140,7 +2168,7 @@ describe("Schedule inheritance in the views", () => {
     expect(screen.getByText("Anytime this week")).toBeTruthy();
 
     // Hiding resolved must not prune the inherited (open) child either.
-    fireEvent.keyDown(document.body, { key: "h" });
+    await runCommand(CMD.hideCompleted);
     expect(await screen.findByText("frutas")).toBeTruthy();
   });
 
@@ -2150,7 +2178,7 @@ describe("Schedule inheritance in the views", () => {
     await addTask("loose end");
     blurActive();
     fireEvent.keyDown(document.body, { key: "Tab" }); // nest under the parent
-    fireEvent.keyDown(document.body, { key: "T", shiftKey: true }); // unplan the child
+    await runCommand(CMD.schedEarlier);
 
     // It inherits the parent's today deadline, so Today still lists it.
     expect(await screen.findByText("loose end")).toBeTruthy();
@@ -2174,7 +2202,7 @@ describe("Recurring tasks", () => {
 
     // Add a step under the (focused) root, name it, commit.
     blurActive();
-    fireEvent.keyDown(document.body, { key: "o" });
+    fireEvent.keyDown(document.body, { key: "n" });
     const stepInput = await screen.findByPlaceholderText("Task…");
     fireEvent.change(stepInput, { target: { value: "Brush teeth" } });
     fireEvent.keyDown(stepInput, { key: "Enter" });
@@ -2190,7 +2218,7 @@ describe("Recurring tasks", () => {
 
     // Accept it: focus the suggestion and press `t`.
     fireEvent.keyDown(document.body, { key: "ArrowDown" });
-    fireEvent.keyDown(document.body, { key: "t" });
+    await runCommand(CMD.schedLater);
 
     // The suggestion is now suppressed and a real, checkable task exists.
     await waitFor(() => expect(screen.queryByText("Recurring today")).toBeNull());
@@ -2231,7 +2259,7 @@ describe("Recurring tasks", () => {
 
     // Open the repeat picker and choose a preset.
     blurActive();
-    fireEvent.keyDown(document.body, { key: "r" });
+    await runCommand(CMD.repeat);
     expect(await screen.findByText("Repeat")).toBeTruthy();
     fireEvent.click(screen.getByText("Every weekend day"));
 
@@ -2254,7 +2282,7 @@ describe("Recurring tasks", () => {
 
     // ⇧p files whatever the cursor is on — here, the recurrence template.
     blurActive();
-    fireEvent.keyDown(document.body, { key: "P", shiftKey: true });
+    await runCommand(CMD.project);
     const picker = await screen.findByRole("dialog", { name: "Project" });
     const name = within(picker).getByLabelText("Project name");
     fireEvent.change(name, { target: { value: "heal" } });
@@ -2271,7 +2299,7 @@ describe("Recurring tasks", () => {
 
     // …and accepting it files the real task under that project, not the Inbox.
     fireEvent.keyDown(document.body, { key: "ArrowDown" });
-    fireEvent.keyDown(document.body, { key: "t" });
+    await runCommand(CMD.schedLater);
     await waitFor(() => expect(screen.queryByText("Recurring today")).toBeNull());
     expect(screen.getByText("Health")).toBeTruthy(); // its project group header
     expect(screen.queryByText("Inbox")).toBeNull(); // nothing landed there
@@ -2285,7 +2313,7 @@ describe("Recurring tasks", () => {
     await addTask("post the parcel");
     blurActive();
 
-    fireEvent.keyDown(document.body, { key: "P", shiftKey: true });
+    await runCommand(CMD.project);
     const picker = await screen.findByRole("dialog", { name: "Project" });
     fireEvent.click(within(picker).getByText("Errands"));
 
@@ -2303,11 +2331,11 @@ describe("Current (focus) task", () => {
     blurActive();
     expect(screen.queryByText("Right now")).toBeNull();
 
-    fireEvent.keyDown(document.body, { key: "c" });
+    await runCommand(CMD.current);
     expect(await screen.findByText("Right now")).toBeTruthy(); // banner
     expect(screen.getByText("Now")).toBeTruthy(); // row marker pill
 
-    fireEvent.keyDown(document.body, { key: "c" }); // toggle off
+    await runCommand(CMD.current);
     await waitFor(() => expect(screen.queryByText("Right now")).toBeNull());
   });
 
@@ -2315,10 +2343,10 @@ describe("Current (focus) task", () => {
     render(<App />);
     await addTask("do this");
     blurActive();
-    fireEvent.keyDown(document.body, { key: "c" });
+    await runCommand(CMD.current);
     await screen.findByText("Right now");
 
-    fireEvent.keyDown(document.body, { key: " " }); // complete the focused task
+    fireEvent.keyDown(document.body, { key: "Enter", metaKey: true }); // complete the focused task
     await waitFor(() => expect(screen.queryByText("Right now")).toBeNull());
   });
 
@@ -2326,7 +2354,7 @@ describe("Current (focus) task", () => {
     render(<App />);
     await addTask("temp focus");
     blurActive();
-    fireEvent.keyDown(document.body, { key: "c" });
+    await runCommand(CMD.current);
     await screen.findByText("Right now");
 
     fireEvent.keyDown(document.body, { key: "Backspace" }); // trash the leaf
@@ -2340,7 +2368,7 @@ describe("Estimates & the planning board", () => {
     await addTask("estimate me");
     blurActive();
 
-    fireEvent.keyDown(document.body, { key: "e" }); // open the estimate picker
+    await runCommand(CMD.estimate);
     const dialog = await screen.findByRole("dialog", { name: "Estimate" });
     fireEvent.keyDown(dialog, { key: "3" }); // 3 blocks = 1h
 
@@ -2421,7 +2449,7 @@ describe("Undo, redo and the history panel", () => {
     render(<App />);
     await capture("redo me");
 
-    fireEvent.keyDown(document.body, { key: " " }); // complete it
+    fireEvent.keyDown(document.body, { key: "Enter", metaKey: true }); // complete it
     await waitFor(() => expect(screen.getByLabelText("Mark incomplete")).toBeTruthy());
 
     fireEvent.keyDown(document.body, { key: "z", metaKey: true });
@@ -2435,7 +2463,7 @@ describe("Undo, redo and the history panel", () => {
   it("⌘y opens the history, naming what was done", async () => {
     render(<App />);
     await capture("buy oat milk");
-    fireEvent.keyDown(document.body, { key: " " });
+    fireEvent.keyDown(document.body, { key: "Enter", metaKey: true });
     await waitFor(() => expect(screen.getByLabelText("Mark incomplete")).toBeTruthy());
 
     fireEvent.keyDown(document.body, { key: "y", metaKey: true });
@@ -2448,7 +2476,7 @@ describe("Undo, redo and the history panel", () => {
   it("rewinds through the selected history line and records the undo", async () => {
     render(<App />);
     await capture("first");
-    fireEvent.keyDown(document.body, { key: " " }); // complete
+    fireEvent.keyDown(document.body, { key: "Enter", metaKey: true }); // complete
     await waitFor(() => expect(screen.getByLabelText("Mark incomplete")).toBeTruthy());
 
     fireEvent.keyDown(document.body, { key: "y", metaKey: true });

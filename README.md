@@ -12,7 +12,7 @@ forward. The smallest version of a task is the one that gets done.
 1. **Capture** — every line is a checkbox. Type a task and press `Enter` for the
    next one, `Tab` to make it a subtask. Pasting `[] thing`, `- thing`, or
    `[x] done` just works.
-2. **Plan** — press `t` to commit a task to today. **Today** shows only what
+2. **Plan** — `⌘k` → "today" commits a task to today. **Today** shows only what
    you've committed to.
 3. **Organize** — create colored project dividers and move tasks through them;
    each task keeps its project when it later appears in Today or Backlog.
@@ -41,22 +41,37 @@ keymap). Highlights:
 
 | Key | Action |
 |-----|--------|
-| `j` / `k` · `↑` / `↓` | move cursor (`↑` at the top jumps to the capture bar; `↓` there drops into the list) |
+| `↑` / `↓` | move cursor (`↑` at the top jumps to the capture bar; `↓` there drops into the list) |
 | `⇧ ↑` / `⇧ ↓` | extend multi-selection |
-| `⌘ ↑` / `⌘ ↓` | move task(s) up / down, including across project dividers |
+| `⌥ ↑` / `⌥ ↓` | move task(s) up / down, including across project dividers |
+| `⌘ ↑` / `⌘ ↓` | jump to first / last |
 | `↵` | edit the **title inline** · `→` opens the details panel (**content**) |
 | while editing a title: `↑`/`↓` jump tasks, `↵` new, `tab`/`⇧tab` indent, `⌘↵` done, `esc` save |
 | in the panel: `←`/`esc` back to the list (title is read-only here) |
-| `space` or `⌘↵` | complete / uncomplete |
-| `t` | plan / unplan for today |
-| `a` / `n` / `o` | new task below |
-| `/` | add a task (capture bar) |
-| `m` then `↵`/`⌘↵` | move mode (re-parent) |
-| `⌫` | move to trash |
-| `1` / `2` / `3` / `4` | Today / Backlog / All / Trash |
-| `⌘k` | command palette · `⌘z` undo · `⌘⇧z` redo |
-| `⌘y` | history — everything you just did (`↵` rewinds to a point) |
-| `?` | keyboard help |
+| `⌘ ↵` | complete / uncomplete |
+| `n` | new task below · `/` capture bar |
+| `p` | peek — unwrap title + notes in place |
+| `tab` / `⇧ tab` | indent / outdent |
+| `⌫` | won't do · press again to trash |
+| `1` – `6` | Today / Backlog / All / Projects / Recurring / Trash · `[` `]` walk the period tabs |
+| `⌘k` | **command palette — everything else lives here** |
+| `⌘z` undo · `⌘⇧z` redo · `⌘y` history · `⌘f` find · `?` help |
+
+**Bare letters are deliberately scarce.** A single unmodified letter fires while
+you're *browsing*, so it lands on a real task with no warning — which is how `m`
+used to drop you into a move mode with no visible way out, and how `t`, `w`, `b`
+and `c` each rewrote the focused task on one keypress. So the outline keeps bare
+letters only for things that change nothing you'd have to undo (`n`, `p`),
+and everything that touches a task — schedule, won't-do, blocked, estimate,
+project, repeat, plan, shutdown — goes through `⌘k`, which is searchable and
+impossible to hit by accident.
+
+The exception is the **rituals** (the Reckoning, Shutdown, Plan, the planning
+board). Those are modal takeovers that own the whole screen and print their
+letters on the chips you're looking at — `e` done · `t` keep/carry · `b` break
+down · `s` postpone · `d` drop · `w` won't do — so a stray press can't reach you
+mid-browse. Because those letters are now unbound in the outline, each one has
+exactly one meaning in the whole app. A test enforces both halves of this rule.
 
 Task **titles** and **notes** render inline **markdown** (`` `code` ``, `**bold**`,
 `*italic*`, `~~strike~~`, `[links](url)`). The detail panel shows a read-only,
@@ -84,7 +99,7 @@ you've been blocked on longest.
 
 ## Waiting on someone else
 
-Press **`b`** on a task that's blocked, and name who you're waiting on. It stays
+`⌘k` → "blocked" on a task that's waiting, and name who you're waiting on. It stays
 open and stays yours eventually — it just steps out of the Reckoning and out of
 the day's tally while the ball is in someone else's court.
 
@@ -97,7 +112,7 @@ Holding you to a deadline you don't control just teaches you to ignore deadlines
 The obvious failure mode is a task that sits blocked forever — which is the
 zombie this replaces — so blocked work never disappears: overdue and undated ones
 trail Today under **Waiting on others**, oldest first, and the badge counts the
-days. Past a fortnight it turns red. `b` again unblocks it; finishing or
+days. Past a fortnight it turns red. Running it again unblocks it; finishing or
 declining clears it.
 
 ## Coming back after a while
@@ -128,7 +143,7 @@ has a correction for you gets tuned out.
 
 ## Plan — decide what today is
 
-**`⇧q`** opens the day. Everything asking for it in one place — work you put on
+`⌘k` → "plan" opens the day. Everything asking for it in one place — work you put on
 *this week* but never gave a day, and the recurrences firing today — with `t` to
 take one on and `s` to name a different day.
 
@@ -139,7 +154,7 @@ re-asking a decision you've made is how a ritual becomes a chore.
 
 ## Shutdown — decide tonight, not tomorrow morning
 
-Press **`q`** when you stop working. Shutdown walks today's still-open
+`⌘k` → "close the day" when you stop working. Shutdown walks today's still-open
 commitments one at a time, with the Reckoning's verbs pointed at tomorrow:
 `e` done · `t` carry to tomorrow · `b` break it into something you'd actually do
 · `s` postpone to a named day · `w` won't do · `d` drop. `⇧t` carries everything

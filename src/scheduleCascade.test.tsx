@@ -31,7 +31,7 @@ describe("schedule cascade", () => {
     await addTask("done child");
     blurActive();
     fireEvent.keyDown(document.body, { key: "Tab" }); // done child → subtask of parent
-    fireEvent.keyDown(document.body, { key: " " }); // complete it
+    fireEvent.keyDown(document.body, { key: "Enter", metaKey: true }); // complete it
     fireEvent.keyDown(document.body, { key: "ArrowUp" }); // focus the parent
 
     // The parent's only subtask is completed → there are no OPEN subtasks to
