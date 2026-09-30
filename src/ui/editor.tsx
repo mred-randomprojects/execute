@@ -1,6 +1,5 @@
 import { createContext, useContext } from "react";
 import type { ISODate, TaskId } from "../types";
-import type { AppMode } from "../keyboard/types";
 import type { ViewKind } from "../selectors";
 
 /**
@@ -29,8 +28,6 @@ export interface Editor {
   /** Task peeked in place (`p`): full unwrapped title + notes under the row. */
   peekId: TaskId | null;
   collapsed: Set<TaskId>;
-  mode: AppMode;
-  movingId: TaskId | null;
   /** Bumped whenever the focused task is moved by a keyboard reorder. Rows watch
    *  it so the focused row scrolls back into view — its id (hence `isFocused`)
    *  doesn't change on a reorder, so the plain focus effect wouldn't re-fire. */

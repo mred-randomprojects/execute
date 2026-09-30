@@ -24,10 +24,7 @@ export type KeyContext =
   | "shutdown"
   | "plan"
   | "editing"
-  | "move"
   | "normal";
-
-export type AppMode = "normal" | "move";
 
 /** The slice of app state the context resolver needs. */
 export interface ContextState {
@@ -49,7 +46,6 @@ export interface ContextState {
   shutdownActive: boolean;
   /** The morning plan ritual is open (never while the gate is up). */
   planActive: boolean;
-  mode: AppMode;
 }
 
 // ─── Keymap ──────────────────────────────────────────────────────────

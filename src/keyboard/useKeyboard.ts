@@ -3,7 +3,7 @@ import type { KeyBinding, KeyContext, ContextState } from "./types";
 import { toCombo, findBinding } from "./types";
 
 // ─── Context resolver ────────────────────────────────────────────────
-// Priority: help > palette > editing > reckoning > move > normal.
+// Priority: help > palette > editing > reckoning > normal.
 // `editing` beats `reckoning` so typing a breakdown subtask doesn't trigger
 // reckoning shortcuts; `palette` beats `editing` so the palette's own input
 // still responds to arrows/enter.
@@ -62,7 +62,6 @@ export function getActiveContext(state: ContextState): KeyContext {
   // yesterday is still unresolved, so the Reckoning always wins the keyboard.
   if (state.shutdownActive) return "shutdown";
   if (state.planActive) return "plan";
-  if (state.mode === "move") return "move";
   return "normal";
 }
 

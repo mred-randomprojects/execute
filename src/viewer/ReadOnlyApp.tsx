@@ -159,8 +159,6 @@ export function ReadOnlyApp({
     reasonEditId: null,
     peekId,
     collapsed,
-    mode: "normal",
-    movingId: null,
     scrollTick: 0, // no keyboard reorder in the viewer
     // Tapping a task expands it in place (peek): the full title unwraps and any
     // notes render below. On mobile, truncated titles were otherwise unreadable

@@ -228,8 +228,6 @@ export function TaskRow({ task, depth }: { task: Task; depth: number }) {
   const waitingDays =
     waiting == null ? 0 : Math.floor((Date.now() - waiting.since) / 86_400_000);
   const peeking = ed.peekId === task.id && !editing;
-  const isMoving = ed.movingId === task.id;
-  const isDropTarget = ed.mode === "move" && isFocused && !isMoving;
   const hasChildren = task.children.length > 0;
   const isCollapsed = ed.collapsed.has(task.id);
   const isDragging = ed.dragId === task.id;
@@ -497,7 +495,6 @@ export function TaskRow({ task, depth }: { task: Task; depth: number }) {
               : priorityBg
                 ? `${priorityBg} hover:bg-surface-2/60`
                 : "hover:bg-surface-2/60",
-          isMoving ? "opacity-50" : "",
           isDragging ? "opacity-40" : "",
           dropPos === "child" ? "ring-1 ring-inset ring-accent/70 bg-accent-soft/40" : "",
         ].join(" ")}
@@ -505,9 +502,6 @@ export function TaskRow({ task, depth }: { task: Task; depth: number }) {
       >
         {isFocused && (
           <span className="absolute left-0 top-[6px] bottom-[6px] w-[2px] bg-accent" />
-        )}
-        {isDropTarget && (
-          <span className="absolute -top-[1px] left-0 right-0 h-[2px] bg-accent" />
         )}
         {dropPos === "before" && (
           <span className="pointer-events-none absolute -top-[1px] left-0 right-0 h-[2px] bg-accent" />
