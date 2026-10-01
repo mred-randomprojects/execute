@@ -54,6 +54,7 @@ import {
   resetCommandRanking,
   restoreFromTrash,
   setBoardPreferred,
+  setWrapAll,
   setCompleted,
   setCompletedMany,
   setCurrentTask,
@@ -2067,6 +2068,7 @@ export function App() {
     editingId,
     reasonEditId,
     peekId,
+    wrapAll: state.wrapAll,
     collapsed,
     scrollTick,
     select: setFocus,
@@ -2186,6 +2188,7 @@ export function App() {
     editingId,
     reasonEditId: null, // recurrence templates are never "won't do"
     peekId: null, // templates carry no notes worth peeking; the panel covers them
+    wrapAll: state.wrapAll,
     togglePeek: () => {},
     collapsed,
     scrollTick,
@@ -2449,6 +2452,12 @@ export function App() {
     { id: "new", label: "New task", hint: "n", run: cmd.taskNew },
     { id: "details", label: "Open details panel", hint: "→", run: openPanel },
     { id: "peek", label: "Peek: unwrap task in place", aliases: ["preview"], hint: "p", run: cmd.taskPeek },
+    {
+      id: "wrap-all",
+      label: state.wrapAll ? "Unwrap all: back to one line per task" : "Wrap all: peek every task",
+      aliases: ["toggle wrap", "wrap", "unwrap", "peek all", "expand all", "show notes"],
+      run: () => setWrapAll(!state.wrapAll),
+    },
     { id: "toggle", label: "Complete / uncomplete task", hint: "⌘↵", run: cmd.taskToggle },
     {
       id: "wontdo",

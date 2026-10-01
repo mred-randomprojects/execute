@@ -27,6 +27,8 @@ export interface Editor {
   waitingEditId: TaskId | null;
   /** Task peeked in place (`p`): full unwrapped title + notes under the row. */
   peekId: TaskId | null;
+  /** "Wrap all" (⌘K): every row renders as if peeked. */
+  wrapAll: boolean;
   collapsed: Set<TaskId>;
   /** Bumped whenever the focused task is moved by a keyboard reorder. Rows watch
    *  it so the focused row scrolls back into view — its id (hence `isFocused`)

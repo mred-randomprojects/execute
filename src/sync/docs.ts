@@ -83,7 +83,7 @@ export type RawDocs = Record<Collection, ReadonlyMap<string, unknown>> & { meta:
  * is synced. (Decided 2026-09-24: undo history, palette ranking, theme and the
  * tray/login settings stay local; so do the focus task, the dev date override,
  * the capacity setting and the board preference, which the merge already kept
- * writer-local.)
+ * writer-local. The wrap-all preference joined them later.)
  */
 type DeviceField =
   | "theme"
@@ -91,6 +91,7 @@ type DeviceField =
   | "devDateOverride"
   | "dailyCapacityBlocks"
   | "boardPreferred"
+  | "wrapAll"
   | "commandUsage"
   | "actionLog"
   | "presence";
@@ -293,6 +294,7 @@ export function fromDocs(raw: RawDocs, base: AppState): AppState {
     devDateOverride: base.devDateOverride,
     dailyCapacityBlocks: base.dailyCapacityBlocks,
     boardPreferred: base.boardPreferred,
+    wrapAll: base.wrapAll,
     commandUsage: base.commandUsage,
     actionLog: base.actionLog,
     presence: base.presence,

@@ -482,6 +482,12 @@ export interface AppState {
    */
   boardPreferred: boolean;
   /**
+   * "Wrap all": every task row renders as if peeked (`p`) — full title
+   * unwrapped, notes inline below. Toggled from ⌘K. A per-device preference;
+   * writer wins on cloud merge.
+   */
+  wrapAll: boolean;
+  /**
    * Command-palette usage stats keyed by command id — the memory behind its
    * frecency ranking (see {@link CommandUsage}). Empty until the first palette
    * run. A per-device preference; writer wins on cloud merge.
@@ -557,6 +563,7 @@ export function emptyState(): AppState {
     devDateOverride: null,
     dailyCapacityBlocks: DEFAULT_CAPACITY_BLOCKS,
     boardPreferred: false,
+    wrapAll: false,
     commandUsage: {},
     actionLog: [],
     presence: defaultPresence(),

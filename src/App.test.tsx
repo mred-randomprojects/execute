@@ -6,6 +6,7 @@ import {
   addChild,
   addTaskAfter,
   createProject,
+  getState,
   initStore,
   setDevDateOverride,
   setHorizonMany,
@@ -2309,6 +2310,35 @@ describe("Peek (in-place preview, p)", () => {
 
     fireEvent.keyDown(document.body, { key: "ArrowDown" }); // leave the row
     await waitFor(() => expect(screen.queryByText("hidden context")).toBeNull());
+  });
+
+  it("⌘K 'toggle wrap' peeks every task at once, and survives cursor moves", async () => {
+    await addTaskWithNotes("annotated", "hidden context");
+    await addTask("plain sibling"); // focus moves off the annotated row
+    blurActive();
+    expect(screen.queryByText("hidden context")).toBeNull();
+
+    const toggleWrap = async () => {
+      fireEvent.keyDown(document.body, { key: "k", metaKey: true });
+      const palette = await screen.findByPlaceholderText("Type a command…");
+      fireEvent.change(palette, { target: { value: "toggle wrap" } });
+      fireEvent.keyDown(palette, { key: "Enter" });
+      await waitFor(() =>
+        expect(screen.queryByPlaceholderText("Type a command…")).toBeNull()
+      );
+    };
+
+    await toggleWrap();
+    expect(await screen.findByText("hidden context")).toBeTruthy(); // not the focused row
+    expect(getState().wrapAll).toBe(true);
+
+    fireEvent.keyDown(document.body, { key: "ArrowUp" });
+    fireEvent.keyDown(document.body, { key: "ArrowDown" });
+    expect(screen.getByText("hidden context")).toBeTruthy(); // not ephemeral like p
+
+    await toggleWrap();
+    await waitFor(() => expect(screen.queryByText("hidden context")).toBeNull());
+    expect(getState().wrapAll).toBe(false);
   });
 });
 

@@ -463,6 +463,8 @@ export function coerceState(raw: unknown): AppState {
     dailyCapacityBlocks: Math.max(1, Math.trunc(num(raw.dailyCapacityBlocks, DEFAULT_CAPACITY_BLOCKS))),
     // v8: planning-board preference. Pre-v8 → classic card review.
     boardPreferred: bool(raw.boardPreferred, false),
+    // Wrap-all view preference. Absent in older data → off.
+    wrapAll: bool(raw.wrapAll, false),
     // v9: command-palette frecency memory. Pre-v9 → no learned rankings.
     commandUsage: coerceCommandUsage(raw.commandUsage),
     // v11: the action history. Pre-v11 data has none → the log starts here.

@@ -158,6 +158,7 @@ export function ReadOnlyApp({
     editingId: null,
     reasonEditId: null,
     peekId,
+    wrapAll: false, // desktop-only preference
     collapsed,
     scrollTick: 0, // no keyboard reorder in the viewer
     // Tapping a task expands it in place (peek): the full title unwraps and any

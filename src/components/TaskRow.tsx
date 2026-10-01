@@ -227,7 +227,7 @@ export function TaskRow({ task, depth }: { task: Task; depth: number }) {
   const waiting = task.waitingOn;
   const waitingDays =
     waiting == null ? 0 : Math.floor((Date.now() - waiting.since) / 86_400_000);
-  const peeking = ed.peekId === task.id && !editing;
+  const peeking = (ed.wrapAll || ed.peekId === task.id) && !editing;
   const hasChildren = task.children.length > 0;
   const isCollapsed = ed.collapsed.has(task.id);
   const isDragging = ed.dragId === task.id;

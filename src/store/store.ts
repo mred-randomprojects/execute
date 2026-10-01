@@ -677,6 +677,11 @@ export function setBoardPreferred(preferred: boolean): void {
   update((s) => ({ ...s, boardPreferred: preferred }), null);
 }
 
+/** Render every task row peeked (title unwrapped + notes inline). Not undoable. */
+export function setWrapAll(on: boolean): void {
+  update((s) => ({ ...s, wrapAll: on }), null);
+}
+
 /**
  * Change how present the app is when its window isn't (menu bar, login item,
  * nudges). A per-device preference like the theme — not undoable, and writer-wins
