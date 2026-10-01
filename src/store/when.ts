@@ -4,9 +4,11 @@ import {
   formatLong,
   isoWeekday,
   monthDayLabel,
+  monthEnd,
   monthKey,
   monthKeyOffset,
   monthLabel,
+  monthStart,
   parseISO,
   relativeLabel,
   toISO,
@@ -16,14 +18,18 @@ import {
   weekStart,
 } from "./dates";
 
-// The "when" engine: turns whatever you type in the schedule picker into the
-// options worth offering. Pure — every answer is derived from the query plus the
-// day passed in, never from the clock — so it stays trivially testable and is
-// the obvious place a smarter/AI parser could later hook in (mirroring the
-// recurrence and suggested-day engines).
+// The "when" engine: turns whatever you type in the schedule picker — or after a
+// verb in the command palette ("reschedule sat") — into the options worth
+// offering. Pure — every answer is derived from the query plus the day passed
+// in, never from the clock — so it stays trivially testable and is the obvious
+// place a smarter/AI parser could later hook in (mirroring the recurrence and
+// suggested-day engines).
 //
 // Two kinds of answer, in order of specificity:
-//   1. A *parsed date* — "friday", "aug 20", "in 3 days", "12/25", "20th".
+//   1. A *parsed date* — "friday", "sat", "aug 20", "in 3 days", "12/25",
+//      "end of month", "late august". A phrase may mean more than one day
+//      ("weekend" is Saturday *or* Sunday); then every reading is offered,
+//      nearest first, instead of one being guessed.
 //   2. A *preset* — the fuzzy ladder (today → tomorrow → this week → … → inbox),
 //      matched by name or alias so "next w" still finds "Next week".
 // Anything the grammar can't read simply yields nothing, so the picker can say
@@ -64,86 +70,156 @@ interface PresetSpec {
 // Display order = the schedule ladder's order, so an empty query reads as the
 // familiar list (and `t` / ⇧t walk the same rungs).
 const PRESETS: PresetSpec[] = [
-  { key: "today", label: "Today", aliases: ["now"], sub: (t) => monthDayLabel(t) },
+  {
+    key: "today",
+    label: "Today",
+    aliases: ["now", "tonight", "end of day", "eod", "asap", "right away", "immediately"],
+    sub: (t) => monthDayLabel(t),
+  },
   {
     key: "tomorrow",
     label: "Tomorrow",
-    aliases: ["tmr", "tmrw", "tom"],
+    aliases: ["tmr", "tmrw", "tmo", "tom", "next day"],
     sub: (t) => monthDayLabel(addDays(t, 1)),
   },
-  { key: "thisWeek", label: "This week", aliases: [], sub: (t) => weekLabel(weekKey(t)) },
+  {
+    key: "thisWeek",
+    label: "This week",
+    aliases: ["week", "wk"],
+    sub: (t) => weekLabel(weekKey(t)),
+  },
   {
     key: "nextWeek",
     label: "Next week",
-    aliases: [],
+    aliases: ["next wk"],
     sub: (t) => weekLabel(weekKeyOffset(t, 1)),
   },
-  { key: "thisMonth", label: "This month", aliases: [], sub: (t) => monthLabel(monthKey(t)) },
+  {
+    key: "thisMonth",
+    label: "This month",
+    aliases: ["month"],
+    sub: (t) => monthLabel(monthKey(t)),
+  },
   {
     key: "nextMonth",
     label: "Next month",
-    aliases: [],
+    aliases: ["next mo"],
     sub: (t) => monthLabel(monthKeyOffset(t, 1)),
   },
   {
     key: "someday",
     label: "Someday",
-    aliases: ["later", "maybe", "eventually", "sometime"],
+    aliases: ["later", "maybe", "eventually", "sometime", "whenever", "backlog"],
     sub: () => null,
   },
   {
     key: "inbox",
     label: "Inbox",
-    aliases: ["none", "no date", "clear", "unschedule", "unplan", "untriage"],
+    aliases: [
+      "none",
+      "no date",
+      "clear",
+      "clear date",
+      "remove date",
+      "unschedule",
+      "unplan",
+      "untriage",
+    ],
     sub: () => null,
   },
 ];
 
-// Three letters minimum: two-letter forms ("we", "th") collide with the words
-// people type at the presets ("week", "this…") and would bury them under a date.
-const WEEKDAY_WORDS: Record<string, number> = {
-  mon: 1, monday: 1,
-  tue: 2, tues: 2, tuesday: 2,
-  wed: 3, weds: 3, wednesday: 3,
-  thu: 4, thur: 4, thurs: 4, thursday: 4,
-  fri: 5, friday: 5,
-  sat: 6, saturday: 6,
-  sun: 7, sunday: 7,
-};
+// Weekdays and months are matched by *prefix* (three letters minimum), so
+// "sat", "satu", "saturd" and "saturday" are all the same word and nobody has
+// to remember which abbreviation the app wanted. Two-letter forms ("we", "th")
+// collide with the words people type at the presets ("week", "this…"), so they
+// stay out.
+const WEEKDAY_NAMES = [
+  "monday",
+  "tuesday",
+  "wednesday",
+  "thursday",
+  "friday",
+  "saturday",
+  "sunday",
+];
 
-const MONTH_WORDS: Record<string, number> = {
-  jan: 1, january: 1,
-  feb: 2, february: 2,
-  mar: 3, march: 3,
-  apr: 4, april: 4,
-  may: 5,
-  jun: 6, june: 6,
-  jul: 7, july: 7,
-  aug: 8, august: 8,
-  sep: 9, sept: 9, september: 9,
-  oct: 10, october: 10,
-  nov: 11, november: 11,
-  dec: 12, december: 12,
-};
+/** Short forms that aren't a prefix of the full name. */
+const WEEKDAY_ALIASES: Record<string, number> = { tues: 2, weds: 3, thur: 4, thurs: 4 };
 
-/** Alternation of the keys, longest first so "sept" wins over "sep". */
-function wordsPattern(words: Record<string, number>): string {
-  return Object.keys(words)
-    .sort((a, b) => b.length - a.length)
-    .join("|");
+const MONTH_NAMES = [
+  "january",
+  "february",
+  "march",
+  "april",
+  "may",
+  "june",
+  "july",
+  "august",
+  "september",
+  "october",
+  "november",
+  "december",
+];
+
+const MONTH_ALIASES: Record<string, number> = { sept: 9 };
+
+/** ISO weekday (Mon=1…Sun=7) for a word, or null when it isn't one. */
+function matchWeekday(word: string): number | null {
+  if (word.length < 3) return null;
+  const alias = WEEKDAY_ALIASES[word];
+  if (alias != null) return alias;
+  const i = WEEKDAY_NAMES.findIndex((n) => n.startsWith(word));
+  return i === -1 ? null : i + 1;
 }
 
-const WEEKDAY_RE = new RegExp(`^(?:(this|next|coming) )?(${wordsPattern(WEEKDAY_WORDS)})$`);
-const MONTH_DAY_RE = new RegExp(
-  `^(${wordsPattern(MONTH_WORDS)})\\.? (\\d{1,2})(?:st|nd|rd|th)?(?: (\\d{4}))?$`
-);
-const DAY_MONTH_RE = new RegExp(
-  `^(\\d{1,2})(?:st|nd|rd|th)? (?:of )?(${wordsPattern(MONTH_WORDS)})\\.?(?: (\\d{4}))?$`
-);
+/** Month number (1–12) for a word, or null when it isn't one. */
+function matchMonth(word: string): number | null {
+  if (word.length < 3) return null;
+  const alias = MONTH_ALIASES[word];
+  if (alias != null) return alias;
+  const i = MONTH_NAMES.findIndex((n) => n.startsWith(word));
+  return i === -1 ? null : i + 1;
+}
+
 const ISO_RE = /^(\d{4})-(\d{1,2})-(\d{1,2})$/;
-const OFFSET_RE = /^(?:in )?(\d{1,4}) ?(d|day|days|w|wk|wks|week|weeks|m|mo|mon|month|months|y|yr|yrs|year|years)$/;
 const NUMERIC_RE = /^(\d{1,2})[/.-](\d{1,2})(?:[/.-](\d{2}|\d{4}))?$/;
 const BARE_DAY_RE = /^(\d{1,2})(?:st|nd|rd|th)?$/;
+
+// "in 3 days", "2 weeks", "a fortnight", "couple of days", "3 business days",
+// "5 days from now" — the count may be a numeral or a word.
+const OFFSET_RE =
+  /^(?:in|after|within)? ?([a-z]+|\d{1,4}) ?(business ?days?|work(?:ing)? ?days?|week ?days?|wd|days?|d|weeks?|wks?|w|months?|mos?|mon|m|years?|yrs?|y|fortnights?)(?: from (?:now|today))?$/;
+
+const NUMBER_WORDS: Record<string, number> = {
+  a: 1,
+  an: 1,
+  one: 1,
+  two: 2,
+  three: 3,
+  four: 4,
+  five: 5,
+  six: 6,
+  seven: 7,
+  eight: 8,
+  nine: 9,
+  ten: 10,
+  eleven: 11,
+  twelve: 12,
+  couple: 2,
+  few: 3,
+  several: 3,
+};
+
+/** Which calendar step a unit word means. Order matters: "weekday" isn't "week". */
+function unitKind(unit: string): "day" | "workday" | "week" | "fortnight" | "month" | "year" {
+  if (/^(business|work|week ?day|wd)/.test(unit)) return "workday";
+  if (unit.startsWith("fortnight")) return "fortnight";
+  if (unit.startsWith("d")) return "day";
+  if (unit.startsWith("w")) return "week";
+  if (unit.startsWith("m")) return "month";
+  return "year";
+}
 
 function daysIn(year: number, month: number): number {
   return new Date(year, month, 0).getDate(); // day 0 of the next month
@@ -187,29 +263,173 @@ function addMonths(today: ISODate, n: number): ISODate | null {
   return makeISO(year, month, Math.min(t.getDate(), daysIn(year, month)));
 }
 
-/** Strip the noise words and punctuation people type around a date. */
-export function normalizeWhenQuery(query: string): string {
-  return query
-    .trim()
-    .toLowerCase()
-    .replace(/,/g, " ")
-    .replace(/\s+/g, " ")
-    .replace(/^(?:on|the|by|due) /, "")
-    .trim();
+/** `n` Mon–Fri days out, so "in 2 business days" from a Friday is Tuesday. */
+function addWorkdays(today: ISODate, n: number): ISODate {
+  let d = today;
+  for (let left = n; left > 0; ) {
+    d = addDays(d, 1);
+    if (isoWeekday(d) <= 5) left--;
+  }
+  return d;
 }
 
 /**
- * Every concrete date the query could mean, best first. Usually one — but a
- * slash date like "4/5" is genuinely ambiguous, so both readings are offered
- * (month/day first) rather than one being guessed silently.
+ * The days of the nearest weekend still ahead — Saturday *and* Sunday, because
+ * "weekend" genuinely means either. On a Saturday only the Sunday is left, so
+ * that's all it offers; on a Sunday the weekend is spent and it rolls on.
+ */
+function weekendDays(today: ISODate, offset: 0 | 1): ISODate[] {
+  if (offset === 1) {
+    const sat = weekdayNextWeek(today, 6);
+    return [sat, addDays(sat, 1)];
+  }
+  if (isoWeekday(today) === 6) return [addDays(today, 1)];
+  const sat = nextWeekday(today, 6);
+  return [sat, addDays(sat, 1)];
+}
+
+/** "End of week" is Friday to most people and Sunday on the calendar: both. */
+function endOfWeek(today: ISODate, offset: 0 | 1): ISODate[] {
+  const fri = offset === 1 ? weekdayNextWeek(today, 5) : nextWeekday(today, 5);
+  return [fri, addDays(fri, 2)];
+}
+
+/** This month's last day while it's still ahead, else next month's. */
+function endOfMonth(today: ISODate): ISODate[] {
+  const end = monthEnd(monthKey(today));
+  return [end > today ? end : monthEnd(monthKeyOffset(today, 1))];
+}
+
+/** The next 1st of a month that's still ahead. */
+function startOfMonth(today: ISODate): ISODate[] {
+  const start = monthStart(monthKey(today));
+  return [start > today ? start : monthStart(monthKeyOffset(today, 1))];
+}
+
+function endOfYear(today: ISODate, offset: 0 | 1): ISODate[] {
+  const year = parseISO(today).getFullYear() + offset;
+  const dec31 = makeISO(year, 12, 31);
+  if (dec31 != null && (offset === 1 || dec31 > today)) return [dec31];
+  return [makeISO(year + 1, 12, 31)].filter((d): d is ISODate => d != null);
+}
+
+/** The next Mon–Fri day — "the next working day". */
+function nextWorkday(today: ISODate): ISODate[] {
+  return [addWorkdays(today, 1)];
+}
+
+/**
+ * Phrases that name a day without naming a date. Keys are the normalized query
+ * with "the" and "of" dropped, so "end of the week" and "end week" both land on
+ * "end week".
+ */
+const PHRASES: Record<string, (today: ISODate) => ISODate[]> = {
+  "day after tomorrow": (t) => [addDays(t, 2)],
+  "day after tmr": (t) => [addDays(t, 2)],
+  overmorrow: (t) => [addDays(t, 2)],
+  weekend: (t) => weekendDays(t, 0),
+  "this weekend": (t) => weekendDays(t, 0),
+  "coming weekend": (t) => weekendDays(t, 0),
+  "next weekend": (t) => weekendDays(t, 1),
+  "weekend after next": (t) => weekendDays(addDays(t, 7), 1),
+  "end week": (t) => endOfWeek(t, 0),
+  "end this week": (t) => endOfWeek(t, 0),
+  eow: (t) => endOfWeek(t, 0),
+  "week end": (t) => endOfWeek(t, 0),
+  "end next week": (t) => endOfWeek(t, 1),
+  "start week": (t) => [nextWeekday(t, 1)],
+  "beginning week": (t) => [nextWeekday(t, 1)],
+  "top week": (t) => [nextWeekday(t, 1)],
+  sow: (t) => [nextWeekday(t, 1)],
+  "start next week": (t) => [weekdayNextWeek(t, 1)],
+  "beginning next week": (t) => [weekdayNextWeek(t, 1)],
+  "top next week": (t) => [weekdayNextWeek(t, 1)],
+  midweek: (t) => [nextWeekday(t, 3)],
+  "mid week": (t) => [nextWeekday(t, 3)],
+  "end month": endOfMonth,
+  "end this month": endOfMonth,
+  eom: endOfMonth,
+  "end next month": (t) => [monthEnd(monthKeyOffset(t, 1))],
+  "start month": startOfMonth,
+  "beginning month": startOfMonth,
+  "first month": startOfMonth,
+  som: startOfMonth,
+  "start next month": (t) => [monthStart(monthKeyOffset(t, 1))],
+  "beginning next month": (t) => [monthStart(monthKeyOffset(t, 1))],
+  "first next month": (t) => [monthStart(monthKeyOffset(t, 1))],
+  "end year": (t) => endOfYear(t, 0),
+  "end this year": (t) => endOfYear(t, 0),
+  eoy: (t) => endOfYear(t, 0),
+  "end next year": (t) => endOfYear(t, 1),
+  fortnight: (t) => [addDays(t, 14)],
+  "next fortnight": (t) => [addDays(t, 14)],
+  weekday: nextWorkday,
+  "week day": nextWorkday,
+  workday: nextWorkday,
+  "work day": nextWorkday,
+  "working day": nextWorkday,
+  "business day": nextWorkday,
+  "next weekday": nextWorkday,
+  "next workday": nextWorkday,
+  "next work day": nextWorkday,
+  "next working day": nextWorkday,
+  "next business day": nextWorkday,
+};
+
+/** Where in a month "early/mid/late august" lands. 0 means "the last day". */
+const MONTH_PART: Record<string, number> = {
+  early: 1,
+  start: 1,
+  beginning: 1,
+  top: 1,
+  first: 1,
+  mid: 15,
+  middle: 15,
+  late: 25,
+  end: 0,
+  last: 0,
+};
+
+const RELATIVE_THIS = new Set(["this", "coming", "upcoming"]);
+const RELATIVE_NEXT = new Set(["next", "following"]);
+
+/** Leading words people type at a date that carry no meaning of their own. */
+const LEADING_NOISE = new Set(["on", "the", "by", "due", "at", "for", "until", "till"]);
+
+/** Strip the noise words and punctuation people type around a date. */
+export function normalizeWhenQuery(query: string): string {
+  let q = query
+    .trim()
+    .toLowerCase()
+    .replace(/,/g, " ")
+    .replace(/([a-z])\./g, "$1") // "aug." → "aug", leaving "4.5" alone
+    .replace(/\s+/g, " ")
+    .trim();
+  for (;;) {
+    const space = q.indexOf(" ");
+    if (space === -1) break;
+    if (!LEADING_NOISE.has(q.slice(0, space))) break;
+    q = q.slice(space + 1);
+  }
+  return q;
+}
+
+/**
+ * Every concrete date the query could mean, best first. Often one — but some
+ * readings are genuinely plural: "weekend" is Saturday or Sunday, and a slash
+ * date like "4/5" is month/day or day/month, so both are offered rather than
+ * one being guessed silently.
  */
 export function parseWhenDates(query: string, today: ISODate): ISODate[] {
   const q = normalizeWhenQuery(query);
   if (q === "") return [];
 
   const out: ISODate[] = [];
-  const push = (iso: ISODate | null) => {
+  const push = (iso: ISODate | null | undefined) => {
     if (iso != null && !out.includes(iso)) out.push(iso);
+  };
+  const pushAll = (isos: ISODate[]) => {
+    for (const iso of isos) push(iso);
   };
 
   const iso = ISO_RE.exec(q);
@@ -218,48 +438,84 @@ export function parseWhenDates(query: string, today: ISODate): ISODate[] {
     return out;
   }
 
-  const offset = OFFSET_RE.exec(q);
+  // Word-shaped readings work off tokens, with the filler dropped and ordinal
+  // suffixes shaved ("20th" → "20"); hyphens join words, not dates, here.
+  const words = q.replace(/[-/]/g, " ").replace(/\s+/g, " ").split(" ").filter(Boolean);
+  const terms = words
+    .filter((w) => w !== "of" && w !== "the")
+    .map((w) => w.replace(/^(\d{1,2})(?:st|nd|rd|th)$/, "$1"));
+
+  const phrase = PHRASES[terms.join(" ")];
+  if (phrase != null) {
+    pushAll(phrase(today));
+    return out;
+  }
+
+  // "a couple of days" has already lost its "of"; the article goes too, so the
+  // count word is where the pattern expects it.
+  const offsetSrc = terms.join(" ").replace(/^((?:in|after|within) )?(?:a|an) (?=couple|few|several)/, "$1");
+  const offset = OFFSET_RE.exec(offsetSrc);
   if (offset != null) {
-    const n = Number(offset[1]);
-    const unit = offset[2][0]; // d | w | m | y
-    if (unit === "d") push(addDays(today, n));
-    else if (unit === "w") push(addDays(today, n * 7));
-    else if (unit === "m") push(addMonths(today, n));
-    else push(addMonths(today, n * 12));
-    return out;
+    const raw = offset[1];
+    const n = /^\d+$/.test(raw) ? Number(raw) : NUMBER_WORDS[raw];
+    if (n != null && n > 0) {
+      const kind = unitKind(offset[2]);
+      if (kind === "day") push(addDays(today, n));
+      else if (kind === "workday") push(addWorkdays(today, n));
+      else if (kind === "week") push(addDays(today, n * 7));
+      else if (kind === "fortnight") push(addDays(today, n * 14));
+      else if (kind === "month") push(addMonths(today, n));
+      else push(addMonths(today, n * 12));
+      return out;
+    }
   }
 
-  const weekday = WEEKDAY_RE.exec(q);
-  if (weekday != null) {
-    const wd = WEEKDAY_WORDS[weekday[2]];
-    push(weekday[1] === "next" ? weekdayNextWeek(today, wd) : nextWeekday(today, wd));
-    return out;
-  }
-  if (q === "weekend" || q === "this weekend") {
-    push(nextWeekday(today, 6));
-    return out;
-  }
-  if (q === "next weekend") {
-    push(weekdayNextWeek(today, 6));
-    return out;
+  // A weekday, alone or with this/next/coming in front.
+  if (terms.length === 1 || (terms.length === 2 && (RELATIVE_THIS.has(terms[0]) || RELATIVE_NEXT.has(terms[0])))) {
+    const wd = matchWeekday(terms[terms.length - 1]);
+    if (wd != null) {
+      push(RELATIVE_NEXT.has(terms[0]) && terms.length === 2
+        ? weekdayNextWeek(today, wd)
+        : nextWeekday(today, wd));
+      return out;
+    }
   }
 
-  const monthDay = MONTH_DAY_RE.exec(q) ?? null;
-  if (monthDay != null) {
-    const month = MONTH_WORDS[monthDay[1]];
-    const day = Number(monthDay[2]);
-    const year = monthDay[3];
-    push(year != null ? makeISO(Number(year), month, day) : resolveYear(today, month, day));
-    return out;
-  }
+  // Month-shaped readings: "aug 20", "20 aug", "aug 20 2027", "late august",
+  // "august", "august 2027".
+  const monthAt = terms.findIndex((w) => matchMonth(w) != null);
+  if (monthAt !== -1 && terms.length <= 3) {
+    const month = matchMonth(terms[monthAt]);
+    const rest = terms.filter((_, i) => i !== monthAt);
+    const nums = rest.filter((w) => /^\d+$/.test(w)).map(Number);
+    const yearAt = rest.findIndex((w) => /^\d{4}$/.test(w));
+    const year = yearAt === -1 ? null : Number(rest[yearAt]);
+    const days = nums.filter((n) => n !== year && n >= 1 && n <= 31);
+    const part = rest.length === 1 && month != null ? MONTH_PART[rest[0]] : undefined;
 
-  const dayMonth = DAY_MONTH_RE.exec(q) ?? null;
-  if (dayMonth != null) {
-    const day = Number(dayMonth[1]);
-    const month = MONTH_WORDS[dayMonth[2]];
-    const year = dayMonth[3];
-    push(year != null ? makeISO(Number(year), month, day) : resolveYear(today, month, day));
-    return out;
+    if (month != null && rest.length === 0) {
+      push(resolveYear(today, month, 1));
+      return out;
+    }
+    if (month != null && part !== undefined) {
+      if (part !== 0) {
+        push(resolveYear(today, month, part));
+      } else {
+        // "end of august" — that month's last day, in whichever year it lands.
+        const y = parseISO(today).getFullYear();
+        const here = makeISO(y, month, daysIn(y, month));
+        push(here != null && here >= today ? here : makeISO(y + 1, month, daysIn(y + 1, month)));
+      }
+      return out;
+    }
+    if (month != null && days.length === 1) {
+      push(year != null ? makeISO(year, month, days[0]) : resolveYear(today, month, days[0]));
+      return out;
+    }
+    if (month != null && days.length === 0 && year != null) {
+      push(makeISO(year, month, 1));
+      return out;
+    }
   }
 
   const numeric = NUMERIC_RE.exec(q);
@@ -341,4 +597,62 @@ export function whenOptions(query: string, today: ISODate): WhenOption[] {
   }));
   const presets = PRESETS.filter((p) => matchesPreset(p, q, tokens)).map(presetOption);
   return [...dates, ...presets];
+}
+
+// ---------------------------------------------------------------------------
+// The command palette's door into the same grammar.
+
+/**
+ * Verbs that mean "put this on a day". Typing one of them with something after
+ * it ("reschedule sat", "postpone end of month") goes straight to the dates,
+ * so the palette never makes you open the picker as a second step.
+ */
+const SCHEDULE_VERBS = [
+  "reschedule",
+  "schedule",
+  "resched",
+  "sched",
+  "postpone",
+  "snooze",
+  "defer",
+  "delay",
+  "when",
+  "due",
+  "plan",
+  "move",
+  "push",
+];
+
+/** Is `word` an (ordinary, slightly fat-fingered) attempt at `verb`? */
+function looksLikeVerb(word: string, verb: string): boolean {
+  if (word.length < 3) return false;
+  if (verb.startsWith(word) || word.startsWith(verb)) return true;
+  // Typed-through-it misses like "reschedu"/"reshedule": the letters of what
+  // was typed appear in the verb, in order. Long words only — short ones would
+  // match far too much.
+  if (word.length < 5) return false;
+  let from = 0;
+  for (const ch of word) {
+    const at = verb.indexOf(ch, from);
+    if (at === -1) return false;
+    from = at + 1;
+  }
+  return true;
+}
+
+/**
+ * The date part of a "<verb> <when>" query, or null when it isn't one. Pure and
+ * exported so the palette's behaviour is testable without React.
+ */
+export function splitScheduleVerb(query: string): string | null {
+  const q = query.trim().toLowerCase().replace(/\s+/g, " ");
+  const space = q.indexOf(" ");
+  if (space === -1) return null;
+  const head = q.slice(0, space);
+  const rest = q.slice(space + 1).trim();
+  if (rest === "") return null;
+  if (!SCHEDULE_VERBS.some((verb) => looksLikeVerb(head, verb))) return null;
+  // "move to friday", "push to sat" — the preposition belongs to the verb.
+  const stripped = rest.replace(/^(?:to|it|this|that|for) /, "").trim();
+  return stripped === "" ? rest : stripped;
 }

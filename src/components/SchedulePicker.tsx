@@ -8,7 +8,8 @@ export type { ScheduleChoice };
 
 /**
  * The schedule picker: a search field over the "when" engine. You type what you
- * mean — "next week", "friday", "aug 20", "in 3 days", "12/25" — and the
+ * mean — "sat", "weekend", "next week", "end of month", "late august",
+ * "in 3 business days", "aug 20", "12/25" — and the
  * matching rungs and concrete dates come back ranked, most specific first. No
  * mnemonic letters to remember: typing *is* the shortcut, and an empty query is
  * still the plain ladder, so `s ↵` remains a two-key path to Today.
@@ -110,7 +111,7 @@ export function SchedulePicker({
               onClose();
             }
           }}
-          placeholder="When? next week · friday · aug 20 · in 3 days"
+          placeholder="When? sat · weekend · next week · end of month · in 3 days"
           aria-label="When"
           className="w-full border-b border-line bg-transparent px-4 py-2.5 text-[14px] text-ink outline-none placeholder:text-ink-faint"
         />

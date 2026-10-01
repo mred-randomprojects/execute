@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import type { ISODate } from "../types";
-import { parseWhenDates, whenOptions, whenDateLabel } from "./when";
+import { parseWhenDates, splitScheduleVerb, whenOptions, whenDateLabel } from "./when";
 
 // Anchor every case to a known Saturday: 2026-08-08 (ISO week 32).
 const TODAY: ISODate = "2026-08-08";
@@ -66,8 +66,83 @@ describe("parseWhenDates — weekdays", () => {
     expect(parseWhenDates("next friday", "2026-08-10")).toEqual(["2026-08-21"]);
   });
 
-  it("reads the weekend as the coming Saturday", () => {
-    expect(parseWhenDates("weekend", "2026-08-10")).toEqual(["2026-08-15"]);
+  it("matches a weekday by any prefix of its name, not a fixed abbreviation", () => {
+    expect(parseWhenDates("sat", TODAY)).toEqual(["2026-08-15"]);
+    expect(parseWhenDates("satu", TODAY)).toEqual(["2026-08-15"]);
+    expect(parseWhenDates("saturd", TODAY)).toEqual(["2026-08-15"]);
+    expect(parseWhenDates("weds", TODAY)).toEqual(["2026-08-12"]);
+    expect(parseWhenDates("thurs", TODAY)).toEqual(["2026-08-13"]);
+  });
+
+  it("reads 'coming <weekday>' like the bare weekday", () => {
+    expect(parseWhenDates("coming tue", TODAY)).toEqual(["2026-08-11"]);
+  });
+});
+
+describe("parseWhenDates — the weekend", () => {
+  it("offers both days of the coming weekend, Saturday first", () => {
+    // Monday 10 Aug → Sat 15, Sun 16.
+    expect(parseWhenDates("weekend", "2026-08-10")).toEqual(["2026-08-15", "2026-08-16"]);
+    expect(parseWhenDates("this weekend", "2026-08-10")).toEqual(["2026-08-15", "2026-08-16"]);
+  });
+
+  it("offers only the day still ahead when the weekend has started", () => {
+    // Saturday: the Sunday is tomorrow, and that's the whole weekend left.
+    expect(parseWhenDates("weekend", TODAY)).toEqual(["2026-08-09"]);
+  });
+
+  it("rolls on once the weekend is spent", () => {
+    // Sunday 9 Aug → next weekend.
+    expect(parseWhenDates("weekend", "2026-08-09")).toEqual(["2026-08-15", "2026-08-16"]);
+  });
+
+  it("reads 'next weekend' as the following week's", () => {
+    expect(parseWhenDates("next weekend", "2026-08-10")).toEqual(["2026-08-22", "2026-08-23"]);
+  });
+});
+
+describe("parseWhenDates — edges of the week, month and year", () => {
+  it("reads the end of the week as Friday, with Sunday behind it", () => {
+    expect(parseWhenDates("end of week", "2026-08-10")).toEqual(["2026-08-14", "2026-08-16"]);
+    expect(parseWhenDates("eow", "2026-08-10")).toEqual(["2026-08-14", "2026-08-16"]);
+    expect(parseWhenDates("end of next week", "2026-08-10")).toEqual(["2026-08-21", "2026-08-23"]);
+  });
+
+  it("reads the start of the week as Monday", () => {
+    expect(parseWhenDates("start of the week", TODAY)).toEqual(["2026-08-10"]);
+    expect(parseWhenDates("beginning of next week", TODAY)).toEqual(["2026-08-10"]);
+    expect(parseWhenDates("midweek", "2026-08-10")).toEqual(["2026-08-12"]);
+  });
+
+  it("reads the month's and year's edges", () => {
+    expect(parseWhenDates("end of month", TODAY)).toEqual(["2026-08-31"]);
+    expect(parseWhenDates("eom", TODAY)).toEqual(["2026-08-31"]);
+    expect(parseWhenDates("end of next month", TODAY)).toEqual(["2026-09-30"]);
+    expect(parseWhenDates("start of next month", TODAY)).toEqual(["2026-09-01"]);
+    expect(parseWhenDates("end of year", TODAY)).toEqual(["2026-12-31"]);
+  });
+
+  it("rolls the month's last day over once it has passed", () => {
+    expect(parseWhenDates("end of the month", "2026-08-31")).toEqual(["2026-09-30"]);
+  });
+
+  it("reads the next working day, skipping the weekend", () => {
+    expect(parseWhenDates("next business day", TODAY)).toEqual(["2026-08-10"]);
+    expect(parseWhenDates("workday", "2026-08-11")).toEqual(["2026-08-12"]);
+  });
+});
+
+describe("parseWhenDates — a month on its own", () => {
+  it("reads a bare month as its first day", () => {
+    expect(parseWhenDates("december", TODAY)).toEqual(["2026-12-01"]);
+    expect(parseWhenDates("oct", TODAY)).toEqual(["2026-10-01"]);
+  });
+
+  it("reads early / mid / late / end of a month", () => {
+    expect(parseWhenDates("early october", TODAY)).toEqual(["2026-10-01"]);
+    expect(parseWhenDates("mid october", TODAY)).toEqual(["2026-10-15"]);
+    expect(parseWhenDates("late october", TODAY)).toEqual(["2026-10-25"]);
+    expect(parseWhenDates("end of october", TODAY)).toEqual(["2026-10-31"]);
   });
 });
 
@@ -78,6 +153,24 @@ describe("parseWhenDates — offsets", () => {
     expect(parseWhenDates("2 weeks", TODAY)).toEqual(["2026-08-22"]);
     expect(parseWhenDates("1 month", TODAY)).toEqual(["2026-09-08"]);
     expect(parseWhenDates("1y", TODAY)).toEqual(["2027-08-08"]);
+  });
+
+  it("counts in words as happily as in numerals", () => {
+    expect(parseWhenDates("in a week", TODAY)).toEqual(["2026-08-15"]);
+    expect(parseWhenDates("in a couple of days", TODAY)).toEqual(["2026-08-10"]);
+    expect(parseWhenDates("in three days", TODAY)).toEqual(["2026-08-11"]);
+    expect(parseWhenDates("fortnight", TODAY)).toEqual(["2026-08-22"]);
+  });
+
+  it("counts business days without landing on a weekend", () => {
+    // Fri 14 Aug + 2 business days → Tue 18.
+    expect(parseWhenDates("in 2 business days", "2026-08-14")).toEqual(["2026-08-18"]);
+    expect(parseWhenDates("3 workdays", "2026-08-10")).toEqual(["2026-08-13"]);
+  });
+
+  it("does not mistake a weekday for a count and a unit", () => {
+    expect(parseWhenDates("sunday", TODAY)).toEqual(["2026-08-09"]);
+    expect(parseWhenDates("monday", TODAY)).toEqual(["2026-08-10"]);
   });
 
   it("clamps the day when the target month is short", () => {
@@ -144,5 +237,41 @@ describe("whenOptions — dates and rungs together", () => {
 
   it("shows how far off the date is", () => {
     expect(first("aug 20")?.sub).toBe("in 12d");
+  });
+});
+
+describe("splitScheduleVerb — the palette's door", () => {
+  it("reads a scheduling verb plus a day", () => {
+    expect(splitScheduleVerb("reschedule sat")).toBe("sat");
+    expect(splitScheduleVerb("postpone end of month")).toBe("end of month");
+    expect(splitScheduleVerb("defer 2 weeks")).toBe("2 weeks");
+  });
+
+  it("forgives a fat-fingered verb", () => {
+    expect(splitScheduleVerb("reschedu sat")).toBe("sat");
+    expect(splitScheduleVerb("resched weekend")).toBe("weekend");
+    expect(splitScheduleVerb("reshedule friday")).toBe("friday");
+  });
+
+  it("drops the preposition the verb pulls along", () => {
+    expect(splitScheduleVerb("move to friday")).toBe("friday");
+    expect(splitScheduleVerb("push to sat")).toBe("sat");
+  });
+
+  it("is not a scheduling query without a verb, or without a day", () => {
+    expect(splitScheduleVerb("sat")).toBeNull();
+    expect(splitScheduleVerb("reschedule")).toBeNull();
+    expect(splitScheduleVerb("go to today")).toBeNull();
+    expect(splitScheduleVerb("search tasks")).toBeNull();
+  });
+});
+
+describe("whenOptions — what a rescheduling query offers", () => {
+  it("offers both weekend days, nearest first, with where each lands", () => {
+    const opts = whenOptions("weekend", "2026-08-10");
+    expect(opts.map((o) => o.key)).toEqual(["date:2026-08-15", "date:2026-08-16"]);
+    expect(opts[0].label).toBe("Saturday, August 15");
+    expect(opts[1].label).toBe("Sunday, August 16");
+    expect(opts[0].sub).not.toBeNull();
   });
 });
