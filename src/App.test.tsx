@@ -2322,6 +2322,9 @@ describe("Peek (in-place preview, p)", () => {
       fireEvent.keyDown(document.body, { key: "k", metaKey: true });
       const palette = await screen.findByPlaceholderText("Type a command…");
       fireEvent.change(palette, { target: { value: "toggle wrap" } });
+      // The label must read like the search in both states, not rename itself.
+      const list = await screen.findByRole("listbox", { name: "Commands" });
+      expect(within(list).getAllByText(/^Toggle wrap — turn (on|off)/)).toHaveLength(1);
       fireEvent.keyDown(palette, { key: "Enter" });
       await waitFor(() =>
         expect(screen.queryByPlaceholderText("Type a command…")).toBeNull()

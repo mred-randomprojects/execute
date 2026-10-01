@@ -2454,7 +2454,11 @@ export function App() {
     { id: "peek", label: "Peek: unwrap task in place", aliases: ["preview"], hint: "p", run: cmd.taskPeek },
     {
       id: "wrap-all",
-      label: state.wrapAll ? "Unwrap all: back to one line per task" : "Wrap all: peek every task",
+      // Always leads with "Toggle wrap" — the words you search for — and says
+      // which way it'll flip, rather than renaming itself by state.
+      label: state.wrapAll
+        ? "Toggle wrap — turn off (one line per task)"
+        : "Toggle wrap — turn on (peek every task)",
       aliases: ["toggle wrap", "wrap", "unwrap", "peek all", "expand all", "show notes"],
       run: () => setWrapAll(!state.wrapAll),
     },
