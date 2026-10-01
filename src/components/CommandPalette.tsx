@@ -61,10 +61,13 @@ export function CommandPalette({
   commands: Command[];
   /**
    * Commands made *from* what's typed — "reschedule sat" offering the coming
-   * Saturday. They're the most specific answer to the query, so they sit above
-   * the ranked list and skip frecency entirely.
+   * Saturday. `lead` is for a query that said what it wanted ("reschedule …"):
+   * it's the most specific answer, so it goes above the ranked list. `trail`
+   * is for a query that merely *reads* as something ("in two days"): it goes
+   * below, where it can't take the ↵ from a command the letters also match.
+   * Both skip frecency entirely.
    */
-  dynamic?: (query: string) => Command[];
+  dynamic?: (query: string) => { lead?: Command[]; trail?: Command[] };
   /** Frecency memory keyed by command id — drives ranking. Defaults to empty. */
   usage?: Record<string, CommandUsage>;
   onClose: () => void;
@@ -119,7 +122,8 @@ export function CommandPalette({
       }
       return true;
     });
-    return [...(dynamic?.(query) ?? []), ...matches];
+    const extra = dynamic?.(query);
+    return [...(extra?.lead ?? []), ...matches, ...(extra?.trail ?? [])];
   }, [ranked, query, dynamic]);
 
   useEffect(() => {

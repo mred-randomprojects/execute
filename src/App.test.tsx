@@ -1806,6 +1806,69 @@ describe("Command palette", () => {
     expect(screen.getByText("in 5d")).toBeTruthy(); // the date chip
   });
 
+  it("reads a day typed on its own — “in two days”, previewing the weekday", async () => {
+    render(<App />);
+    await screen.findByPlaceholderText("Add a task for today…");
+    act(() => setDevDateOverride("2026-06-18")); // a Thursday
+    await addTask("dentist");
+    blurActive();
+
+    fireEvent.keyDown(document.body, { key: "k", metaKey: true });
+    const palette = await screen.findByPlaceholderText("Type a command…");
+    // No verb at all — the words only read as a day.
+    fireEvent.change(palette, { target: { value: "in two days" } });
+
+    const list = screen.getByRole("listbox", { name: "Commands" });
+    const options = within(list).getAllByRole("option");
+    // Says which day that is, not just "in 2 days".
+    expect(options[0].textContent).toContain("Schedule: Saturday, June 20");
+    expect(options[0].textContent).toContain("in 2d");
+
+    fireEvent.keyDown(palette, { key: "Enter" });
+
+    await waitFor(() => expect(screen.queryByText("dentist")).toBeNull()); // left Today
+    fireEvent.keyDown(document.body, { key: "3" }); // All
+    expect(await screen.findByText("dentist")).toBeTruthy();
+    expect(screen.getByText("in 2d")).toBeTruthy(); // the date chip
+  });
+
+  it("takes a bare weekday too — “next monday”", async () => {
+    render(<App />);
+    await screen.findByPlaceholderText("Add a task for today…");
+    act(() => setDevDateOverride("2026-06-18")); // a Thursday
+    await addTask("standup prep");
+    blurActive();
+
+    fireEvent.keyDown(document.body, { key: "k", metaKey: true });
+    const palette = await screen.findByPlaceholderText("Type a command…");
+    fireEvent.change(palette, { target: { value: "next monday" } });
+
+    const list = screen.getByRole("listbox", { name: "Commands" });
+    expect(within(list).getAllByRole("option")[0].textContent).toContain(
+      "Schedule: Monday, June 22"
+    );
+  });
+
+  it("lets a bare day wait below the commands whose letters also match", async () => {
+    render(<App />);
+    await screen.findByPlaceholderText("Add a task for today…");
+    act(() => setDevDateOverride("2026-06-18"));
+    await addTask("taxes");
+    blurActive();
+
+    fireEvent.keyDown(document.body, { key: "k", metaKey: true });
+    const palette = await screen.findByPlaceholderText("Type a command…");
+    // "mon" is both Monday and the first letters of "month".
+    fireEvent.change(palette, { target: { value: "mon" } });
+
+    const labels = within(screen.getByRole("listbox", { name: "Commands" }))
+      .getAllByRole("option")
+      .map((o) => o.textContent ?? "");
+    expect(labels[0]).toContain("month"); // ↵ still runs a month command
+    expect(labels.some((l) => l.includes("Schedule: Monday, June 22"))).toBe(true);
+    expect(labels[labels.length - 1]).toContain("Schedule: Monday, June 22");
+  });
+
   it("offers both days when a query means either — “reschedule weekend”", async () => {
     render(<App />);
     await screen.findByPlaceholderText("Add a task for today…");

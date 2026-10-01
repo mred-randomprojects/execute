@@ -182,7 +182,7 @@ import { StatusBar } from "./components/StatusBar";
 import { CommandPalette, type Command } from "./components/CommandPalette";
 import { SearchPalette } from "./components/SearchPalette";
 import { SchedulePicker, type ScheduleChoice } from "./components/SchedulePicker";
-import { splitScheduleVerb, whenOptions } from "./store/when";
+import { splitScheduleVerb, whenOptions, type WhenOption } from "./store/when";
 import { ProjectPicker } from "./components/ProjectPicker";
 import { EstimatePicker } from "./components/EstimatePicker";
 import { CalendarPicker } from "./components/CalendarPicker";
@@ -2406,23 +2406,36 @@ export function App() {
     void copyText(`# ${title}\n\n${body}`);
   };
 
-  // "reschedule sat", "postpone end of month", "defer 2 weeks" — a scheduling
-  // verb plus anything the "when" grammar can read becomes a command of its own,
-  // so the palette lands the day in one pass instead of handing you the picker.
-  // One entry per reading, nearest first, each showing where it lands.
-  const scheduleQueryCommands = (raw: string): Command[] => {
-    const when = splitScheduleVerb(raw);
-    if (when == null) return [];
+  // Anything the "when" grammar can read becomes a command of its own, so the
+  // palette lands the day in one pass instead of handing you the picker. Each
+  // entry names the day it resolves to — "Saturday, October 3 · in 2d" — so a
+  // date is never applied on a guess you couldn't see.
+  //
+  // Two doors, and the difference is how sure the query is:
+  //   · "reschedule sat", "postpone end of month" — a verb said what you wanted,
+  //     so the days lead the list.
+  //   · "in two days", "next monday", "weekend" — the words only *read* as a
+  //     day, so they trail the commands whose letters also match. ("mon" still
+  //     offers This/Next month first; Monday waits below it.)
+  const scheduleQueryCommands = (raw: string): { lead?: Command[]; trail?: Command[] } => {
     const targets = actionTargets();
-    if (targets.length === 0) return [];
+    if (targets.length === 0) return {};
     const suffix = targets.length > 1 ? ` · ${targets.length} tasks` : "";
-    return whenOptions(when, today).map((o) => ({
-      id: `when:${o.key}`,
-      label: `Schedule: ${o.label}${suffix}`,
-      hint: o.sub ?? undefined,
-      ephemeral: true,
-      run: () => applyScheduleAsking(targets, o.choice),
-    }));
+    const toCommands = (options: WhenOption[]): Command[] =>
+      options.map((o) => ({
+        id: `when:${o.key}`,
+        label: `Schedule: ${o.label}${suffix}`,
+        hint: o.sub ?? undefined,
+        ephemeral: true,
+        run: () => applyScheduleAsking(targets, o.choice),
+      }));
+
+    const after = splitScheduleVerb(raw);
+    if (after != null) return { lead: toCommands(whenOptions(after, today)) };
+    // Bare: concrete dates only. The ladder's rungs are already commands of
+    // their own ("Schedule: Next week"), and listing them twice helps nobody.
+    const dates = whenOptions(raw, today).filter((o) => o.key.startsWith("date:"));
+    return { trail: toCommands(dates) };
   };
 
   const commands: Command[] = [
