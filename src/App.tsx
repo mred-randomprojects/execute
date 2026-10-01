@@ -182,6 +182,7 @@ import { StatusBar } from "./components/StatusBar";
 import { CommandPalette, type Command } from "./components/CommandPalette";
 import { SearchPalette } from "./components/SearchPalette";
 import { SchedulePicker, type ScheduleChoice } from "./components/SchedulePicker";
+import { splitScheduleVerb, whenOptions } from "./store/when";
 import { ProjectPicker } from "./components/ProjectPicker";
 import { EstimatePicker } from "./components/EstimatePicker";
 import { CalendarPicker } from "./components/CalendarPicker";
@@ -2405,6 +2406,25 @@ export function App() {
     void copyText(`# ${title}\n\n${body}`);
   };
 
+  // "reschedule sat", "postpone end of month", "defer 2 weeks" — a scheduling
+  // verb plus anything the "when" grammar can read becomes a command of its own,
+  // so the palette lands the day in one pass instead of handing you the picker.
+  // One entry per reading, nearest first, each showing where it lands.
+  const scheduleQueryCommands = (raw: string): Command[] => {
+    const when = splitScheduleVerb(raw);
+    if (when == null) return [];
+    const targets = actionTargets();
+    if (targets.length === 0) return [];
+    const suffix = targets.length > 1 ? ` · ${targets.length} tasks` : "";
+    return whenOptions(when, today).map((o) => ({
+      id: `when:${o.key}`,
+      label: `Schedule: ${o.label}${suffix}`,
+      hint: o.sub ?? undefined,
+      ephemeral: true,
+      run: () => applyScheduleAsking(targets, o.choice),
+    }));
+  };
+
   const commands: Command[] = [
     { id: "search", label: "Search tasks", aliases: ["find"], hint: "⌘f", run: openSearch },
     { id: "today", label: "Go to Today", hint: "1", run: cmd.gotoView("today") },
@@ -2438,7 +2458,7 @@ export function App() {
     },
     // Scheduling. All act on the focused/selected task(s); no-op when nothing
     // is targeted.
-    { id: "sched-open", label: "Schedule… (type a day or a date)", aliases: ["schedule", "when", "reschedule", "defer"], run: cmd.scheduleOpen },
+    { id: "sched-open", label: "Schedule… (type a day or a date)", aliases: ["schedule", "reschedule", "when", "defer", "postpone", "snooze", "delay", "move", "push", "due", "plan"], run: cmd.scheduleOpen },
     { id: "sched-today", label: "Schedule: Today", aliases: ["schedule"], run: () => applySchedule("today") },
     { id: "sched-tomorrow", label: "Schedule: Tomorrow", aliases: ["schedule"], run: () => applySchedule("tomorrow") },
     { id: "sched-this-week", label: "Schedule: This week", aliases: ["schedule"], run: () => applySchedule("thisWeek") },
@@ -2955,6 +2975,7 @@ export function App() {
       {showPalette && (
         <CommandPalette
           commands={commands}
+          dynamic={scheduleQueryCommands}
           usage={state.commandUsage}
           onUse={recordCommandUse}
           onResetRanking={resetCommandRanking}

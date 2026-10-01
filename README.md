@@ -66,6 +66,17 @@ and everything that touches a task — schedule, won't-do, blocked, estimate,
 project, repeat, plan, shutdown — goes through `⌘k`, which is searchable and
 impossible to hit by accident.
 
+**Saying when, in words.** The schedule picker (and `⌘k` after a verb —
+"reschedule sat", "postpone end of month", "defer 2 weeks") reads plain language,
+not mnemonics: a weekday by any prefix (`sat`, `satu`, `saturday`, `next fri`),
+the fuzzy rungs (`today`, `next week`, `someday`), edges (`eow`, `end of month`,
+`start of next week`, `midweek`, `end of year`), offsets (`in 3 days`,
+`2 weeks`, `a fortnight`, `in 2 business days`), and dates (`aug 20`,
+`late august`, `12/25`, `2027-03-15`, `the 20th`). When a phrase honestly means
+more than one day — `weekend` is Saturday *or* Sunday, `4/5` is April 5 or May 4
+— it offers each reading with the day it lands on, instead of guessing. The verb
+tolerates a fat finger, so "reschedu sat" works.
+
 The exception is the **rituals** (the Reckoning, Shutdown, Plan, the planning
 board). Those are modal takeovers that own the whole screen and print their
 letters on the chips you're looking at — `e` done · `t` keep/carry · `b` break

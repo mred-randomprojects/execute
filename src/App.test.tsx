@@ -1782,6 +1782,57 @@ describe("Command palette", () => {
     expect(await screen.findByText("groceries")).toBeTruthy();
   });
 
+  it("reads a day typed after the verb — “reschedu sat” lands on Saturday", async () => {
+    render(<App />);
+    await screen.findByPlaceholderText("Add a task for today…");
+    act(() => setDevDateOverride("2026-06-15")); // a Monday
+    await addTask("dentist");
+    blurActive();
+
+    fireEvent.keyDown(document.body, { key: "k", metaKey: true });
+    const palette = await screen.findByPlaceholderText("Type a command…");
+    // Mistyped verb, and a day the ladder has no rung for.
+    fireEvent.change(palette, { target: { value: "reschedu sat" } });
+
+    const list = screen.getByRole("listbox", { name: "Commands" });
+    const options = within(list).getAllByRole("option");
+    expect(options[0].textContent).toContain("Schedule: Saturday, June 20");
+
+    fireEvent.keyDown(palette, { key: "Enter" });
+
+    await waitFor(() => expect(screen.queryByText("dentist")).toBeNull()); // left Today
+    fireEvent.keyDown(document.body, { key: "3" }); // All
+    expect(await screen.findByText("dentist")).toBeTruthy();
+    expect(screen.getByText("in 5d")).toBeTruthy(); // the date chip
+  });
+
+  it("offers both days when a query means either — “reschedule weekend”", async () => {
+    render(<App />);
+    await screen.findByPlaceholderText("Add a task for today…");
+    act(() => setDevDateOverride("2026-06-15")); // a Monday
+    await addTask("laundry");
+    blurActive();
+
+    fireEvent.keyDown(document.body, { key: "k", metaKey: true });
+    const palette = await screen.findByPlaceholderText("Type a command…");
+    fireEvent.change(palette, { target: { value: "reschedule weekend" } });
+
+    const list = screen.getByRole("listbox", { name: "Commands" });
+    const labels = within(list)
+      .getAllByRole("option")
+      .map((o) => o.textContent ?? "");
+    expect(labels[0]).toContain("Schedule: Saturday, June 20");
+    expect(labels[1]).toContain("Schedule: Sunday, June 21");
+
+    fireEvent.keyDown(palette, { key: "ArrowDown" });
+    fireEvent.keyDown(palette, { key: "Enter" });
+
+    await waitFor(() => expect(screen.queryByText("laundry")).toBeNull());
+    fireEvent.keyDown(document.body, { key: "3" }); // All
+    expect(await screen.findByText("laundry")).toBeTruthy();
+    expect(screen.getByText("in 6d")).toBeTruthy();
+  });
+
   it("selects a project row and renames it with Enter", async () => {
     render(<App />);
     await screen.findByPlaceholderText("Add a task for today…");

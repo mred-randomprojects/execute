@@ -8,11 +8,50 @@ export interface Command {
   label: string;
   aliases?: string[];
   hint?: string;
+  /**
+   * Built from the query itself (a date the "when" grammar read, say) rather
+   * than authored. It never joins the frecency memory — its id names one
+   * afternoon, so ranking it would be ranking noise.
+   */
+  ephemeral?: boolean;
   run: (query: string) => void;
+}
+
+/** Are `query`'s letters inside `text`, in order? (Tolerates a dropped letter.) */
+function isSubsequence(text: string, query: string): boolean {
+  let from = 0;
+  for (const ch of query) {
+    const at = text.indexOf(ch, from);
+    if (at === -1) return false;
+    from = at + 1;
+  }
+  return true;
+}
+
+/**
+ * Does the query reach this command by alias? Three ways, loosest last:
+ *   - the query starts with the alias ("schedule friday" → Schedule…),
+ *   - a single word the alias starts with ("resched" → "reschedule"),
+ *   - a single word whose letters are in the alias, in order, so a typed-through
+ *     miss ("reshedule") still lands. Four letters minimum, and never with more
+ *     words after it, so this stays a typo net and not a free-for-all.
+ */
+function aliasHit(aliases: string[] | undefined, q: string, tokens: string[]): boolean {
+  if (aliases == null) return false;
+  return aliases.some((raw) => {
+    const alias = raw.toLowerCase();
+    if (q.startsWith(alias)) return true;
+    if (tokens.length !== 1) return false;
+    if (alias.startsWith(q)) return true;
+    // Single words only: a multi-word alias is too easy to thread a stray query
+    // through ("note" would find "no date").
+    return q.length >= 4 && !alias.includes(" ") && isSubsequence(alias, q);
+  });
 }
 
 export function CommandPalette({
   commands,
+  dynamic,
   usage = {},
   onClose,
   onUse,
@@ -20,6 +59,12 @@ export function CommandPalette({
   now,
 }: {
   commands: Command[];
+  /**
+   * Commands made *from* what's typed — "reschedule sat" offering the coming
+   * Saturday. They're the most specific answer to the query, so they sit above
+   * the ranked list and skip frecency entirely.
+   */
+  dynamic?: (query: string) => Command[];
   /** Frecency memory keyed by command id — drives ranking. Defaults to empty. */
   usage?: Record<string, CommandUsage>;
   onClose: () => void;
@@ -58,9 +103,9 @@ export function CommandPalette({
     const q = query.trim().toLowerCase();
     if (q === "") return ranked;
     const tokens = q.split(/\s+/).filter(Boolean);
-    return ranked.filter((c) => {
-      // Alias shortcut: the query starts with a command alias (unchanged).
-      if (c.aliases?.some((alias) => q.startsWith(alias.toLowerCase()))) return true;
+    const matches = ranked.filter((c) => {
+      // Alias shortcut: the query names an alias (exactly, or near enough).
+      if (aliasHit(c.aliases, q, tokens)) return true;
       // Every whitespace-separated token must appear in the label, in order — so
       // "sche tod" matches "Schedule: Today" even though it isn't a contiguous
       // substring. A single token reduces to the old substring match, and we
@@ -74,7 +119,8 @@ export function CommandPalette({
       }
       return true;
     });
-  }, [ranked, query]);
+    return [...(dynamic?.(query) ?? []), ...matches];
+  }, [ranked, query, dynamic]);
 
   useEffect(() => {
     if (sel > filtered.length - 1) setSel(0);
@@ -89,12 +135,13 @@ export function CommandPalette({
     const c = filtered[i];
     if (c == null) return;
     const rawQuery = query;
-    onUse?.(c.id);
+    if (c.ephemeral !== true) onUse?.(c.id);
     onClose();
     c.run(rawQuery);
   };
 
-  const hasRanking = (c: Command | undefined): boolean => c != null && usage[c.id] != null;
+  const hasRanking = (c: Command | undefined): boolean =>
+    c != null && c.ephemeral !== true && usage[c.id] != null;
   const selHasRanking = hasRanking(filtered[sel]);
 
   const resetSelected = () => {
