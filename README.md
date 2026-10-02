@@ -53,7 +53,7 @@ keymap). Highlights:
 | `p` | peek — unwrap title + notes in place |
 | `tab` / `⇧ tab` | indent / outdent |
 | `⌫` | won't do · press again to trash |
-| `1` – `6` | Today / Backlog / All / Projects / Recurring / Trash · `[` `]` walk the period tabs |
+| `1` – `7` | Today / Backlog / All / Projects / Recurring / Habits / Trash · `[` `]` walk the period tabs |
 | `⌘k` | **command palette — everything else lives here** |
 | `⌘z` undo · `⌘⇧z` redo · `⌘y` history · `⌘f` find · `?` help |
 
@@ -94,6 +94,17 @@ rendered title and a created timestamp (in your local timezone).
 In **the Reckoning** and at completion you can attach an optional **reason**;
 these are recorded in an event log (and shown in a task's History panel) so the
 data can later be analysed.
+
+## Habits
+
+Things you keep rather than finish live in their own view (`6`), never in the
+task tree, so a habit can't reckon or change the day's counts. Each habit has a
+weekly target ("Run 3x" when you name it sets 3× a week), an optional cue
+("after my morning coffee"), a two-week strip, a forgiving **strength** score
+and a streak that survives a single miss (*never miss twice*). `space` checks
+in, `←`/`→` pick an earlier day to backfill, and `⌘k` marks a rest day, which
+costs nothing. The design, the lessons behind it and what comes next:
+[`docs/habits.md`](docs/habits.md).
 
 ## Your week, read back to you
 
