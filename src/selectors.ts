@@ -38,7 +38,7 @@ import {
   weekStart,
 } from "./store/dates";
 
-export type ViewKind = "today" | "backlog" | "all" | "projects" | "recurring" | "trash";
+export type ViewKind = "today" | "backlog" | "all" | "projects" | "recurring" | "habits" | "trash";
 
 export const VIEW_TITLES: Record<ViewKind, string> = {
   today: "Today",
@@ -46,6 +46,7 @@ export const VIEW_TITLES: Record<ViewKind, string> = {
   all: "All tasks",
   projects: "Projects",
   recurring: "Recurring",
+  habits: "Habits",
   trash: "Trash",
 };
 
@@ -131,6 +132,7 @@ export function viewPredicate(
     case "projects":
       return () => true;
     case "recurring":
+    case "habits":
     case "trash":
       return () => false; // Rendered from a dedicated array, not the task tree.
   }

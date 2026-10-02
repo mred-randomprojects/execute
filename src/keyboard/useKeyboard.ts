@@ -62,6 +62,9 @@ export function getActiveContext(state: ContextState): KeyContext {
   // yesterday is still unresolved, so the Reckoning always wins the keyboard.
   if (state.shutdownActive) return "shutdown";
   if (state.planActive) return "plan";
+  // Habits has keys of its own (space checks in, ←/→ walk the days), so it gets
+  // its own context rather than borrowing the outline's.
+  if (state.habitsActive) return "habits";
   return "normal";
 }
 

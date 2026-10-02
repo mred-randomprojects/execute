@@ -86,8 +86,18 @@ import {
   getRedoSteps,
   undoDepth,
   useStore,
+  createHabit,
+  deleteHabit,
+  markHabit,
+  renameHabit,
+  setHabitArchived,
+  setHabitCue,
+  setHabitPerWeek,
+  toggleHabitDone,
+  toggleHabitSkip,
   type PostponeTarget,
 } from "./store/store";
+import { cadenceLabel, parseHabitName, pendingToday } from "./store/habits";
 import { findById, findParentId, getAncestorPath, isOpen, walk } from "./store/tasks";
 import {
   addDays,
@@ -159,6 +169,7 @@ import {
 import { keymap } from "./keyboard/keymap";
 import { useKeyboard } from "./keyboard/useKeyboard";
 import type { ContextState } from "./keyboard/types";
+import type { HabitId } from "./types";
 import { EditorProvider, type Editor } from "./ui/editor";
 import { copyText } from "./ui/clipboard";
 import { Sidebar } from "./components/Sidebar";
@@ -172,6 +183,7 @@ import { ReckoningBoard, type BoardLeftover } from "./views/ReckoningBoard";
 import { ShutdownView } from "./views/ShutdownView";
 import { PlanView } from "./views/PlanView";
 import { TrashView } from "./views/TrashView";
+import { HABIT_STRIP_DAYS, HabitsView, type HabitEditing, type HabitField } from "./views/HabitsView";
 import { RepeatPicker } from "./components/RepeatPicker";
 import { DetailPanel, type DetailHandlers } from "./components/DetailPanel";
 import { HelpOverlay } from "./components/HelpOverlay";
@@ -736,6 +748,77 @@ export function App() {
     const ids = planList.map((c) => c.id);
     if (planCursorId === null || !ids.includes(planCursorId)) setPlanCursorId(ids[0] ?? null);
   }, [planActive, planList, planCursorId]);
+
+  // ── Habits ────────────────────────────────────────────────────────
+  // Its own list, cursor and keys: nothing here is a task, so none of the
+  // outline's machinery (selection, editing, the panel) is involved.
+  const [habitCursorId, setHabitCursorId] = useState<HabitId | null>(null);
+  // Days back from today the day cursor sits on (0 = today). Shared across rows
+  // so ↑/↓ keep the column — checking a week of backfill down a list is fast.
+  const [habitDayOffset, setHabitDayOffset] = useState(0);
+  const [habitEditing, setHabitEditing] = useState<HabitEditing | null>(null);
+  const habitsActive = view === "habits" && !reckoningActive && !shutdownActive && !planActive;
+  const habitList = useMemo(
+    () => [
+      ...state.habits.filter((h) => h.archivedAt == null),
+      ...state.habits.filter((h) => h.archivedAt != null),
+    ],
+    [state.habits]
+  );
+  const habitsPending = useMemo(
+    () => state.habits.filter((h) => pendingToday(h, today)).length,
+    [state.habits, today]
+  );
+  useEffect(() => {
+    const ids = habitList.map((h) => h.id);
+    if (habitCursorId === null || !ids.includes(habitCursorId)) {
+      const next = ids[0] ?? null;
+      if (next !== habitCursorId) setHabitCursorId(next);
+    }
+    if (habitEditing != null && !ids.includes(habitEditing.id)) setHabitEditing(null);
+  }, [habitList, habitCursorId, habitEditing]);
+  const focusedHabit = habitsActive ? habitList.find((h) => h.id === habitCursorId) ?? null : null;
+  const habitDay = addDays(today, -habitDayOffset);
+  const moveHabitCursor = (dir: 1 | -1) => {
+    const i = habitList.findIndex((h) => h.id === habitCursorId);
+    const next = habitList[Math.max(0, Math.min(habitList.length - 1, i + dir))];
+    if (next != null) setHabitCursorId(next.id);
+  };
+  const newHabit = () => {
+    const id = createHabit("");
+    setHabitCursorId(id);
+    setHabitDayOffset(0);
+    setHabitEditing({ id, field: "name" });
+  };
+  const commitHabitField = (id: HabitId, field: HabitField, value: string, then: HabitField | null) => {
+    const habit = state.habits.find((h) => h.id === id);
+    if (habit == null) return setHabitEditing(null);
+    if (field === "name") {
+      const { name, perWeek } = parseHabitName(value);
+      // A habit left nameless at birth is a slip of the `n` key: take it back.
+      if (name === "" && habit.name === "" && then == null && Object.keys(habit.checks).length === 0) {
+        deleteHabit(id);
+        setHabitEditing(null);
+        return;
+      }
+      if (name !== habit.name) renameHabit(id, name);
+      if (perWeek != null && perWeek !== habit.perWeek) setHabitPerWeek(id, perWeek);
+    } else if (value.trim() !== habit.cue) {
+      setHabitCue(id, value);
+    }
+    setHabitEditing(then == null ? null : { id, field: then });
+  };
+  const archiveOrDeleteHabit = () => {
+    const h = focusedHabit;
+    if (h == null) return;
+    if (h.archivedAt == null) return setHabitArchived(h.id, true);
+    setConfirm({
+      title: "Delete this habit?",
+      body: `“${h.name || "Untitled habit"}” and its whole history go. ⌘z can still bring it back.`,
+      confirmLabel: "Delete habit",
+      onConfirm: () => deleteHabit(h.id),
+    });
+  };
 
   // ── Presence (desktop shell) ──────────────────────────────────────
   // Push what's left today down to the main process, which turns it into a
@@ -1947,6 +2030,7 @@ export function App() {
     boardMode,
     shutdownActive,
     planActive,
+    habitsActive,
   };
   // Only actions the keymap actually binds. Everything the outline used to fire
   // from a bare letter (schedule, won't-do, blocked, estimate, project, repeat,
@@ -1992,7 +2076,20 @@ export function App() {
     "view.all": cmd.gotoView("all"),
     "view.projects": cmd.gotoView("projects"),
     "view.recurring": cmd.gotoView("recurring"),
+    "view.habits": cmd.gotoView("habits"),
     "view.trash": cmd.gotoView("trash"),
+    "habits.down": () => moveHabitCursor(1),
+    "habits.up": () => moveHabitCursor(-1),
+    "habits.dayPrev": () => setHabitDayOffset((o) => Math.min(HABIT_STRIP_DAYS - 1, o + 1)),
+    "habits.dayNext": () => setHabitDayOffset((o) => Math.max(0, o - 1)),
+    "habits.toggle": () => {
+      if (focusedHabit != null) toggleHabitDone(focusedHabit.id, habitDay);
+    },
+    "habits.rename": () => {
+      if (focusedHabit != null) setHabitEditing({ id: focusedHabit.id, field: "name" });
+    },
+    "habits.new": newHabit,
+    "habits.archive": archiveOrDeleteHabit,
     "dismiss": cmd.dismiss,
     // Arg-less wrappers: the keyboard engine calls handlers with the dispatch
     // state, so these must ignore it and act on the cursor (not a stray object).
@@ -2441,6 +2538,62 @@ export function App() {
     return { trail: toCommands(dates) };
   };
 
+  // The focused habit's commands — only while the Habits view is up, so they
+  // never crowd the palette from a task view.
+  const habitCommands = (): Command[] => {
+    const h = focusedHabit;
+    if (h == null) return [];
+    const day = habitDay === today ? "today" : habitDay === addDays(today, -1) ? "yesterday" : habitDay;
+    const marked = h.checks[habitDay];
+    const targets: Command[] = [7, 6, 5, 4, 3, 2, 1].map((n) => ({
+      id: `habit-target-${n}`,
+      label: `Habit target: ${cadenceLabel(n).toLowerCase()}${h.perWeek === n ? " ✓" : ""}`,
+      aliases: ["target", "frequency", "times a week", `${n}x`, n === 7 ? "daily" : "weekly"],
+      run: () => setHabitPerWeek(h.id, n),
+    }));
+    return [
+      {
+        id: "habit-check",
+        label: marked === "done" ? `Habit: undo the check-in for ${day}` : `Habit: check in for ${day}`,
+        aliases: ["done", "check", "tick", "complete"],
+        hint: "space",
+        run: () => toggleHabitDone(h.id, habitDay),
+      },
+      {
+        id: "habit-skip",
+        label: marked === "skip" ? `Habit: clear the rest day on ${day}` : `Habit: rest day on ${day} (skip, no penalty)`,
+        aliases: ["skip", "rest", "excuse", "sick", "vacation", "day off"],
+        run: () => toggleHabitSkip(h.id, habitDay),
+      },
+      {
+        id: "habit-cue",
+        label: h.cue === "" ? "Habit: set a cue (when / after what)…" : "Habit: edit the cue…",
+        aliases: ["cue", "trigger", "after", "when", "stack"],
+        run: () => setHabitEditing({ id: h.id, field: "cue" }),
+      },
+      ...targets,
+      {
+        id: "habit-archive",
+        label: h.archivedAt == null ? "Habit: archive (keep its history)" : "Habit: restore from the archive",
+        aliases: ["archive", "pause", "retire", "restore", "unarchive"],
+        hint: h.archivedAt == null ? "⌫" : undefined,
+        run: () => setHabitArchived(h.id, h.archivedAt == null),
+      },
+      {
+        id: "habit-delete",
+        label: "Habit: delete it and its history…",
+        aliases: ["delete", "remove"],
+        run: () =>
+          setConfirm({
+            title: "Delete this habit?",
+            body: `“${h.name || "Untitled habit"}” and its whole history go. ⌘z can still bring it back.`,
+            confirmLabel: "Delete habit",
+            onConfirm: () => deleteHabit(h.id),
+          }),
+      },
+    ];
+  };
+
   const commands: Command[] = [
     { id: "search", label: "Search tasks", aliases: ["find"], hint: "⌘f", run: openSearch },
     { id: "today", label: "Go to Today", hint: "1", run: cmd.gotoView("today") },
@@ -2448,7 +2601,18 @@ export function App() {
     { id: "all", label: "Go to All", hint: "3", run: cmd.gotoView("all") },
     { id: "projects", label: "Go to Projects", hint: "4", run: cmd.gotoView("projects") },
     { id: "recurring", label: "Go to Recurring", hint: "5", run: cmd.gotoView("recurring") },
-    { id: "trash", label: "Go to Trash", hint: "6", run: cmd.gotoView("trash") },
+    { id: "habits", label: "Go to Habits", hint: "6", aliases: ["habit", "streak", "routine"], run: cmd.gotoView("habits") },
+    { id: "trash", label: "Go to Trash", hint: "7", run: cmd.gotoView("trash") },
+    {
+      id: "habit-new",
+      label: "New habit",
+      aliases: ["add habit", "create habit", "track habit"],
+      run: () => {
+        cmd.gotoView("habits")();
+        newHabit();
+      },
+    },
+    ...habitCommands(),
     { id: "new", label: "New task", hint: "n", run: cmd.taskNew },
     { id: "details", label: "Open details panel", hint: "→", run: openPanel },
     { id: "peek", label: "Peek: unwrap task in place", aliases: ["preview"], hint: "p", run: cmd.taskPeek },
@@ -2730,6 +2894,7 @@ export function App() {
         backlog={backlog}
         projectCount={state.projects.length}
         recurring={state.recurrences.length}
+        habitsPending={habitsPending}
         trash={state.trash.length}
         onSelect={setView}
         onOpenHelp={() => setShowHelp(true)}
@@ -2856,6 +3021,26 @@ export function App() {
                 }}
                 onExit={() => setShutdownOpen(false)}
               />
+            ) : view === "habits" ? (
+              <HabitsView
+                habits={habitList}
+                today={today}
+                cursorId={habitCursorId}
+                dayOffset={habitDayOffset}
+                editing={habitEditing}
+                onSelect={setHabitCursorId}
+                onSelectDay={(id, date) => {
+                  setHabitCursorId(id);
+                  setHabitDayOffset(Math.max(0, daysBetween(date, today)));
+                }}
+                onMark={markHabit}
+                onCommit={commitHabitField}
+                onEdit={(id, field) => {
+                  setHabitCursorId(id);
+                  setHabitEditing({ id, field });
+                }}
+                onNew={newHabit}
+              />
             ) : view === "trash" ? (
               <TrashView
                 trash={state.trash}
@@ -2976,7 +3161,7 @@ export function App() {
             />
           )}
         </div>
-        <StatusBar reckoning={reckoningActive} shutdown={shutdownActive} />
+        <StatusBar reckoning={reckoningActive} shutdown={shutdownActive} habits={habitsActive} />
       </main>
 
       {showHelp && <HelpOverlay onClose={() => setShowHelp(false)} />}

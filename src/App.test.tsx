@@ -912,7 +912,7 @@ describe("Trash", () => {
     fireEvent.keyDown(document.body, { key: "Backspace" });
     await waitFor(() => expect(screen.queryByText("disposable")).toBeNull());
 
-    fireEvent.keyDown(document.body, { key: "6" }); // Trash view
+    fireEvent.keyDown(document.body, { key: "7" }); // Trash view
     expect(await screen.findByText("disposable")).toBeTruthy();
 
     fireEvent.click(screen.getByText("Restore"));
@@ -2701,5 +2701,66 @@ describe("Undo, redo and the history panel", () => {
     await waitFor(() =>
       expect(screen.queryByRole("listbox", { name: "Action history" })).toBeNull()
     );
+  });
+});
+
+describe("Habits", () => {
+  it("creates a habit by keyboard, reads its cadence, checks in, and never touches tasks", async () => {
+    render(<App />);
+    await screen.findByPlaceholderText("Add a task for today…");
+    blurActive();
+    fireEvent.keyDown(document.body, { key: "6" });
+    expect(await screen.findByText("Start with one.")).toBeTruthy();
+
+    fireEvent.keyDown(document.body, { key: "n" });
+    const name = await screen.findByPlaceholderText("A habit, small enough to do on a bad day");
+    fireEvent.change(name, { target: { value: "Run 3x" } });
+    fireEvent.keyDown(name, { key: "Enter" });
+    expect(await screen.findByText("Run")).toBeTruthy();
+    expect(getState().habits[0]).toMatchObject({ name: "Run", perWeek: 3 });
+
+    blurActive();
+    fireEvent.keyDown(document.body, { key: " " }); // check in today
+    const today = todayISO(getState().devDateOverride);
+    await waitFor(() => expect(getState().habits[0].checks[today]).toBe("done"));
+    expect(screen.getByText("All kept today.")).toBeTruthy();
+
+    fireEvent.keyDown(document.body, { key: "ArrowLeft" }); // yesterday
+    fireEvent.keyDown(document.body, { key: " " });
+    await waitFor(() => expect(getState().habits[0].checks[addDays(today, -1)]).toBe("done"));
+    expect(getState().tasks).toEqual([]);
+
+    fireEvent.keyDown(document.body, { key: "z", metaKey: true }); // undo the backfill
+    await waitFor(() => expect(getState().habits[0].checks[addDays(today, -1)]).toBeUndefined());
+  });
+
+  it("an empty new habit is taken back when left nameless", async () => {
+    render(<App />);
+    await screen.findByPlaceholderText("Add a task for today…");
+    blurActive();
+    fireEvent.keyDown(document.body, { key: "6" });
+    fireEvent.keyDown(document.body, { key: "n" });
+    const name = await screen.findByPlaceholderText("A habit, small enough to do on a bad day");
+    fireEvent.keyDown(name, { key: "Escape" });
+    await waitFor(() => expect(getState().habits).toEqual([]));
+  });
+
+  it("⌫ archives, and on an archived habit asks before deleting", async () => {
+    render(<App />);
+    await screen.findByPlaceholderText("Add a task for today…");
+    blurActive();
+    fireEvent.keyDown(document.body, { key: "6" });
+    fireEvent.keyDown(document.body, { key: "n" });
+    const name = await screen.findByPlaceholderText("A habit, small enough to do on a bad day");
+    fireEvent.change(name, { target: { value: "Floss" } });
+    fireEvent.keyDown(name, { key: "Enter" });
+    blurActive();
+    fireEvent.keyDown(document.body, { key: "Backspace" });
+    await waitFor(() => expect(getState().habits[0].archivedAt).not.toBeNull());
+    expect(screen.getByText("Archived")).toBeTruthy();
+    fireEvent.keyDown(document.body, { key: "Backspace" });
+    expect(await screen.findByText("Delete this habit?")).toBeTruthy();
+    fireEvent.keyDown(screen.getByText("Delete habit"), { key: "Enter" });
+    await waitFor(() => expect(getState().habits).toEqual([]));
   });
 });

@@ -51,6 +51,7 @@ const PLACEHOLDERS: Record<ViewKind, string> = {
   all: "Capture a task…",
   projects: "Capture into a project…",
   recurring: "New recurring task…",
+  habits: "",
   trash: "",
 };
 
@@ -143,6 +144,7 @@ function EmptyState({ view, period }: { view: ViewKind; period: Period }) {
     all: "No tasks yet — capture your first above.",
     projects: "No projects yet — create one above.",
     recurring: "No recurring tasks yet — capture one above.",
+    habits: "",
     trash: "",
   };
   return (

@@ -23,6 +23,7 @@ export type KeyContext =
   | "board"
   | "shutdown"
   | "plan"
+  | "habits"
   | "editing"
   | "normal";
 
@@ -46,6 +47,8 @@ export interface ContextState {
   shutdownActive: boolean;
   /** The morning plan ritual is open (never while the gate is up). */
   planActive: boolean;
+  /** The Habits view is showing (and no ritual is covering it). */
+  habitsActive: boolean;
 }
 
 // ─── Keymap ──────────────────────────────────────────────────────────

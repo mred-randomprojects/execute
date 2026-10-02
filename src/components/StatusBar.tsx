@@ -27,14 +27,33 @@ const SHUTDOWN_HINTS: Array<[string, string]> = [
   ["esc", "leave"],
 ];
 
+const HABITS_HINTS: Array<[string, string]> = [
+  ["↑ / ↓", "move"],
+  ["← / →", "pick a day"],
+  ["space", "check in"],
+  ["↵", "rename · tab cue"],
+  ["n", "new"],
+  ["⌫", "archive"],
+  ["⌘k", "target · rest day · more"],
+  ["?", "help"],
+];
+
 export function StatusBar({
   reckoning,
   shutdown,
+  habits = false,
 }: {
   reckoning: boolean;
   shutdown: boolean;
+  habits?: boolean;
 }) {
-  const hints = reckoning ? RECKONING_HINTS : shutdown ? SHUTDOWN_HINTS : NORMAL_HINTS;
+  const hints = reckoning
+    ? RECKONING_HINTS
+    : shutdown
+      ? SHUTDOWN_HINTS
+      : habits
+        ? HABITS_HINTS
+        : NORMAL_HINTS;
   return (
     <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-line bg-surface px-5 py-2">
       {hints.map(([keys, label]) => (

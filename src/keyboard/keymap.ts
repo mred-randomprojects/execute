@@ -23,10 +23,10 @@ export const keymap: KeyBinding[] = [
   { key: "Escape", action: "dismiss", context: "global", displayKey: "esc", description: "close / cancel", section: "General" },
   { key: "Meta+z", action: "undo", context: "global", displayKey: "⌘ z", description: "undo", section: "General" },
   { key: "Meta+Z", action: "redo", context: "global", displayKey: "⌘ ⇧ z", description: "redo", section: "General" },
-  { key: "Meta+y", action: "history.toggle", context: ["normal", "reckoning", "board"], displayKey: "⌘ y", description: "history — everything you just did", section: "General" },
-  { key: "?", action: "help.toggle", context: ["normal", "reckoning", "board"], displayKey: "?", description: "keyboard help", section: "General" },
-  { key: "Meta+k", action: "palette.open", context: ["normal", "reckoning", "board", "editing"], displayKey: "⌘ k", description: "command palette — everything lives here", section: "General" },
-  { key: "Meta+f", action: "search.open", context: ["normal", "editing"], displayKey: "⌘ f", description: "find — search all tasks (subsequence: “byml” → “Buy milk”)", section: "General" },
+  { key: "Meta+y", action: "history.toggle", context: ["normal", "habits", "reckoning", "board"], displayKey: "⌘ y", description: "history — everything you just did", section: "General" },
+  { key: "?", action: "help.toggle", context: ["normal", "habits", "reckoning", "board"], displayKey: "?", description: "keyboard help", section: "General" },
+  { key: "Meta+k", action: "palette.open", context: ["normal", "habits", "reckoning", "board", "editing"], displayKey: "⌘ k", description: "command palette — everything lives here", section: "General" },
+  { key: "Meta+f", action: "search.open", context: ["normal", "habits", "editing"], displayKey: "⌘ f", description: "find — search all tasks (subsequence: “byml” → “Buy milk”)", section: "General" },
 
   // ── history panel ─────────────────────────────────────────────────
   { key: "ArrowDown", action: "history.down", context: "history", displayKey: "↑ / ↓", description: "walk the history", section: "History" },
@@ -35,14 +35,15 @@ export const keymap: KeyBinding[] = [
   { key: "Meta+y", action: "dismiss", context: "history" },
 
   // ── views ─────────────────────────────────────────────────────────
-  { key: "1", action: "view.today", context: "normal", displayKey: "1", description: "go to Today", section: "Views" },
-  { key: "2", action: "view.backlog", context: "normal", displayKey: "2", description: "go to Backlog", section: "Views" },
-  { key: "3", action: "view.all", context: "normal", displayKey: "3", description: "go to All", section: "Views" },
-  { key: "4", action: "view.projects", context: "normal", displayKey: "4", description: "go to Projects", section: "Views" },
-  { key: "5", action: "view.recurring", context: "normal", displayKey: "5", description: "go to Recurring", section: "Views" },
-  { key: "6", action: "view.trash", context: "normal", displayKey: "6", description: "go to Trash", section: "Views" },
-  { key: "]", action: "period.next", context: "normal", displayKey: "[ / ]", description: "period tab: earlier / later (Today ↔ Tomorrow ↔ …)", section: "Views" },
-  { key: "[", action: "period.prev", context: "normal" },
+  { key: "1", action: "view.today", context: ["normal", "habits"], displayKey: "1", description: "go to Today", section: "Views" },
+  { key: "2", action: "view.backlog", context: ["normal", "habits"], displayKey: "2", description: "go to Backlog", section: "Views" },
+  { key: "3", action: "view.all", context: ["normal", "habits"], displayKey: "3", description: "go to All", section: "Views" },
+  { key: "4", action: "view.projects", context: ["normal", "habits"], displayKey: "4", description: "go to Projects", section: "Views" },
+  { key: "5", action: "view.recurring", context: ["normal", "habits"], displayKey: "5", description: "go to Recurring", section: "Views" },
+  { key: "6", action: "view.habits", context: ["normal", "habits"], displayKey: "6", description: "go to Habits", section: "Views" },
+  { key: "7", action: "view.trash", context: ["normal", "habits"], displayKey: "7", description: "go to Trash", section: "Views" },
+  { key: "]", action: "period.next", context: ["normal", "habits"], displayKey: "[ / ]", description: "period tab: earlier / later (Today ↔ Tomorrow ↔ …)", section: "Views" },
+  { key: "[", action: "period.prev", context: ["normal", "habits"] },
 
   // ── navigation (normal) ───────────────────────────────────────────
   { key: "ArrowDown", action: "cursor.down", context: "normal", displayKey: "↓", description: "move down", section: "Navigation" },
@@ -68,6 +69,20 @@ export const keymap: KeyBinding[] = [
   { key: "Backspace", action: "task.trash", context: "normal", displayKey: "⌫", description: "won’t do · press again to trash", section: "Tasks", noRepeat: true },
   { key: "p", action: "task.peek", context: "normal", displayKey: "p", description: "peek — unwrap the title + notes in place", section: "Tasks" },
   { key: "Alt+Enter", action: "zoom.in", context: "normal", displayKey: "⌥ ↵", description: "zoom in / focus (esc backs out)", section: "Tasks" },
+
+  // ── habits (its own view, its own keys) ──────────────────────────
+  // Space is the one mutating bare key, and the reason this view has a context
+  // of its own: a check-in has to cost one keystroke or it stops happening. It
+  // can't land on a task — there are none here — and ⌘z takes it back.
+  { key: "ArrowDown", action: "habits.down", context: "habits", displayKey: "↑ / ↓", description: "next / previous habit", section: "Habits" },
+  { key: "ArrowUp", action: "habits.up", context: "habits" },
+  { key: "ArrowLeft", action: "habits.dayPrev", context: "habits", displayKey: "← / →", description: "pick a day (the last two weeks)", section: "Habits" },
+  { key: "ArrowRight", action: "habits.dayNext", context: "habits" },
+  { key: " ", action: "habits.toggle", context: "habits", displayKey: "space", description: "check in / undo, on the picked day", section: "Habits" },
+  { key: "Meta+Enter", action: "habits.toggle", context: "habits" },
+  { key: "Enter", action: "habits.rename", context: "habits", displayKey: "↵", description: "rename · tab moves on to the cue", section: "Habits" },
+  { key: "n", action: "habits.new", context: "habits", displayKey: "n", description: "new habit", section: "Habits" },
+  { key: "Backspace", action: "habits.archive", context: "habits", displayKey: "⌫", description: "archive · on an archived habit, delete it", section: "Habits", noRepeat: true },
 
   // ── plan (the morning ritual; shutdown's other half) ─────────────
   // Modal: it owns the screen and prints these letters on its chips.

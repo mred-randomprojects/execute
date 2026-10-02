@@ -94,11 +94,17 @@ describe("getActiveContext", () => {
     boardMode: false,
     shutdownActive: false,
     planActive: false,
+    habitsActive: false,
     showReview: false,
   };
 
   it("defaults to normal", () => {
     expect(getActiveContext(base)).toBe("normal");
+  });
+  it("the Habits view has its own keys, but rituals and typing outrank it", () => {
+    expect(getActiveContext({ ...base, habitsActive: true })).toBe("habits");
+    expect(getActiveContext({ ...base, habitsActive: true, reckoningActive: true })).toBe("reckoning");
+    expect(getActiveContext({ ...base, habitsActive: true, showPalette: true })).toBe("palette");
   });
   it("shutdown owns the keyboard when it's open", () => {
     expect(getActiveContext({ ...base, shutdownActive: true })).toBe("shutdown");
@@ -163,6 +169,7 @@ describe("getActiveContext — focus zones", () => {
     boardMode: false,
     shutdownActive: false,
     planActive: false,
+    habitsActive: false,
     showReview: false,
   };
 
