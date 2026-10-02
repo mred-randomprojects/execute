@@ -49,6 +49,7 @@ describe("presenceSnapshot", () => {
       cue: "",
       perWeek: 7,
       checks: {},
+      checkedAt: {},
       archivedAt: null,
       createdAt: 0,
       updatedAt: 0,

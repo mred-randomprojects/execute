@@ -296,6 +296,17 @@ function coerceChecks(raw: unknown): Record<string, HabitMark> {
   return out;
 }
 
+function coerceStamps(raw: unknown): Record<string, number> {
+  const out: Record<string, number> = {};
+  if (!isObject(raw)) return out;
+  for (const [date, at] of Object.entries(raw)) {
+    // Positive only: the merge never writes a 0 stamp (it means "none"), so one
+    // read back would never round-trip and the engine would rewrite it forever.
+    if (ISO_DAY.test(date) && typeof at === "number" && Number.isFinite(at) && at > 0) out[date] = at;
+  }
+  return out;
+}
+
 function coerceHabit(raw: unknown): Habit {
   const o = isObject(raw) ? raw : {};
   const createdAt = num(o.createdAt, Date.now());
@@ -305,6 +316,9 @@ function coerceHabit(raw: unknown): Habit {
     cue: str(o.cue),
     perWeek: normalizePerWeek(num(o.perWeek, 7)),
     checks: coerceChecks(o.checks),
+    // v20: per-day stamps. v19 marks have none → stamp 0, which any newer
+    // answer on another device outvotes.
+    checkedAt: coerceStamps(o.checkedAt),
     archivedAt: numOrNull(o.archivedAt),
     createdAt,
     updatedAt: num(o.updatedAt, createdAt),

@@ -24,6 +24,7 @@ function habit(perWeek: number, created: ISODate, checks: Record<ISODate, HabitM
     cue: "",
     perWeek,
     checks,
+    checkedAt: {},
     archivedAt: null,
     createdAt: parseISO(created).getTime(),
     updatedAt: 0,

@@ -15,7 +15,8 @@ import {
 import { mergeStates } from "../sync/merge";
 import { asRaw, fromDocs, toDocs } from "../sync/docs";
 import { jsonEqual } from "../sync/merge";
-import type { AppState, HabitId } from "../types";
+import type { AppState, Habit, HabitId } from "../types";
+import { markStamped } from "./habits";
 
 // Habits through the store and the merge: undoable, tombstoned on delete, and
 // never anywhere near the task tree the Reckoning reads.
@@ -64,8 +65,11 @@ describe("habits in the store", () => {
     undo();
     const undone = habitOf(getState(), id);
     expect(undone?.checks).toEqual({});
-    // Past the marked version, or the cloud's copy of the check-in would win.
-    expect(undone?.updatedAt ?? 0).toBeGreaterThan(marked?.updatedAt ?? 0);
+    // The cleared day is stamped past the check-in, or the cloud's copy of it
+    // would win the merge and put the check-in straight back.
+    expect(undone?.checkedAt["2026-10-01"] ?? 0).toBeGreaterThan(marked?.checkedAt["2026-10-01"] ?? 0);
+    // A check-in isn't an edit of the habit itself.
+    expect(marked?.updatedAt).toBe(before?.updatedAt);
     expect(before?.checks).toEqual({});
   });
 
@@ -116,5 +120,79 @@ describe("habits in the store", () => {
     markHabit(id, "2026-10-01", "done");
     const s = getState();
     expect(jsonEqual(fromDocs(asRaw(toDocs(s)), s).habits, s.habits)).toBe(true);
+  });
+});
+
+describe("per-day check-in merge (v20)", () => {
+  const base = (over: Partial<Habit> = {}): Habit => ({
+    id: "hx" as HabitId,
+    name: "Run",
+    cue: "",
+    perWeek: 7,
+    checks: {},
+    checkedAt: {},
+    archivedAt: null,
+    createdAt: 1,
+    updatedAt: 1,
+    ...over,
+  });
+  const withHabit = (h: Habit): AppState => ({ ...getState(), habits: [h] });
+  const both = (a: Habit, b: Habit) => {
+    const ab = mergeStates(withHabit(a), withHabit(b)).habits[0];
+    const ba = mergeStates(withHabit(b), withHabit(a)).habits[0];
+    expect(ab).toEqual(ba); // symmetric, or two devices ping-pong
+    return ab;
+  };
+
+  it("two devices marking different days keep both", () => {
+    const phone = markStamped(base(), "2026-10-01", "done", 100);
+    const desk = markStamped(base(), "2026-10-02", "skip", 90);
+    expect(both(phone, desk).checks).toEqual({ "2026-10-01": "done", "2026-10-02": "skip" });
+  });
+
+  it("the same day: the newer answer wins, a clear included", () => {
+    const checked = markStamped(base(), "2026-10-01", "done", 100);
+    const cleared = markStamped(checked, "2026-10-01", null, 200);
+    expect(both(checked, cleared).checks).toEqual({});
+    const later = markStamped(base(), "2026-10-01", "missed", 300);
+    expect(both(cleared, later).checks).toEqual({ "2026-10-01": "missed" });
+  });
+
+  it("ties resolve by value, the same on both sides", () => {
+    const a = markStamped(base(), "2026-10-01", "done", 100);
+    const b = markStamped(base(), "2026-10-01", "skip", 100);
+    expect(both(a, b).checks["2026-10-01"]).toBe("skip");
+  });
+
+  it("a rename on one device and a check-in on the other both survive", () => {
+    const desk = { ...base({ name: "Run 5k" }), updatedAt: 50 };
+    const phone = markStamped(base(), "2026-10-01", "done", 100);
+    const merged = both(desk, phone);
+    expect(merged.name).toBe("Run 5k");
+    expect(merged.checks).toEqual({ "2026-10-01": "done" });
+  });
+
+  it("is a fixed point, v19 marks without stamps included", () => {
+    const legacy = base({ checks: { "2026-09-30": "done" } });
+    const stamped = markStamped(legacy, "2026-10-01", "done", 100);
+    expect(both(stamped, stamped)).toEqual(stamped);
+    expect(both(legacy, legacy)).toEqual(legacy);
+    // A stamped answer outvotes an unstamped v19 one.
+    const changed = markStamped(legacy, "2026-09-30", "missed", 5);
+    expect(both(legacy, changed).checks["2026-09-30"]).toBe("missed");
+  });
+
+  it("a check-in after a delete brings the habit back; a delete after it doesn't", () => {
+    const h = base({ updatedAt: 10 });
+    const s = (habit: Habit | null, tomb: number | null): AppState => ({
+      ...getState(),
+      habits: habit == null ? [] : [habit],
+      tombstones: tomb == null ? [] : [{ id: h.id, deletedAt: tomb, purged: false }],
+    });
+    const t = Date.now(); // tombstones expire, so stamps must be recent
+    const checkedLate = markStamped(h, "2026-10-01", "done", t + 300);
+    expect(mergeStates(s(null, t + 200), s(checkedLate, null)).habits).toHaveLength(1);
+    const checkedEarly = markStamped(h, "2026-10-01", "done", t + 100);
+    expect(mergeStates(s(null, t + 200), s(checkedEarly, null)).habits).toHaveLength(0);
   });
 });

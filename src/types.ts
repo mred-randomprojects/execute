@@ -145,14 +145,23 @@ export interface Habit {
    * whose Monday went sideways, "Mon/Wed/Fri" doesn't.
    */
   perWeek: number;
-  /** Marked days. A missing key = not done. */
+  /** Marked days. A missing key = unlogged. */
   checks: Record<ISODate, HabitMark>;
+  /**
+   * v20: when each day's mark last changed, clears included (a cleared day
+   * keeps its stamp and loses its `checks` entry). The merge's clock for
+   * check-ins: newest per day wins, so the phone and the desktop marking the
+   * same habit on different days — or the same day — never lose a mark.
+   * Stamped at the store's choke point (and by the phone's intent).
+   */
+  checkedAt: Record<ISODate, number>;
   /** Retired from the active list (history kept). `null` = active. */
   archivedAt: number | null;
   createdAt: number;
   /**
-   * The merge's clock: newest wins per habit, check-ins included (see
-   * sync/merge). Stamped at the store's choke point.
+   * The merge's clock for the habit's own fields (name, cue, target,
+   * archived) — newest wins per habit. Check-ins have their own, per day
+   * ({@link Habit.checkedAt}). Stamped at the store's choke point.
    */
   updatedAt: number;
 }
@@ -565,7 +574,7 @@ export interface AppState {
   days: DayRecord[];
 }
 
-export const SCHEMA_VERSION = 19;
+export const SCHEMA_VERSION = 20;
 export const DEFAULT_PROJECT_ID = "project-inbox" as ProjectId;
 export const PROJECT_ROW_PREFIX = "project:";
 

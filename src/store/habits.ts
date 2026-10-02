@@ -73,6 +73,107 @@ export function withMark(h: Habit, date: ISODate, mark: HabitMark | null): Habit
   return { ...h, checks };
 }
 
+// ─── Sync clocks ─────────────────────────────────────────────────────
+//
+// Two clocks per habit (see Habit.updatedAt / Habit.checkedAt): one for its own
+// fields, one per day for check-ins. Written here, generically — compare, don't
+// enumerate — so the store's choke point, undo and the phone's intent all stamp
+// the same way.
+
+/** The fields `updatedAt` covers. */
+export function habitOwnFields(h: Habit): Pick<Habit, "name" | "cue" | "perWeek" | "archivedAt" | "createdAt"> {
+  return { name: h.name, cue: h.cue, perWeek: h.perWeek, archivedAt: h.archivedAt, createdAt: h.createdAt };
+}
+
+function sameOwn(a: Habit, b: Habit): boolean {
+  return (
+    a.name === b.name &&
+    a.cue === b.cue &&
+    a.perWeek === b.perWeek &&
+    a.archivedAt === b.archivedAt &&
+    a.createdAt === b.createdAt
+  );
+}
+
+/** The newest stamp a habit carries — what a tombstone has to beat. */
+export function habitLastTouched(h: Habit): number {
+  let t = h.updatedAt;
+  for (const at of Object.values(h.checkedAt)) if (at > t) t = at;
+  return t;
+}
+
+/**
+ * `next` stamped against `prev`: `updatedAt` past the old one if an own field
+ * changed, and `checkedAt[day]` past the old one for every day whose mark
+ * changed (a clear included). Never behind the version being replaced, which
+ * may carry another device's clock — or the merge would hand the change back.
+ * Returns `next` itself when there is nothing to stamp.
+ */
+export function stampHabit(prev: Habit | undefined, next: Habit, now: number): Habit {
+  if (prev === next) return next;
+  let updatedAt = next.updatedAt;
+  if (prev == null || !sameOwn(prev, next)) {
+    updatedAt = Math.max(updatedAt, now, (prev?.updatedAt ?? -Infinity) + 1);
+  } else if (prev.updatedAt > updatedAt) {
+    updatedAt = prev.updatedAt; // an undo restoring old stamps on equal fields
+  }
+  let checkedAt = next.checkedAt;
+  const days = new Set([...Object.keys(next.checks), ...Object.keys(prev?.checks ?? {})]);
+  for (const d of days) {
+    if ((prev?.checks[d] ?? null) === (next.checks[d] ?? null)) continue;
+    const floor = Math.max(prev?.checkedAt[d] ?? -Infinity, next.checkedAt[d] ?? -Infinity) + 1;
+    const stamp = Math.max(now, floor);
+    if (next.checkedAt[d] === stamp) continue;
+    if (checkedAt === next.checkedAt) checkedAt = { ...next.checkedAt };
+    checkedAt[d] = stamp;
+  }
+  if (updatedAt === next.updatedAt && checkedAt === next.checkedAt) return next;
+  return { ...next, updatedAt, checkedAt };
+}
+
+/** One day's mark, set and stamped — the phone's idempotent intent. */
+export function markStamped(h: Habit, date: ISODate, mark: HabitMark | null, now: number): Habit {
+  const marked = withMark(h, date, mark);
+  return marked === h ? h : stampHabit(h, marked, now);
+}
+
+/**
+ * Two copies of one habit, merged: own fields from the newer `updatedAt`, each
+ * day from the newer `checkedAt[day]`. Ties resolve the same way on every
+ * device (by value, never "keep mine"), or two devices would ping-pong.
+ */
+export function mergeHabit(a: Habit, b: Habit, tie: <T>(x: T, y: T) => T): Habit {
+  const fa = habitOwnFields(a);
+  const fb = habitOwnFields(b);
+  const own = a.updatedAt > b.updatedAt ? a : b.updatedAt > a.updatedAt ? b : tie(fa, fb) === fa ? a : b;
+  const checks: Record<ISODate, HabitMark> = {};
+  const checkedAt: Record<ISODate, number> = {};
+  const days = new Set([
+    ...Object.keys(a.checks),
+    ...Object.keys(a.checkedAt),
+    ...Object.keys(b.checks),
+    ...Object.keys(b.checkedAt),
+  ]);
+  for (const d of days) {
+    const sa = a.checkedAt[d] ?? 0;
+    const sb = b.checkedAt[d] ?? 0;
+    const ma = markOn(a, d) ?? "";
+    const mb = markOn(b, d) ?? "";
+    const mark: HabitMark | "" = sa > sb ? ma : sb > sa ? mb : ma >= mb ? ma : mb;
+    if (mark !== "") checks[d] = mark;
+    const at = Math.max(sa, sb);
+    if (at > 0) checkedAt[d] = at;
+  }
+  return {
+    ...own,
+    ...habitOwnFields(own),
+    id: a.id,
+    updatedAt: Math.max(a.updatedAt, b.updatedAt),
+    checks,
+    checkedAt,
+  };
+}
+
 /**
  * The first day the habit is accountable for: the day it was created, or the
  * earliest day marked, whichever is first (backfilling a day before creation

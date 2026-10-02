@@ -14,7 +14,7 @@ import type {
 } from "../types";
 import { ACTION_LOG_LIMIT, MAX_DAY_RECORDS, pruneTombstones } from "../types";
 import { repairRanks } from "../store/placement";
-import { sortHabits } from "../store/habits";
+import { habitLastTouched, mergeHabit, sortHabits } from "../store/habits";
 
 // ─── Two-way merge (per-task last-write-wins) ────────────────────────
 //
@@ -43,10 +43,9 @@ import { sortHabits } from "../store/habits";
 //     wherever it was made, at any depth. (Before v18 the writer's tree shape
 //     won wholesale and the other side's moves were lost.) See mergeTrees.
 //   • Projects and recurrences: newest `updatedAt` wins per id (v18). Habits
-//     too (v19), check-ins included — a whole habit is one record. Two devices
-//     marking the same habit inside one sync window keep only the newer mark;
-//     fine while only the desktop marks habits, and the first thing to change
-//     (per-day stamps) when the phone learns to (docs/habits.md).
+//     (v20) have two clocks: own fields newest `updatedAt` wins, and each
+//     day's check-in newest `checkedAt[day]` wins — so the phone and the
+//     desktop can both mark the same habit and neither loses a day.
 //   • actionLog: UNION by id (append-only on both sides — nobody rewrites it),
 //     newest first and capped, so the history reads as one trail per account.
 
@@ -168,6 +167,17 @@ function mergeOwnFields(base: Task, other: Task | undefined): Task {
  * goes the same way on every device — see laterOfTie). Local order first, then
  * remote-only items in remote order.
  */
+function mergeHabits(a: Habit[], b: Habit[]): Habit[] {
+  const theirs = new Map(b.map((h) => [h.id, h]));
+  const out = a.map((h) => {
+    const other = theirs.get(h.id);
+    return other == null ? h : mergeHabit(h, other, laterOfTie);
+  });
+  const seen = new Set(a.map((h) => h.id));
+  for (const h of b) if (!seen.has(h.id)) out.push(h);
+  return out;
+}
+
 function newestById<T extends { id: string; updatedAt: number }>(a: T[], b: T[]): T[] {
   const theirs = new Map(b.map((x) => [x.id, x]));
   const out = a.map((x) => {
@@ -323,8 +333,13 @@ export function mergeStates(local: AppState, remote: AppState): AppState {
   // editing it does. A RECURRENCE id is judged by the same rule on its own
   // `updatedAt` (v18; older recurrences carry their createdAt).
   const recUpdatedAt = new Map<string, number>();
-  for (const r of [...local.recurrences, ...remote.recurrences, ...local.habits, ...remote.habits]) {
+  for (const r of [...local.recurrences, ...remote.recurrences]) {
     recUpdatedAt.set(r.id, Math.max(recUpdatedAt.get(r.id) ?? -Infinity, r.updatedAt));
+  }
+  // A habit is alive as of its newest stamp, a check-in's included: marking a
+  // day on the phone after the desktop deleted the habit brings it back.
+  for (const h of [...local.habits, ...remote.habits]) {
+    recUpdatedAt.set(h.id, Math.max(recUpdatedAt.get(h.id) ?? -Infinity, habitLastTouched(h)));
   }
   const lastTouched = (slot: Slot | undefined): number =>
     slot == null ? -Infinity : Math.max(slot.node.updatedAt, slot.node.movedAt);
@@ -364,9 +379,7 @@ export function mergeStates(local: AppState, remote: AppState): AppState {
     recurrences: newestById<Recurrence>(local.recurrences, remote.recurrences).filter(
       (r) => !deleted.has(r.id),
     ),
-    habits: sortHabits(
-      newestById<Habit>(local.habits, remote.habits).filter((h) => !deleted.has(h.id)),
-    ),
+    habits: sortHabits(mergeHabits(local.habits, remote.habits).filter((h) => !deleted.has(h.id))),
     trash,
     tombstones,
     log: mergeLog(local.log, remote.log),

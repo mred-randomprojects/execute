@@ -58,7 +58,7 @@ import {
   setProjectForIds,
 } from "./tasks";
 import { normalizeRule } from "./recurrence";
-import { normalizePerWeek, sortHabits, withMark } from "./habits";
+import { normalizePerWeek, sortHabits, stampHabit, withMark } from "./habits";
 import { horizonWords } from "../selectors";
 import { todayISO } from "./dates";
 import { coerceState, loadRaw, saveRaw } from "./persistence";
@@ -360,12 +360,25 @@ function stampChanged<T extends { id: string; updatedAt: number }>(
   return changed ? out : next;
 }
 
+/** Habits carry two clocks — own fields and per-day check-ins (store/habits). */
+function stampHabits(prev: readonly Habit[], next: Habit[], now: number): Habit[] {
+  if (next === prev) return next;
+  const before = new Map(prev.map((h) => [h.id, h]));
+  let changed = false;
+  const out = next.map((h) => {
+    const stamped = stampHabit(before.get(h.id), h, now);
+    if (stamped !== h) changed = true;
+    return stamped;
+  });
+  return changed ? out : next;
+}
+
 function withSyncStamps(prev: AppState, next: AppState): AppState {
   const now = Date.now();
   const tasks = placeTasks(prev.tasks, next.tasks, now);
   const projects = stampChanged(prev.projects, next.projects, now);
   const recurrences = stampChanged(prev.recurrences, next.recurrences, now);
-  const habits = stampChanged(prev.habits, next.habits, now);
+  const habits = stampHabits(prev.habits, next.habits, now);
   if (
     tasks === next.tasks &&
     projects === next.projects &&
@@ -1646,6 +1659,7 @@ export function createHabit(name: string, perWeek = 7): HabitId {
     cue: "",
     perWeek: normalizePerWeek(perWeek),
     checks: {},
+    checkedAt: {},
     archivedAt: null,
     createdAt: now,
     updatedAt: now,
