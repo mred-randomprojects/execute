@@ -95,6 +95,7 @@ type DeviceField =
   | "dailyCapacityBlocks"
   | "boardPreferred"
   | "wrapAll"
+  | "hideCompleted"
   | "commandUsage"
   | "actionLog"
   | "presence";
@@ -301,6 +302,7 @@ export function fromDocs(raw: RawDocs, base: AppState): AppState {
     dailyCapacityBlocks: base.dailyCapacityBlocks,
     boardPreferred: base.boardPreferred,
     wrapAll: base.wrapAll,
+    hideCompleted: base.hideCompleted,
     commandUsage: base.commandUsage,
     actionLog: base.actionLog,
     presence: base.presence,

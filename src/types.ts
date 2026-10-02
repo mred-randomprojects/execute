@@ -564,6 +564,12 @@ export interface AppState {
    */
   wrapAll: boolean;
   /**
+   * Hide completed and won't-do tasks from the task views. Was component
+   * state, so every launch quietly turned it back off. A per-device
+   * preference; writer wins on cloud merge.
+   */
+  hideCompleted: boolean;
+  /**
    * Command-palette usage stats keyed by command id — the memory behind its
    * frecency ranking (see {@link CommandUsage}). Empty until the first palette
    * run. A per-device preference; writer wins on cloud merge.
@@ -641,6 +647,7 @@ export function emptyState(): AppState {
     dailyCapacityBlocks: DEFAULT_CAPACITY_BLOCKS,
     boardPreferred: false,
     wrapAll: false,
+    hideCompleted: false,
     commandUsage: {},
     actionLog: [],
     presence: defaultPresence(),

@@ -1990,6 +1990,28 @@ describe("Hide completed", () => {
     expect(await screen.findByText("finish me")).toBeTruthy();
   });
 
+  it("stays hidden across a relaunch", async () => {
+    render(<App />);
+    await addTask("keep me");
+    await addTask("finish me");
+    blurActive();
+    fireEvent.keyDown(document.body, { key: "Enter", metaKey: true }); // complete "finish me"
+    await runCommand(CMD.hideCompleted);
+    await waitFor(() => expect(screen.queryByText("finish me")).toBeNull());
+    expect(getState().hideCompleted).toBe(true);
+
+    // Quit and reopen: wait for the debounced save, then load from disk again.
+    cleanup();
+    await waitFor(() =>
+      expect(JSON.parse(localStorage.getItem("execute-store") ?? "{}").hideCompleted).toBe(true),
+    );
+    await initStore();
+    render(<App />);
+    expect(await screen.findByText("keep me")).toBeTruthy();
+    expect(screen.queryByText("finish me")).toBeNull();
+    expect(screen.getByText(/resolved hidden/)).toBeTruthy();
+  });
+
   it("h hides won't-do tasks too — both are resolved states", async () => {
     render(<App />);
     await addTask("keep me");

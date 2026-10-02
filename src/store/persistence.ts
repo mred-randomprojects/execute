@@ -525,6 +525,8 @@ export function coerceState(raw: unknown): AppState {
     boardPreferred: bool(raw.boardPreferred, false),
     // Wrap-all view preference. Absent in older data → off.
     wrapAll: bool(raw.wrapAll, false),
+    // Absent in older data → shown, as the in-memory default always was.
+    hideCompleted: bool(raw.hideCompleted, false),
     // v9: command-palette frecency memory. Pre-v9 → no learned rankings.
     commandUsage: coerceCommandUsage(raw.commandUsage),
     // v11: the action history. Pre-v11 data has none → the log starts here.

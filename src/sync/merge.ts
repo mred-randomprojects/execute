@@ -390,6 +390,7 @@ export function mergeStates(local: AppState, remote: AppState): AppState {
     dailyCapacityBlocks: local.dailyCapacityBlocks, // writer wins (a per-device setting)
     boardPreferred: local.boardPreferred, // writer wins (a per-device preference)
     wrapAll: local.wrapAll, // writer wins (a per-device preference)
+    hideCompleted: local.hideCompleted, // writer wins (a per-device preference)
     commandUsage: local.commandUsage, // writer wins (per-device palette rankings)
     actionLog: mergeActionLog(local.actionLog, remote.actionLog),
     presence: local.presence, // writer wins (a menu bar / login item is per-machine)

@@ -49,6 +49,7 @@ function state(over: Partial<AppState> = {}): AppState {
     dailyCapacityBlocks: 12,
     boardPreferred: false,
     wrapAll: false,
+    hideCompleted: false,
     commandUsage: {},
     actionLog: [],
     presence: defaultPresence(),

@@ -707,6 +707,11 @@ export function setWrapAll(on: boolean): void {
   update((s) => ({ ...s, wrapAll: on }), null);
 }
 
+/** Hide (or show) completed and won't-do tasks. A view preference, not undoable. */
+export function setHideCompleted(on: boolean): void {
+  update((s) => (s.hideCompleted === on ? s : { ...s, hideCompleted: on }), null);
+}
+
 /**
  * Change how present the app is when its window isn't (menu bar, login item,
  * nudges). A per-device preference like the theme — not undoable, and writer-wins

@@ -55,6 +55,7 @@ import {
   restoreFromTrash,
   setBoardPreferred,
   setWrapAll,
+  setHideCompleted,
   setCompleted,
   setCompletedMany,
   setCurrentTask,
@@ -279,7 +280,8 @@ export function App() {
   const [collapsed, setCollapsed] = useState<Set<TaskId>>(new Set());
   const [collapsedProjects, setCollapsedProjects] = useState<Set<ProjectId>>(new Set());
   const [zoom, setZoom] = useState<ZoomTarget | null>(null);
-  const [hideCompleted, setHideCompleted] = useState(false);
+  // Persisted (per device) — it used to reset on every launch.
+  const hideCompleted = state.hideCompleted;
   // Bumped on a keyboard reorder so the focused row scrolls back into view.
   const [scrollTick, setScrollTick] = useState(0);
   const bumpScroll = () => setScrollTick((n) => n + 1);
@@ -1751,7 +1753,7 @@ export function App() {
       else if (focusedTaskId != null) zoomInto({ kind: "task", id: focusedTaskId });
     },
     captureFocus: () => captureRef.current?.focus(),
-    toggleHideCompleted: () => setHideCompleted((v) => !v),
+    toggleHideCompleted: () => setHideCompleted(!hideCompleted),
     helpToggle: () => setShowHelp((v) => !v),
     paletteOpen: () => setShowPalette(true),
     scheduleOpen: () => {
