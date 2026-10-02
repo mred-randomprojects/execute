@@ -5,6 +5,7 @@ import { App } from "./App";
 import {
   addChild,
   addTaskAfter,
+  createHabit,
   createProject,
   getState,
   initStore,
@@ -2762,5 +2763,88 @@ describe("Habits", () => {
     expect(await screen.findByText("Delete this habit?")).toBeTruthy();
     fireEvent.keyDown(screen.getByText("Delete habit"), { key: "Enter" });
     await waitFor(() => expect(getState().habits).toEqual([]));
+  });
+});
+
+describe("Not forgetting to log habits", () => {
+  const today = () => todayISO(getState().devDateOverride);
+  const mark = (name: string, date: string) => getState().habits.find((h) => h.name === name)?.checks[date];
+  /** Mount, wait for the store, then seed — App reloads the store on mount. */
+  const mount = async (seed: () => void) => {
+    render(<App />);
+    await screen.findByPlaceholderText("Add a task for today…");
+    act(seed);
+  };
+
+  it("shutdown ends with today's habits: y / r / x, the cursor walking on by itself", async () => {
+    await mount(() => {
+      createHabit("Meditate");
+      createHabit("Run");
+      createHabit("Read");
+    });
+    await runCommand(CMD.shutdown);
+    expect(await screen.findByText("One more thing")).toBeTruthy();
+
+    // Same-millisecond habits sort by id, so read the order the list shows.
+    const [first, second, third] = getState().habits.map((h) => h.name);
+    fireEvent.keyDown(document.body, { key: "y" });
+    fireEvent.keyDown(document.body, { key: "r" });
+    fireEvent.keyDown(document.body, { key: "x" });
+    await waitFor(() => expect(mark(third, today())).toBe("missed"));
+    expect(mark(first, today())).toBe("done");
+    expect(mark(second, today())).toBe("skip");
+    expect(await screen.findByText("The day is closed.")).toBeTruthy();
+    expect(getState().tasks).toEqual([]);
+  });
+
+  it("habits wait until the tasks are settled", async () => {
+    await mount(() => createHabit("Meditate"));
+    await addTask("finish the deck");
+    await runCommand(CMD.shutdown);
+    expect(await screen.findByText("Close the day")).toBeTruthy();
+    fireEvent.keyDown(document.body, { key: "y" });
+    expect(mark("Meditate", today())).toBeUndefined();
+    fireEvent.keyDown(document.body, { key: "e" }); // the task: done
+    expect(await screen.findByText("One more thing")).toBeTruthy();
+    fireEvent.keyDown(document.body, { key: "y" });
+    await waitFor(() => expect(mark("Meditate", today())).toBe("done"));
+  });
+
+  it("the morning band asks about yesterday, and the panel answers it", async () => {
+    await mount(() => {
+      createHabit("Stretch");
+      setDevDateOverride(addDays(todayISO(null), 2)); // yesterday is now inside the habit's life
+    });
+    const band = await screen.findByText("Yesterday’s habits?");
+    fireEvent.click(band);
+    const dialog = await screen.findByRole("dialog", { name: "Yesterday’s habits" });
+    fireEvent.keyDown(dialog, { key: "y" });
+    const yesterday = addDays(today(), -1);
+    await waitFor(() => expect(mark("Stretch", yesterday)).toBe("done"));
+    fireEvent.keyDown(dialog, { key: "Enter" }); // all logged → close
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Yesterday’s habits" })).toBeNull());
+    expect(screen.queryByText("Yesterday’s habits?")).toBeNull();
+  });
+
+  it("the band can be put away for the day without answering", async () => {
+    await mount(() => {
+      createHabit("Stretch");
+      setDevDateOverride(addDays(todayISO(null), 2));
+    });
+    await screen.findByText("Yesterday’s habits?");
+    fireEvent.click(screen.getByLabelText("Not now"));
+    await waitFor(() => expect(screen.queryByText("Yesterday’s habits?")).toBeNull());
+    expect(localStorage.getItem("execute.habitPromptDismissed")).toBe(addDays(today(), -1));
+  });
+
+  it("checks in from ⌘k anywhere, and from the strip on Today", async () => {
+    await mount(() => {
+      createHabit("Meditate");
+      createHabit("Floss");
+    });
+    await runCommand(/^Check in: Meditate \(today\)$/);
+    await waitFor(() => expect(mark("Meditate", today())).toBe("done"));
+    fireEvent.click(screen.getByTitle("Check in Floss for today"));
+    await waitFor(() => expect(mark("Floss", today())).toBe("done"));
   });
 });

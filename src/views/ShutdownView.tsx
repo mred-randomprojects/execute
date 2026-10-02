@@ -1,4 +1,6 @@
-import type { ISODate, Project, Task, TaskId } from "../types";
+import type { Habit, HabitId, HabitMark, ISODate, Project, Task, TaskId } from "../types";
+import { HabitCheckList } from "../components/HabitCheckList";
+import { markOn } from "../store/habits";
 import type { DayTally } from "../selectors";
 import { ActionChip } from "../components/ActionChip";
 import { BreakdownPanel } from "../components/BreakdownPanel";
@@ -42,6 +44,12 @@ export function ShutdownView({
   onAddStep,
   onFinishBreakdown,
   onExit,
+  habits = [],
+  habitDate,
+  habitCursorId = null,
+  habitPhase = false,
+  onHabitSelect = () => {},
+  onHabitAnswer = () => {},
 }: {
   /** Today's still-unresolved commitments, in tree order. */
   open: Task[];
@@ -65,6 +73,18 @@ export function ShutdownView({
   onAddStep: (parentId: TaskId, text: string) => void;
   onFinishBreakdown: () => void;
   onExit: () => void;
+  /**
+   * Today's habits, the last step: asked once the tasks are settled. Logging at
+   * a fixed moment is what keeps a habit log honest — "did I meditate?" is easy
+   * to answer at six and guesswork three days later.
+   */
+  habits?: Habit[];
+  habitDate?: ISODate;
+  habitCursorId?: HabitId | null;
+  /** The keys (y / r / x, ↑ / ↓) are on the habits now. */
+  habitPhase?: boolean;
+  onHabitSelect?: (id: HabitId) => void;
+  onHabitAnswer?: (id: HabitId, mark: HabitMark) => void;
 }) {
   if (breakdownTask != null) {
     return (
@@ -81,6 +101,25 @@ export function ShutdownView({
   }
 
   const resolved = tally.done + tally.skipped;
+  const date = habitDate ?? tomorrow;
+  const habitsLeft = habits.filter((h) => markOn(h, date) == null).length;
+  const habitSection =
+    habits.length === 0 ? null : (
+      <section className={open.length === 0 ? "" : "mt-6 border-t border-line pt-4"}>
+        <div className="eyebrow mb-2 px-3">
+          Habits today
+          {habitsLeft > 0 && open.length > 0 && " — once the tasks are settled"}
+        </div>
+        <HabitCheckList
+          habits={habits}
+          date={date}
+          cursorId={habitCursorId}
+          interactive={habitPhase}
+          onSelect={onHabitSelect}
+          onAnswer={onHabitAnswer}
+        />
+      </section>
+    );
 
   return (
     <div className="mx-auto flex h-full w-full max-w-3xl flex-col px-10 py-10">
@@ -88,10 +127,16 @@ export function ShutdownView({
         <div>
           <div className="eyebrow mb-1.5 text-accent">Shutdown</div>
           <h1 className="font-serif text-[32px] font-medium leading-none tracking-tight text-ink">
-            {open.length === 0 ? "The day is closed." : "Close the day"}
+            {open.length > 0 ? "Close the day" : habitsLeft > 0 ? "One more thing" : "The day is closed."}
           </h1>
           <p className="mt-2 max-w-xl text-[14px] text-ink-soft">
-            {open.length === 0 ? (
+            {open.length === 0 && habitsLeft > 0 ? (
+              <>
+                The tasks are settled. Your habits: did each one happen today?{" "}
+                <span className="kbd">y</span> did it · <span className="kbd">r</span> rest day ·{" "}
+                <span className="kbd">x</span> not today.
+              </>
+            ) : open.length === 0 ? (
               <>
                 {tally.done} finished
                 {tally.skipped > 0 && `, ${tally.skipped} deliberately not`}. Nothing
@@ -119,11 +164,16 @@ export function ShutdownView({
       </header>
 
       {open.length === 0 ? (
-        <div className="rounded-lg border border-good/30 bg-good-soft px-6 py-10 text-center">
-          <p className="font-serif text-[22px] text-ink">Nothing left to decide.</p>
-          <p className="mt-2 text-[13px] text-ink-soft">
-            Press <span className="kbd">esc</span> and stop working.
-          </p>
+        <div className="flex flex-1 flex-col overflow-auto">
+          {habitsLeft === 0 && (
+            <div className="mb-6 rounded-lg border border-good/30 bg-good-soft px-6 py-10 text-center">
+              <p className="font-serif text-[22px] text-ink">Nothing left to decide.</p>
+              <p className="mt-2 text-[13px] text-ink-soft">
+                Press <span className="kbd">esc</span> and stop working.
+              </p>
+            </div>
+          )}
+          {habitSection}
         </div>
       ) : (
         <div className="flex flex-1 flex-col overflow-auto">
@@ -201,6 +251,7 @@ export function ShutdownView({
               <ActionChip label="Carry to tomorrow" hint="⇧T" tone="today" onClick={onCarryAll} />
             </div>
           )}
+          {habitSection}
         </div>
       )}
     </div>

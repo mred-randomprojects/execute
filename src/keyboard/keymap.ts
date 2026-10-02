@@ -101,6 +101,9 @@ export const keymap: KeyBinding[] = [
   { key: "s", action: "shut.postpone", context: "shutdown", displayKey: "s", description: "postpone — name the day", section: "Shutdown" },
   { key: "w", action: "shut.wontDo", context: "shutdown", displayKey: "w", description: "won’t do — a decision, not a failure", section: "Shutdown" },
   { key: "d", action: "shut.drop", context: "shutdown", displayKey: "d", description: "drop it", section: "Shutdown", noRepeat: true },
+  { key: "y", action: "shut.habitDone", context: "shutdown", displayKey: "y / r / x", description: "habits (once the tasks are settled): did it · rest day · not today", section: "Shutdown" },
+  { key: "r", action: "shut.habitRest", context: "shutdown" },
+  { key: "x", action: "shut.habitNo", context: "shutdown" },
   { key: "T", action: "shut.carryAll", context: "shutdown", displayKey: "⇧ t", description: "carry everything left to tomorrow", section: "Shutdown" },
 
   // ── reckoning gate ────────────────────────────────────────────────

@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import type { RefObject } from "react";
 import type {
+  Habit,
+  HabitId,
   ISODate,
   OutlineId,
   Project,
@@ -42,6 +44,66 @@ import type { Run } from "../store/streak";
 import { Donut } from "../components/Donut";
 import { formatMinutes } from "../store/estimate";
 import { NO_SPELLCHECK } from "../ui/noSpellcheck";
+import { markOn } from "../store/habits";
+
+/**
+ * Habits beside the day's commitments without being any: one chip each,
+ * click to check in. Only the ones still in play today (habitsToLog) — a
+ * weekly habit whose target is met stays out of the way.
+ */
+function HabitStrip({
+  habits,
+  today,
+  onToggle,
+  onOpen,
+}: {
+  habits: Habit[];
+  today: ISODate;
+  onToggle: (id: HabitId) => void;
+  onOpen: () => void;
+}) {
+  return (
+    <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
+      <button
+        type="button"
+        tabIndex={-1}
+        onClick={onOpen}
+        className="eyebrow mr-1 hover:text-ink"
+        title="Go to Habits (6)"
+      >
+        Habits
+      </button>
+      {habits.map((h) => {
+        const mark = markOn(h, today);
+        const done = mark === "done";
+        return (
+          <button
+            key={h.id}
+            type="button"
+            tabIndex={-1}
+            aria-pressed={done}
+            onClick={(e) => {
+              e.currentTarget.blur();
+              onToggle(h.id);
+            }}
+            title={done ? "Done today — click to undo" : `Check in ${h.name || "habit"} for today`}
+            className={[
+              "flex items-center gap-1.5 rounded-full border px-2.5 py-[3px] text-[12px] transition-colors",
+              done
+                ? "border-accent/50 bg-accent-soft text-accent"
+                : mark != null
+                  ? "border-line text-ink-faint"
+                  : "border-line-strong text-ink-soft hover:border-accent/60 hover:text-ink",
+            ].join(" ")}
+          >
+            <span aria-hidden="true">{done ? "✓" : mark === "skip" ? "–" : mark === "missed" ? "×" : "○"}</span>
+            <span className="max-w-[160px] truncate">{h.name || "Untitled habit"}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
 
 const TITLES = VIEW_TITLES;
 
@@ -658,6 +720,8 @@ export function OutlineView({
   capacity,
   closingTime,
   onShutdown,
+  habitPrompt = null,
+  habitStrip = null,
   captureRef,
   onAdd,
   onCaptureArrowDown,
@@ -707,6 +771,10 @@ export function OutlineView({
   /** Past the evening hour with work still open — offer the shutdown ritual. */
   closingTime: boolean;
   onShutdown: () => void;
+  /** Habits left unlogged yesterday — the morning band. Null = nothing to ask. */
+  habitPrompt?: { names: string[]; onOpen: () => void; onDismiss: () => void } | null;
+  /** Today's habits as one-click check-ins under the header (Today tab only). */
+  habitStrip?: { habits: Habit[]; today: ISODate; onToggle: (id: HabitId) => void; onOpen: () => void } | null;
   captureRef: RefObject<HTMLInputElement>;
   onAdd: (raw: string) => void;
   onCaptureArrowDown: () => void;
@@ -767,6 +835,9 @@ export function OutlineView({
           <p className="mt-2 text-[14px] text-ink-soft">
             <Subtitle view={view} period={period} progress={progress} />
           </p>
+          {view === "today" && period === "today" && habitStrip != null && habitStrip.habits.length > 0 && (
+            <HabitStrip {...habitStrip} />
+          )}
         </header>
       )}
 
@@ -828,6 +899,30 @@ export function OutlineView({
         </div>
       )}
 
+      {zoom == null && view === "today" && period === "today" && habitPrompt != null && (
+        // Yesterday's unlogged habits. A band, never a gate: one click (or ⌘k
+        // "Log habits") answers them, × puts it away until tomorrow.
+        <div className="mb-4 flex w-full items-center gap-3 rounded border border-line bg-surface px-4 py-2.5">
+          <button onClick={habitPrompt.onOpen} className="min-w-0 flex-1 truncate text-left text-[13px] text-ink">
+            <span className="font-medium">Yesterday’s habits?</span>{" "}
+            <span className="text-ink-soft">
+              {habitPrompt.names.length === 1 ? "1 not logged" : `${habitPrompt.names.length} not logged`}:{" "}
+              {habitPrompt.names.join(", ")}
+            </span>
+          </button>
+          <button onClick={habitPrompt.onOpen} className="kbd shrink-0" title="Log them">
+            log
+          </button>
+          <button
+            onClick={habitPrompt.onDismiss}
+            aria-label="Not now"
+            title="Not now — leave them unlogged"
+            className="shrink-0 px-1 text-[14px] leading-none text-ink-faint hover:text-ink"
+          >
+            ×
+          </button>
+        </div>
+      )}
       {/* The in-app twin of the evening notification, for when notifications are
           off — or there's no desktop shell at all (the web companion). */}
       {zoom == null && view === "today" && period === "today" && closingTime && (

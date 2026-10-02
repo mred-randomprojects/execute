@@ -27,6 +27,14 @@ const SHUTDOWN_HINTS: Array<[string, string]> = [
   ["esc", "leave"],
 ];
 
+const SHUTDOWN_HABIT_HINTS: Array<[string, string]> = [
+  ["↑ / ↓", "select"],
+  ["y", "did it"],
+  ["r", "rest day"],
+  ["x", "not today"],
+  ["esc", "leave"],
+];
+
 const HABITS_HINTS: Array<[string, string]> = [
   ["↑ / ↓", "move"],
   ["← / →", "pick a day"],
@@ -42,15 +50,20 @@ export function StatusBar({
   reckoning,
   shutdown,
   habits = false,
+  shutdownHabits = false,
 }: {
   reckoning: boolean;
   shutdown: boolean;
   habits?: boolean;
+  /** Shutdown has reached its habit step. */
+  shutdownHabits?: boolean;
 }) {
   const hints = reckoning
     ? RECKONING_HINTS
     : shutdown
-      ? SHUTDOWN_HINTS
+      ? shutdownHabits
+        ? SHUTDOWN_HABIT_HINTS
+        : SHUTDOWN_HINTS
       : habits
         ? HABITS_HINTS
         : NORMAL_HINTS;

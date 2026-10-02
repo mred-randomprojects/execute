@@ -97,7 +97,11 @@ import {
   toggleHabitSkip,
   type PostponeTarget,
 } from "./store/store";
-import { cadenceLabel, parseHabitName, pendingToday } from "./store/habits";
+import { cadenceLabel, habitsToLog, parseHabitName, pendingOn, withMark } from "./store/habits";
+import { HabitLogPanel, nextUnanswered } from "./components/HabitCheckList";
+
+/** Per device: the last "yesterday" whose unlogged-habits band was dismissed. */
+const HABIT_PROMPT_KEY = "execute.habitPromptDismissed";
 import { findById, findParentId, getAncestorPath, isOpen, walk } from "./store/tasks";
 import {
   addDays,
@@ -169,7 +173,7 @@ import {
 import { keymap } from "./keyboard/keymap";
 import { useKeyboard } from "./keyboard/useKeyboard";
 import type { ContextState } from "./keyboard/types";
-import type { HabitId } from "./types";
+import type { HabitId, HabitMark, ISODate } from "./types";
 import { EditorProvider, type Editor } from "./ui/editor";
 import { copyText } from "./ui/clipboard";
 import { Sidebar } from "./components/Sidebar";
@@ -711,13 +715,81 @@ export function App() {
   // than either. It reviews exactly what the Reckoning would catch tomorrow.
   const shutdownActive = shutdownOpen && !reckoningActive;
   const shutdownBreakdownTask = shutdownActive ? breakdownTask : null;
+  // Habits still unanswered for today — the sidebar badge, the shutdown step,
+  // the closing-time banner and the evening nudge all count the same thing.
+  const habitsLeftToday = useMemo(
+    () => state.habits.filter((h) => pendingOn(h, today)),
+    [state.habits, today]
+  );
+  const habitsPending = habitsLeftToday.length;
   // Past the evening hour with work still open — the in-app twin of the nudge,
   // for when notifications are off (or there's no desktop shell at all).
   const closingTime =
     !shutdownActive &&
     !reckoningActive &&
-    tally.open > 0 &&
+    (tally.open > 0 || habitsPending > 0) &&
     new Date().getHours() >= state.presence.eveningHour;
+  // The morning half: habits nobody answered yesterday (no shutdown that
+  // night). A dismissible band on Today, and a small panel to answer them —
+  // never a gate. Dismissal is per device and per day.
+  const yesterday = addDays(today, -1);
+  const [habitLogDate, setHabitLogDate] = useState<ISODate | null>(null);
+  const [habitPromptDismissed, setHabitPromptDismissed] = useState<string | null>(() => {
+    try {
+      return localStorage.getItem(HABIT_PROMPT_KEY);
+    } catch {
+      return null;
+    }
+  });
+  const yesterdayUnlogged = useMemo(
+    () => state.habits.filter((h) => pendingOn(h, yesterday)),
+    [state.habits, yesterday]
+  );
+  const dismissHabitPrompt = () => {
+    setHabitPromptDismissed(yesterday);
+    try {
+      localStorage.setItem(HABIT_PROMPT_KEY, yesterday);
+    } catch {
+      /* private window etc. — the band just comes back next launch */
+    }
+  };
+  // Today's habits still in play (pending, or already answered today) — the
+  // strip under Today's header and the ⌘k check-ins.
+  const habitsTodayList = useMemo(() => habitsToLog(state.habits, today), [state.habits, today]);
+  const habitPrompt =
+    yesterdayUnlogged.length > 0 && habitPromptDismissed !== yesterday
+      ? {
+          names: yesterdayUnlogged.map((h) => h.name || "Untitled habit"),
+          onOpen: () => setHabitLogDate(yesterday),
+          onDismiss: dismissHabitPrompt,
+        }
+      : null;
+
+  // Shutdown's last step: today's habits, once the tasks are settled. The list
+  // keeps answered rows (habitsToLog) so an answer doesn't pull the row away.
+  const shutHabits = useMemo(
+    () => (shutdownActive ? habitsToLog(state.habits, today) : []),
+    [shutdownActive, state.habits, today]
+  );
+  const shutHabitPhase = shutdownActive && todayOpenLeaves.length === 0 && shutHabits.length > 0;
+  const [shutHabitCursorId, setShutHabitCursorId] = useState<HabitId | null>(null);
+  useEffect(() => {
+    if (!shutHabitPhase) {
+      if (shutHabitCursorId !== null) setShutHabitCursorId(null);
+      return;
+    }
+    if (shutHabitCursorId === null || !shutHabits.some((h) => h.id === shutHabitCursorId)) {
+      setShutHabitCursorId(nextUnanswered(shutHabits, today, null) ?? shutHabits[0]?.id ?? null);
+    }
+  }, [shutHabitPhase, shutHabits, shutHabitCursorId, today]);
+  const answerShutHabit = (id: HabitId | null, mark: HabitMark) => {
+    const h = shutHabits.find((x) => x.id === id);
+    if (h == null) return;
+    const next = h.checks[today] === mark ? null : mark;
+    markHabit(h.id, today, next);
+    const after = shutHabits.map((x) => (x.id === h.id ? withMark(x, today, next) : x));
+    setShutHabitCursorId(nextUnanswered(after, today, h.id) ?? h.id);
+  };
   useEffect(() => {
     if (!shutdownActive) {
       if (shutCursorId !== null) setShutCursorId(null);
@@ -764,10 +836,6 @@ export function App() {
       ...state.habits.filter((h) => h.archivedAt != null),
     ],
     [state.habits]
-  );
-  const habitsPending = useMemo(
-    () => state.habits.filter((h) => pendingToday(h, today)).length,
-    [state.habits, today]
   );
   useEffect(() => {
     const ids = habitList.map((h) => h.id);
@@ -827,9 +895,9 @@ export function App() {
   useEffect(() => {
     if (!ready) return;
     void window.execute?.updatePresence?.(
-      presenceSnapshot(state.presence, todayOpenLeaves)
+      presenceSnapshot(state.presence, todayOpenLeaves, habitsLeftToday)
     );
-  }, [ready, state.presence, todayOpenLeaves]);
+  }, [ready, state.presence, todayOpenLeaves, habitsLeftToday]);
   // The global capture shortcut lands here: the window is already shown by the
   // main process, all that's left is to put the cursor where a thought can go.
   useEffect(() => window.execute?.onFocusCapture?.(() => captureRef.current?.focus()), []);
@@ -1323,6 +1391,12 @@ export function App() {
     setPlanCursorId(ids[i + 1] ?? ids[i - 1] ?? null);
   };
   const moveShutCursor = (dir: "up" | "down") => {
+    if (shutHabitPhase) {
+      const i = shutHabits.findIndex((h) => h.id === shutHabitCursorId);
+      const next = shutHabits[Math.min(Math.max(i + (dir === "down" ? 1 : -1), 0), shutHabits.length - 1)];
+      if (next != null) setShutHabitCursorId(next.id);
+      return;
+    }
     const ids = todayOpenLeaves.map((t) => t.id);
     if (ids.length === 0) return;
     const i = shutCursorId == null ? -1 : ids.indexOf(shutCursorId);
@@ -1704,6 +1778,7 @@ export function App() {
     periodPrev: () => stepPeriodTab(-1),
     dismiss: () => {
       if (confirm != null) setConfirm(null);
+      else if (habitLogDate != null) setHabitLogDate(null);
       else if (repeatTarget != null) setRepeatTarget(null);
       else if (showHelp) setShowHelp(false);
       else if (showHistory) setShowHistory(false);
@@ -2025,7 +2100,8 @@ export function App() {
     showEstimate,
     showCalendar,
     showRepeat: repeatTarget != null,
-    showConfirm: confirm != null,
+    // The habit log panel is modal like a confirm: nothing fires beneath it.
+    showConfirm: confirm != null || habitLogDate != null,
     reckoningActive,
     boardMode,
     shutdownActive,
@@ -2113,6 +2189,9 @@ export function App() {
     "shut.drop": () => cmd.shutDrop(),
     "shut.breakdown": () => cmd.shutBreakdown(),
     "shut.carryAll": cmd.shutCarryAll,
+    "shut.habitDone": () => shutHabitPhase && answerShutHabit(shutHabitCursorId, "done"),
+    "shut.habitRest": () => shutHabitPhase && answerShutHabit(shutHabitCursorId, "skip"),
+    "shut.habitNo": () => shutHabitPhase && answerShutHabit(shutHabitCursorId, "missed"),
     "reck.dropAll": () => {
       const c = currentReckCard();
       if (c != null) cmd.reckDropAll(c);
@@ -2613,6 +2692,32 @@ export function App() {
       },
     },
     ...habitCommands(),
+    // Check in from anywhere: "check med" → ✓ Meditate, without visiting the view.
+    ...habitsTodayList.map((h): Command => ({
+      id: `habit-checkin:${h.id}`,
+      label:
+        h.checks[today] === "done"
+          ? `Undo today’s check-in: ${h.name || "Untitled habit"}`
+          : `Check in: ${h.name || "Untitled habit"} (today)`,
+      aliases: ["habit", "check in", "did", "done"],
+      run: () => toggleHabitDone(h.id, today),
+    })),
+    ...(habitsTodayList.length > 0
+      ? [{
+          id: "habit-log-today",
+          label: "Log habits: today…",
+          aliases: ["habits", "log habits", "check in", "did i"],
+          run: () => setHabitLogDate(today),
+        }]
+      : []),
+    ...(habitsToLog(state.habits, yesterday).length > 0
+      ? [{
+          id: "habit-log-yesterday",
+          label: "Log habits: yesterday…",
+          aliases: ["habits", "log habits", "yesterday", "backfill"],
+          run: () => setHabitLogDate(yesterday),
+        }]
+      : []),
     { id: "new", label: "New task", hint: "n", run: cmd.taskNew },
     { id: "details", label: "Open details panel", hint: "→", run: openPanel },
     { id: "peek", label: "Peek: unwrap task in place", aliases: ["preview"], hint: "p", run: cmd.taskPeek },
@@ -3012,6 +3117,12 @@ export function App() {
                 onDrop={cmd.shutDrop}
                 onStartBreakdown={cmd.shutBreakdown}
                 onCarryAll={cmd.shutCarryAll}
+                habits={shutHabits}
+                habitDate={today}
+                habitCursorId={shutHabitCursorId}
+                habitPhase={shutHabitPhase}
+                onHabitSelect={setShutHabitCursorId}
+                onHabitAnswer={answerShutHabit}
                 onAddStep={(parentId, text) =>
                   addChild(parentId, parseCapture(text).text, tomorrow)
                 }
@@ -3128,6 +3239,13 @@ export function App() {
                   capacity={capacity}
                   closingTime={closingTime}
                   onShutdown={cmd.shutOpen}
+                  habitPrompt={habitPrompt}
+                  habitStrip={{
+                    habits: habitsTodayList,
+                    today,
+                    onToggle: (id) => toggleHabitDone(id, today),
+                    onOpen: cmd.gotoView("habits"),
+                  }}
                   captureRef={captureRef}
                   onAdd={onCapture}
                   onCaptureArrowDown={() => flatIds[0] != null && setFocus(flatIds[0])}
@@ -3161,7 +3279,7 @@ export function App() {
             />
           )}
         </div>
-        <StatusBar reckoning={reckoningActive} shutdown={shutdownActive} habits={habitsActive} />
+        <StatusBar reckoning={reckoningActive} shutdown={shutdownActive} habits={habitsActive} shutdownHabits={shutHabitPhase} />
       </main>
 
       {showHelp && <HelpOverlay onClose={() => setShowHelp(false)} />}
@@ -3301,6 +3419,21 @@ export function App() {
           current={state.recurrences.find((r) => r.id === repeatTarget.recId)?.rule ?? null}
           onPick={(rule) => setRecurrenceRule(repeatTarget.recId, rule)}
           onClose={() => setRepeatTarget(null)}
+        />
+      )}
+      {habitLogDate != null && (
+        <HabitLogPanel
+          habits={habitsToLog(state.habits, habitLogDate)}
+          date={habitLogDate}
+          title={
+            habitLogDate === today
+              ? "Today’s habits"
+              : habitLogDate === yesterday
+                ? "Yesterday’s habits"
+                : `Habits · ${habitLogDate}`
+          }
+          onAnswer={(id, mark) => markHabit(id, habitLogDate, mark)}
+          onClose={() => setHabitLogDate(null)}
         />
       )}
       {confirm != null && (
