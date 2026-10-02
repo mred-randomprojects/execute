@@ -268,18 +268,29 @@ let presence = {
   remaining: 0,
   /** Titles of what's still open today, for the nudges — never more than a few. */
   titles: [],
-  /** Habits unanswered today — folded into the evening nudge, never the count. */
+  /** Habits unanswered today — folded into the shutdown nudge, never the count. */
   habitsLeft: 0,
   habitNames: [],
   tray: true,
   openAtLogin: false,
   nudges: true,
   morningHour: 9,
-  eveningHour: 18,
+  // When the day gets closed, per kind of day ("HH:MM" + a switch each).
+  shutdownWeekdayAt: "18:00",
+  shutdownWeekdayOn: true,
+  shutdownWeekendAt: "18:00",
+  shutdownWeekendOn: true,
 };
+/**
+ * How long after the shutdown time its notification may still fire — a Mac
+ * that wakes at 14:40 still hears about a 14:15 shutdown, one that wakes at
+ * 19:00 doesn't get a stale one. (The ritual itself stays a click away in the
+ * menu bar either way.)
+ */
+const SHUTDOWN_WINDOW_MIN = 90;
 // Which nudges today has already spent. Reset when the local date rolls over, so
 // a machine left running for a week still gets one morning nudge per morning.
-let nudgedOn = { date: null, morning: false, evening: false };
+let nudgedOn = { date: null, morning: false, shutdown: false };
 let nudgeTimer = null;
 
 function localDateISO(d) {
@@ -353,6 +364,9 @@ function updateTray() {
       { type: "separator" },
       { label: "Open Execute", click: showMainWindow },
       { label: "Capture a task…", accelerator: CAPTURE_SHORTCUT, click: focusCapture },
+      // Always here, whatever the time: the scheduled notification is a
+      // prompt, never the only door into the ritual.
+      { label: "Start shutdown…", click: openShutdown },
       { type: "separator" },
       { label: "Quit Execute", role: "quit" },
     ]),
@@ -396,7 +410,7 @@ function habitsLine() {
   return n === 1 ? "1 habit to log" : `${n} habits to log`;
 }
 
-/** Ask the renderer to open the evening shutdown ritual. */
+/** Ask the renderer to open the shutdown ritual. */
 function openShutdown() {
   showMainWindow();
   const send = () => mainWindow?.webContents.send("shutdown:open");
@@ -407,11 +421,67 @@ function openShutdown() {
   }
 }
 
-function notify(title, body, onClick = showMainWindow) {
+// Notifications are kept referenced until they're done with: a garbage-
+// collected Notification silently drops its click handler on macOS.
+const liveNotifications = new Set();
+
+function notify(title, body, onClick = showMainWindow, action = null) {
   if (!Notification.isSupported()) return;
-  const n = new Notification({ title, body, silent: false });
-  n.on("click", onClick);
+  const n = new Notification({
+    title,
+    body,
+    silent: false,
+    // A real button ("Start shutdown") where the system shows one — macOS
+    // does for the Alerts style; with Banners, clicking the notification does
+    // the same thing.
+    actions: action == null ? [] : [{ type: "button", text: action }],
+  });
+  const done = () => liveNotifications.delete(n);
+  n.on("click", () => {
+    done();
+    onClick();
+  });
+  n.on("action", () => {
+    done();
+    onClick();
+  });
+  n.on("close", done);
+  liveNotifications.add(n);
   n.show();
+}
+
+function clockMinutes(clock) {
+  const [h, m] = String(clock).split(":").map(Number);
+  return (h || 0) * 60 + (m || 0);
+}
+
+/** Today's shutdown time ("HH:MM"), or null when today's kind of day has it off. */
+function shutdownTimeToday(now) {
+  const weekend = now.getDay() === 0 || now.getDay() === 6;
+  if (weekend) return presence.shutdownWeekendOn ? presence.shutdownWeekendAt : null;
+  return presence.shutdownWeekdayOn ? presence.shutdownWeekdayAt : null;
+}
+
+/**
+ * The shutdown notification. Always sent at the configured time — even with
+ * nothing left, because closing the day is a ritual you asked to be called
+ * to, not an alarm about overdue work. Says what's waiting, and opens
+ * straight into the ritual.
+ */
+function notifyShutdown(at) {
+  const parts = [];
+  if (presence.remaining > 0) {
+    const tasks = titleList(presence.titles);
+    parts.push(`${presence.remaining} left today${tasks ? `: ${tasks}` : ""}`);
+  }
+  const habits = habitsLine();
+  if (habits) parts.push(habits);
+  notify(
+    `Shutdown · ${at}`,
+    parts.length > 0 ? parts.join(" · ") : "Everything's settled — close the day in a minute.",
+    openShutdown,
+    "Start shutdown",
+  );
 }
 
 /**
@@ -420,10 +490,13 @@ function notify(title, body, onClick = showMainWindow) {
  * that has passed is exactly the kind that gets notifications turned off.
  */
 function checkNudges() {
-  if (!presence.nudges) return;
+  // Until the renderer has sent the real settings and counts, everything here
+  // is a default: a launch at 18:30 would fire an "18:00" shutdown for someone
+  // whose day ends at 14:15, with a count of zero.
+  if (!presenceReceived || !presence.nudges) return;
   const now = new Date();
   const date = localDateISO(now);
-  if (nudgedOn.date !== date) nudgedOn = { date, morning: false, evening: false };
+  if (nudgedOn.date !== date) nudgedOn = { date, morning: false, shutdown: false };
   const hour = now.getHours();
 
   if (!nudgedOn.morning && hour === presence.morningHour) {
@@ -438,33 +511,26 @@ function checkNudges() {
     }
   }
 
-  if (!nudgedOn.evening && hour === presence.eveningHour) {
-    nudgedOn.evening = true;
-    // At zero there is nothing to say, and saying it anyway is how an app
-    // teaches you to ignore it. Habits ride the same nudge (the shutdown ends
-    // with them) rather than earning one of their own.
-    const habitLine = habitsLine();
-    if (presence.remaining > 0) {
-      // Straight into the ritual, not just into the app: a nudge that only says
-      // "you should" wastes the interruption it just spent.
-      const tasks = titleList(presence.titles);
-      notify(
-        `${presence.remaining} left today — close the day?`,
-        habitLine ? (tasks ? `${tasks} · ${habitLine}` : habitLine) : tasks,
-        openShutdown,
-      );
-    } else if (habitLine) {
-      const names = (presence.habitNames ?? []).filter((t) => typeof t === "string" && t !== "");
-      notify(`${habitLine} — close the day?`, names.join(", "), openShutdown);
+  const shutdownAt = shutdownTimeToday(now);
+  if (!nudgedOn.shutdown && shutdownAt != null) {
+    const minute = hour * 60 + now.getMinutes();
+    const due = clockMinutes(shutdownAt);
+    if (minute >= due && minute < due + SHUTDOWN_WINDOW_MIN) {
+      nudgedOn.shutdown = true;
+      notifyShutdown(shutdownAt);
     }
   }
 }
 
+let presenceReceived = false;
+
 function applyPresence(next) {
   presence = { ...presence, ...next };
+  presenceReceived = true;
   updateTray();
   updateBadge();
   applyOpenAtLogin();
+  checkNudges(); // a time just set to "now" fires now, not on the next tick
 }
 
 function startPresence() {
