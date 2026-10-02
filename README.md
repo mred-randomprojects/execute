@@ -185,11 +185,19 @@ re-asking a decision you've made is how a ritual becomes a chore.
 ## Shutdown — decide tonight, not tomorrow morning
 
 `⌘k` → "close the day" when you stop working, or click the notification that
-arrives at your **shutdown time**. Shutdown walks today's still-open
-commitments one at a time, with the Reckoning's verbs pointed at tomorrow:
+arrives at your **shutdown time**. Shutdown is one list: today's still-open
+tasks, each shown with where it lives (project › parent), then today's habits.
+`↑`/`↓` walk all of it. On a task, the Reckoning's verbs point at tomorrow:
 `e` done · `t` carry to tomorrow · `b` break it into something you'd actually do
-· `s` postpone to a named day · `w` won't do · `d` drop. `⇧t` carries everything
-left in one move.
+· `s` postpone to a named day · `w` won't do · `d` drop. On a habit: `y` did it ·
+`r` rest day · `x` not today. `⇧t` carries every waiting task in one move, and
+`/` adds an optional *why* to the next choice.
+
+On anything, **`l` means later today**: not done yet, but still today's. It isn't
+counted as a carry and isn't logged; the row just steps aside so the pass can
+move on. A pass where everything left is "later" ends as **Done for now**, not
+closed. That's the honest ending for a 14:15 shutdown, and the next run asks
+again.
 
 **Your shutdown time** is when you actually stop, set separately for weekdays
 and weekends: type it into `⌘k` ("shutdown 14:15", "shutdown weekends 11am",
