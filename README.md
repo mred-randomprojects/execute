@@ -107,7 +107,8 @@ costs nothing. You're asked at the moments the app already owns, so a habit
 doesn't go unlogged: Shutdown ends with "did each one happen today?"
 (`y` / `r` / `x`), Today shows a band for anything left unlogged yesterday,
 and the evening nudge counts habits too. Chips under Today's tabs and
-"Check in: …" in `⌘k` work from anywhere. The design, the lessons behind it
+"Check in: …" in `⌘k` work from anywhere, and the phone has the same chips,
+plus a yes/no for anything left unlogged yesterday. The design, the lessons behind it
 and what comes next: [`docs/habits.md`](docs/habits.md).
 
 ## Your week, read back to you

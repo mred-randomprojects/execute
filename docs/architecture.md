@@ -61,7 +61,7 @@ and call it from both. That discipline is what keeps A→B a convergence.
 
 **Sync v2 (since 2026-09-25): one small Firestore document per item.** Under
 `users/{uid}/`: `tasks/{id}` (own fields + `parentId`, `rank`, `movedAt`,
-`trashedAt`), `projects/{id}`, `recurrences/{id}`, `habits/{id}` (v19), `tombstones/{id}`,
+`trashedAt`), `projects/{id}`, `recurrences/{id}`, `habits/{id}` (v19; per-day check-in stamps since v20), `tombstones/{id}`,
 `log/{id}`, `days/{date}`, and `meta/state` · `meta/format` · `meta/heartbeat`.
 The format is `sync/docs.ts` (`toDocs` / `fromDocs` / `diffDocs`, pure).
 

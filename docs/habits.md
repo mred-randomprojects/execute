@@ -30,8 +30,10 @@ trackers behind each choice, and the ideas still to build, roughly in order.
 - The sidebar badge counts habits still worth doing today: daily habits not
   yet marked, and weekly ones whose target isn't met yet.
 - Every change is undoable and goes into the history (`⌘y`). Habits sync as
-  `users/{uid}/habits/{id}`, newest `updatedAt` wins per habit, and deletes
-  leave tombstones like everything else.
+  `users/{uid}/habits/{id}` with two clocks (v20): the habit's own fields go
+  newest `updatedAt` wins, and each day's check-in goes newest
+  `checkedAt[day]` wins, clears included. Deletes leave tombstones like
+  everything else, and a check-in made after a delete brings the habit back.
 - Engine: `src/store/habits.ts`, pure and tested. It is the place to change
   how anything is scored.
 
@@ -123,20 +125,26 @@ guilt, and the record goes with them.
 → **Archive** keeps the whole history and hides the habit from the active
 list and the badge. Delete takes two steps and can still be undone with ⌘z.
 
-## Known limits of v1
+## On the phone (v1.2, schema v20)
 
-- **Merge is per habit, not per day.** If two devices mark the *same* habit
-  inside one sync window, the older mark is lost. That's harmless while only
-  the desktop marks habits. Before the phone gets check-ins, switch to
-  per-day stamps (`checks: { [date]: { mark, at } }`, newest per day) and
-  record a cleared day as a stamped "none" so undo still wins.
-- **Desktop only.** The web viewer doesn't load the `habits` collection yet
-  (it leaves the collection alone and never deletes from it).
+The web companion loads the `habits` collection. On Today it shows the
+day's habits as tap-to-check chips. Yesterday's unlogged habits get a
+"Yesterday's habits?" card with ✓ Did it and × buttons. Each tap is an
+idempotent intent (`viewer/intents.ts` `setHabitMark`), stamped on that day
+alone and written as a guarded patch. So the phone and the desktop can mark
+the same habit at once: different days both survive, and on the same day the
+newer answer wins.
+
+## Known limits
+
 - An archived habit that comes back counts the archived days as misses.
   The fix is real pause ranges (roadmap).
-- Backfill reaches two weeks back from the keyboard. Older days need ⌘k or
-  editing the data.
+- Backfill reaches two weeks back. Older days can't be marked from the app
+  yet.
 - Order is creation order. There is no reordering yet.
+- The phone can check in today and answer yes/no about yesterday. It can't
+  mark rest days, and it has no Habits view (strip, strength, editing). Those
+  stay on the desktop for now.
 
 ## Roadmap: ideas, roughly in order
 
@@ -145,9 +153,7 @@ list and the badge. Delete takes two steps and can still be undone with ⌘z.
 2. ~~Habits on Today.~~ Shipped in v1.1, as clickable chips. A keyboard path
    into the strip is still open.
 3. ~~⌘k check-in from anywhere.~~ Shipped in v1.1.
-4. **Phone check-ins** (web viewer), after the per-day merge (see Known
-   limits). This is the biggest friction win: the moment you do a habit is
-   rarely the moment you're at the desk.
+4. ~~Phone check-ins.~~ Shipped in v1.2, with the per-day merge.
 5. **The weekly review** (`ReviewPanel`) gets a habits section: strength
    trend per habit, the week's misses, and one honest question about the
    habit that is slipping.
