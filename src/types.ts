@@ -5,6 +5,7 @@ export type TaskId = string & { readonly __brand: "TaskId" };
 export type ProjectId = string & { readonly __brand: "ProjectId" };
 export type ProjectRowId = string & { readonly __brand: "ProjectRowId" };
 export type RecurrenceId = string & { readonly __brand: "RecurrenceId" };
+export type HabitId = string & { readonly __brand: "HabitId" };
 export type OutlineId = TaskId | ProjectRowId;
 
 /** Local-calendar date, "YYYY-MM-DD". The unit the whole app reasons in. */
@@ -101,6 +102,53 @@ export interface Recurrence {
   /**
    * v18: when the rule or template last changed — the merge's clock for
    * recurrences (newest wins per recurrence). Stamped at the store's choke point.
+   */
+  updatedAt: number;
+}
+
+// ─── Habits ─────────────────────────────────────────────────────────
+//
+// A habit is not a task. A task is finished once; a habit is never finished —
+// it is *kept*, a day at a time, and what matters is the pattern, not any one
+// day. So habits live in their own array, outside `tasks`, for the same reason
+// recurrences do: nothing in here can trip the Reckoning or touch the day's
+// counts. A missed habit is information, not a debt the app makes you settle.
+// The design and the lessons behind it: docs/habits.md.
+
+/**
+ * What a day says about a habit. A day with no mark is simply "not done" —
+ * which only becomes a *miss* once the day is over.
+ *
+ *   • `done` — kept.
+ *   • `skip` — a deliberate rest day (sick, travelling, a planned day off). It
+ *     neither counts for the habit nor against it: strength holds, the streak
+ *     survives, and a weekly target shrinks in proportion.
+ */
+export type HabitMark = "done" | "skip";
+
+export interface Habit {
+  id: HabitId;
+  name: string;
+  /**
+   * The cue — "after I pour my coffee", "at 7am in the kitchen". Optional, but
+   * an implementation intention (when + where, chained to something you already
+   * do) is the best-evidenced lever there is for a new behaviour to stick.
+   */
+  cue: string;
+  /**
+   * How many days a week this is meant to happen, 1–7. 7 = daily. A weekly
+   * count instead of fixed weekdays on purpose: "3× a week" survives a week
+   * whose Monday went sideways, "Mon/Wed/Fri" doesn't.
+   */
+  perWeek: number;
+  /** Marked days. A missing key = not done. */
+  checks: Record<ISODate, HabitMark>;
+  /** Retired from the active list (history kept). `null` = active. */
+  archivedAt: number | null;
+  createdAt: number;
+  /**
+   * The merge's clock: newest wins per habit, check-ins included (see
+   * sync/merge). Stamped at the store's choke point.
    */
   updatedAt: number;
 }
@@ -333,8 +381,8 @@ export interface TrashedTask {
  * *merge* record (it keeps only enough to out-vote a stale copy). Emptying the
  * Trash discards the payload and keeps this.
  *
- * `id` is a {@link TaskId} or a {@link RecurrenceId} — both are nanoids and
- * never collide, and the merge asks the same question of both.
+ * `id` is a {@link TaskId}, a {@link RecurrenceId} or a {@link HabitId} — all
+ * nanoids, so they never collide, and the merge asks the same question of all.
  */
 export interface Tombstone {
   id: string;
@@ -453,6 +501,8 @@ export interface AppState {
   tasks: Task[];
   /** Recurrence definitions (templates + rules). Never counted or reckoned. */
   recurrences: Recurrence[];
+  /** v19: habits and their check-ins. Never counted or reckoned — see {@link Habit}. */
+  habits: Habit[];
   trash: TrashedTask[];
   /**
    * Ids that have been deleted, so another device's surviving copy is merged as
@@ -511,7 +561,7 @@ export interface AppState {
   days: DayRecord[];
 }
 
-export const SCHEMA_VERSION = 18;
+export const SCHEMA_VERSION = 19;
 export const DEFAULT_PROJECT_ID = "project-inbox" as ProjectId;
 export const PROJECT_ROW_PREFIX = "project:";
 
@@ -554,6 +604,7 @@ export function emptyState(): AppState {
     projects: [defaultProject()],
     tasks: [],
     recurrences: [],
+    habits: [],
     trash: [],
     tombstones: [],
     log: [],

@@ -1,6 +1,7 @@
 import type {
   AppState,
   DayRecord,
+  Habit,
   ISODate,
   LogEntry,
   Project,
@@ -16,8 +17,8 @@ import { jsonEqual, treeFromSlots, type PlacedSlot } from "./merge";
 //
 // Phase 1 of the per-task-documents plan (docs/architecture.md, "Sync"). The
 // cloud stops being one ~600 KB document and becomes collections under
-// users/{uid}/, one document per task, project, recurrence, tombstone, log line
-// and day, plus one `meta/state` document.
+// users/{uid}/, one document per task, project, recurrence, habit, tombstone,
+// log line and day, plus one `meta/state` document.
 //
 // This module is only the FORMAT — pure, no Firebase:
 //
@@ -58,6 +59,7 @@ export interface CloudDocs {
   tasks: Map<string, TaskDoc>;
   projects: Map<string, Project>;
   recurrences: Map<string, Recurrence>;
+  habits: Map<string, Habit>;
   tombstones: Map<string, TombstoneDoc>;
   log: Map<string, LogEntry>;
   days: Map<string, DayRecord>;
@@ -70,6 +72,7 @@ export const COLLECTIONS: readonly Collection[] = [
   "tasks",
   "projects",
   "recurrences",
+  "habits",
   "tombstones",
   "log",
   "days",
@@ -122,6 +125,7 @@ export function toDocs(state: AppState): CloudDocs {
     tasks,
     projects: new Map(state.projects.map((p) => [p.id, p])),
     recurrences: new Map(state.recurrences.map((r) => [r.id, r])),
+    habits: new Map(state.habits.map((h) => [h.id, h])),
     tombstones: new Map(state.tombstones.map((t) => [t.id, { deletedAt: t.deletedAt, purged: t.purged }])),
     log: new Map(state.log.map((e) => [e.id, e])),
     days: new Map(state.days.map((d) => [d.date, d])),
@@ -271,6 +275,7 @@ export function fromDocs(raw: RawDocs, base: AppState): AppState {
     .sort(
     (a, b) => numOr(a.createdAt, 0) - numOr(b.createdAt, 0) || byId(String(a.id), String(b.id)),
   );
+  const habits = withIds(raw.habits, "id", ["createdAt", "updatedAt"]);
   const log = withIds(raw.log, "id", ["at"]).sort(
     (a, b) => numOr(b.at, 0) - numOr(a.at, 0) || byId(String(a.id), String(b.id)),
   );
@@ -281,6 +286,7 @@ export function fromDocs(raw: RawDocs, base: AppState): AppState {
     projects,
     tasks,
     recurrences,
+    habits,
     trash,
     tombstones: withIds(raw.tombstones, "id"),
     log,
@@ -369,6 +375,7 @@ export function asRaw(docs: CloudDocs): RawDocs {
     tasks: docs.tasks,
     projects: docs.projects,
     recurrences: docs.recurrences,
+    habits: docs.habits,
     tombstones: docs.tombstones,
     log: docs.log,
     days: docs.days,

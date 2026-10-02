@@ -4,8 +4,12 @@ import { jsonEqual, mergeStates } from "./merge";
 import {
   addChild,
   addTaskAfter,
+  createHabit,
   createProject,
   createRecurrence,
+  markHabit,
+  setHabitArchived,
+  setHabitCue,
   emptyTrash,
   getState,
   indent,
@@ -45,6 +49,11 @@ async function busyState(): Promise<AppState> {
   addChild(kept, "its child");
   trashTask(kept);
   createRecurrence("water plants", defaultRule("2026-01-01"));
+  const read = createHabit("read", 3);
+  setHabitCue(read, "after dinner");
+  markHabit(read, "2026-09-30", "done");
+  markHabit(read, "2026-10-01", "skip");
+  setHabitArchived(createHabit("old habit"), true);
   setText(a, "a, edited");
   return getState();
 }
@@ -54,6 +63,7 @@ describe("the per-item document format", () => {
     const s = await busyState();
     expect(s.trash.length).toBeGreaterThan(0);
     expect(s.tombstones.length).toBeGreaterThan(0);
+    expect(s.habits.length).toBe(2);
     expect(jsonEqual(roundTrip(s), s)).toBe(true);
   });
 

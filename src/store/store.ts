@@ -4,6 +4,9 @@ import type {
   ActionLogEntry,
   AppState,
   DayRecord,
+  Habit,
+  HabitId,
+  HabitMark,
   Horizon,
   ISODate,
   LogAction,
@@ -55,6 +58,7 @@ import {
   setProjectForIds,
 } from "./tasks";
 import { normalizeRule } from "./recurrence";
+import { normalizePerWeek, sortHabits, withMark } from "./habits";
 import { horizonWords } from "../selectors";
 import { todayISO } from "./dates";
 import { coerceState, loadRaw, saveRaw } from "./persistence";
@@ -238,7 +242,7 @@ function stampNode(
 // getting lost were the ones nobody thought of as deletes: undoing a *create*,
 // and emptying the Trash (which threw away the only record there was).
 
-/** Every id that currently exists: task nodes at any depth, plus recurrence ids. */
+/** Every id that currently exists: task nodes at any depth, plus recurrence and habit ids. */
 function liveIds(s: AppState): Set<string> {
   const ids = new Set<string>();
   const walk = (list: Task[]) => {
@@ -251,6 +255,7 @@ function liveIds(s: AppState): Set<string> {
   // Template *nodes* are deliberately not counted: they can't be deleted on
   // their own, only edited, and the recurrence is what the merge unions by id.
   for (const r of s.recurrences) ids.add(r.id);
+  for (const h of s.habits) ids.add(h.id);
   return ids;
 }
 
@@ -277,7 +282,8 @@ function withTombstones(prev: AppState, next: AppState): AppState {
       ? prev.tombstones
       : pruneTombstones([...next.tombstones, ...prev.tombstones], now);
   const inTrash = new Set<string>(next.trash.map((e) => e.task.id));
-  const treeMoved = next.tasks !== prev.tasks || next.recurrences !== prev.recurrences;
+  const treeMoved =
+    next.tasks !== prev.tasks || next.recurrences !== prev.recurrences || next.habits !== prev.habits;
   const after = treeMoved ? liveIds(next) : null;
   const gone: Tombstone[] = [];
   if (after != null) {
@@ -359,10 +365,16 @@ function withSyncStamps(prev: AppState, next: AppState): AppState {
   const tasks = placeTasks(prev.tasks, next.tasks, now);
   const projects = stampChanged(prev.projects, next.projects, now);
   const recurrences = stampChanged(prev.recurrences, next.recurrences, now);
-  if (tasks === next.tasks && projects === next.projects && recurrences === next.recurrences) {
+  const habits = stampChanged(prev.habits, next.habits, now);
+  if (
+    tasks === next.tasks &&
+    projects === next.projects &&
+    recurrences === next.recurrences &&
+    habits === next.habits
+  ) {
     return next;
   }
-  return { ...next, tasks, projects, recurrences };
+  return { ...next, tasks, projects, recurrences, habits };
 }
 
 /** The stamped state plus the ids the transform actually touched. */
@@ -1600,6 +1612,105 @@ export function acceptRecurrence(recId: RecurrenceId, today: ISODate): TaskId | 
     tasks: insertAtProjectStart(s.tasks, s.projects, instance.projectId, instance),
   }), `Take on today’s ${quote(rec.template)}`);
   return instance.id;
+}
+
+// ─── Habits ─────────────────────────────────────────────────────────
+//
+// Their own array, like recurrences: nothing here reaches `tasks`, so a habit
+// can never reckon or move the day's counts. Every change is undoable and named.
+
+function mapHabit(id: HabitId, fn: (h: Habit) => Habit): (s: AppState) => AppState {
+  return (s) => {
+    let hit = false;
+    const habits = s.habits.map((h) => {
+      if (h.id !== id) return h;
+      const next = fn(h);
+      if (next !== h) hit = true;
+      return next;
+    });
+    return hit ? { ...s, habits } : s;
+  };
+}
+
+function habitName(id: HabitId): string {
+  return quoteText(state.habits.find((h) => h.id === id)?.name ?? "");
+}
+
+/** Create a daily habit with this name. Returns its id. */
+export function createHabit(name: string, perWeek = 7): HabitId {
+  const id = nanoid() as HabitId;
+  const now = Date.now();
+  const habit: Habit = {
+    id,
+    name: name.trim(),
+    cue: "",
+    perWeek: normalizePerWeek(perWeek),
+    checks: {},
+    archivedAt: null,
+    createdAt: now,
+    updatedAt: now,
+  };
+  // Kept in the canonical order the cloud and the merge produce, or a same-ms
+  // pair would read back swapped and look like a change.
+  update((s) => ({ ...s, habits: sortHabits([...s.habits, habit]) }), name.trim() === "" ? "New habit" : `New habit ${quoteText(name)}`);
+  return id;
+}
+
+export function renameHabit(id: HabitId, name: string): void {
+  const clean = name.trim();
+  update(mapHabit(id, (h) => (h.name === clean ? h : { ...h, name: clean })), `Rename a habit to ${quoteText(clean)}`);
+}
+
+export function setHabitCue(id: HabitId, cue: string): void {
+  const clean = cue.trim();
+  update(
+    mapHabit(id, (h) => (h.cue === clean ? h : { ...h, cue: clean })),
+    clean === "" ? `Clear the cue of ${habitName(id)}` : `Cue ${habitName(id)}: ${quoteText(clean)}`,
+  );
+}
+
+export function setHabitPerWeek(id: HabitId, perWeek: number): void {
+  const n = normalizePerWeek(perWeek);
+  update(
+    mapHabit(id, (h) => (h.perWeek === n ? h : { ...h, perWeek: n })),
+    `Set ${habitName(id)} to ${n === 7 ? "every day" : `${n}× a week`}`,
+  );
+}
+
+/** Set (or clear, with null) one day's mark. */
+export function markHabit(id: HabitId, date: ISODate, mark: HabitMark | null): void {
+  const verb = mark === "done" ? "Check in" : mark === "skip" ? "Rest day for" : "Clear";
+  update(mapHabit(id, (h) => withMark(h, date, mark)), `${verb} ${habitName(id)} · ${date}`);
+}
+
+/** Done ↔ not done for that day (a rest day becomes done). */
+export function toggleHabitDone(id: HabitId, date: ISODate): void {
+  const h = state.habits.find((x) => x.id === id);
+  if (h == null) return;
+  markHabit(id, date, h.checks[date] === "done" ? null : "done");
+}
+
+/** Rest day ↔ unmarked for that day. */
+export function toggleHabitSkip(id: HabitId, date: ISODate): void {
+  const h = state.habits.find((x) => x.id === id);
+  if (h == null) return;
+  markHabit(id, date, h.checks[date] === "skip" ? null : "skip");
+}
+
+/** Retire a habit from the active list, keeping its history; or bring it back. */
+export function setHabitArchived(id: HabitId, archived: boolean): void {
+  update(
+    mapHabit(id, (h) =>
+      (h.archivedAt != null) === archived ? h : { ...h, archivedAt: archived ? Date.now() : null },
+    ),
+    `${archived ? "Archive" : "Restore"} the habit ${habitName(id)}`,
+  );
+}
+
+/** Delete a habit and its whole history. Undoable; tombstoned for the merge. */
+export function deleteHabit(id: HabitId): void {
+  const label = `Delete the habit ${habitName(id)}`;
+  update((s) => ({ ...s, habits: s.habits.filter((h) => h.id !== id) }), label);
 }
 
 // ─── Undo / redo / history ──────────────────────────────────────────

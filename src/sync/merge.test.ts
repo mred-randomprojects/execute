@@ -38,6 +38,7 @@ function state(over: Partial<AppState> = {}): AppState {
     projects: [],
     tasks: [],
     recurrences: [],
+    habits: [],
     trash: [],
     tombstones: [],
     log: [],

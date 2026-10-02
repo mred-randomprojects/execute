@@ -236,6 +236,7 @@ function reportSoon(): void {
         tombstones: s.tombstones.length,
         projects: s.projects.length,
         recurrences: s.recurrences.length,
+        habits: s.habits.length,
         log: s.log.length,
         days: s.days.length,
       };

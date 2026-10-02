@@ -98,7 +98,7 @@ function apply(target: Writer, ref: DocumentReference, w: DocWrite): void {
 
 /**
  * The sync v2 collections under users/{uid}/ — tasks, projects, recurrences,
- * tombstones, log, days, meta — as a DocStore. (The v1 document lives beside
+ * habits, tombstones, log, days, meta — as a DocStore. (The v1 document lives beside
  * them at users/{uid}/data/appData.)
  */
 export function firestoreDocStore(uid: string): DocStore {

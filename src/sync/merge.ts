@@ -2,6 +2,7 @@ import type {
   ActionLogEntry,
   AppState,
   DayRecord,
+  Habit,
   ISODate,
   LogEntry,
   Project,
@@ -13,6 +14,7 @@ import type {
 } from "../types";
 import { ACTION_LOG_LIMIT, MAX_DAY_RECORDS, pruneTombstones } from "../types";
 import { repairRanks } from "../store/placement";
+import { sortHabits } from "../store/habits";
 
 // ─── Two-way merge (per-task last-write-wins) ────────────────────────
 //
@@ -40,7 +42,11 @@ import { repairRanks } from "../store/placement";
 //     So moves on either device survive, and an add from the other device lands
 //     wherever it was made, at any depth. (Before v18 the writer's tree shape
 //     won wholesale and the other side's moves were lost.) See mergeTrees.
-//   • Projects and recurrences: newest `updatedAt` wins per id (v18).
+//   • Projects and recurrences: newest `updatedAt` wins per id (v18). Habits
+//     too (v19), check-ins included — a whole habit is one record. Two devices
+//     marking the same habit inside one sync window keep only the newer mark;
+//     fine while only the desktop marks habits, and the first thing to change
+//     (per-day stamps) when the phone learns to (docs/habits.md).
 //   • actionLog: UNION by id (append-only on both sides — nobody rewrites it),
 //     newest first and capped, so the history reads as one trail per account.
 
@@ -317,7 +323,7 @@ export function mergeStates(local: AppState, remote: AppState): AppState {
   // editing it does. A RECURRENCE id is judged by the same rule on its own
   // `updatedAt` (v18; older recurrences carry their createdAt).
   const recUpdatedAt = new Map<string, number>();
-  for (const r of [...local.recurrences, ...remote.recurrences]) {
+  for (const r of [...local.recurrences, ...remote.recurrences, ...local.habits, ...remote.habits]) {
     recUpdatedAt.set(r.id, Math.max(recUpdatedAt.get(r.id) ?? -Infinity, r.updatedAt));
   }
   const lastTouched = (slot: Slot | undefined): number =>
@@ -357,6 +363,9 @@ export function mergeStates(local: AppState, remote: AppState): AppState {
     tasks,
     recurrences: newestById<Recurrence>(local.recurrences, remote.recurrences).filter(
       (r) => !deleted.has(r.id),
+    ),
+    habits: sortHabits(
+      newestById<Habit>(local.habits, remote.habits).filter((h) => !deleted.has(h.id)),
     ),
     trash,
     tombstones,

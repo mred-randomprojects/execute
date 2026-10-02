@@ -8,7 +8,9 @@ import { makeTask } from "../../store/tasks";
 import {
   addChild,
   addTaskAfter,
+  createHabit,
   createRecurrence,
+  markHabit,
   emptyTrash,
   getState,
   initStore,
@@ -78,6 +80,7 @@ const synced = (s: AppState) => {
     tasks: [...docs.tasks.entries()].sort(([a], [b]) => (a < b ? -1 : 1)),
     projects: [...docs.projects.entries()],
     recurrences: [...docs.recurrences.entries()],
+    habits: [...docs.habits.entries()],
     tombstones: [...docs.tombstones.entries()].sort(([a], [b]) => (a < b ? -1 : 1)),
   };
 };
@@ -93,6 +96,7 @@ async function busy(): Promise<AppState> {
   await new Promise((r) => setTimeout(r, 3));
   emptyTrash();
   createRecurrence("water plants", defaultRule("2026-01-01"));
+  markHabit(createHabit("read", 3), "2026-10-01", "done");
   toggleComplete(a);
   return getState();
 }
@@ -246,6 +250,41 @@ describe("two devices", () => {
     await other.engine.syncNow();
     await desk.engine.syncNow();
     expect(desk.state.tasks[0].text).toBe("from the other device");
+  });
+
+  it("a habit check-in reaches the other device, and settles without echo", async () => {
+    const { store, desk, other } = await pair();
+    expect(other.state.habits.map((h) => h.name)).toEqual(["read"]);
+    const id = desk.state.habits[0].id;
+    desk.edit((s) => ({
+      ...s,
+      habits: s.habits.map((h) =>
+        h.id === id ? { ...h, checks: { ...h.checks, "2026-10-02": "done" }, updatedAt: Date.now() + 5 } : h,
+      ),
+    }));
+    await desk.engine.syncNow();
+    await other.engine.syncNow();
+    expect(other.state.habits[0].checks).toEqual({ "2026-10-01": "done", "2026-10-02": "done" });
+    const writes = store.writes;
+    await desk.engine.syncNow();
+    await other.engine.syncNow();
+    expect(store.writes).toBe(writes);
+  });
+
+  it("a habit deleted on one device stays deleted on the other", async () => {
+    const { desk, other } = await pair();
+    const id = desk.state.habits[0].id;
+    const at = Date.now() + 5;
+    desk.edit((s) => ({
+      ...s,
+      habits: s.habits.filter((h) => h.id !== id),
+      tombstones: [{ id, deletedAt: at, purged: false }, ...s.tombstones],
+    }));
+    await desk.engine.syncNow();
+    await other.engine.syncNow();
+    await desk.engine.syncNow();
+    expect(other.state.habits).toEqual([]);
+    expect(desk.state.habits).toEqual([]);
   });
 
   it("concurrent edits to different tasks both survive, even with a lagging view", async () => {

@@ -98,6 +98,7 @@ export class ViewerSync {
       tasks: this.rawTasks(),
       projects: this.projects,
       recurrences: new Map(),
+      habits: new Map(),
       tombstones: new Map(),
       log: new Map(),
       days: new Map(),

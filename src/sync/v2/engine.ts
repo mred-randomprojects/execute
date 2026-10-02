@@ -118,12 +118,13 @@ const LISTENED: readonly ListenTarget[] = [
   "tasks",
   "projects",
   "recurrences",
+  "habits",
   "tombstones",
   "days",
   "meta",
 ];
 /** Collections whose unreadable leftovers (junk, expired tombstones) get deleted. */
-const CLEANABLE: readonly Collection[] = ["tasks", "projects", "recurrences", "tombstones", "days"];
+const CLEANABLE: readonly Collection[] = ["tasks", "projects", "recurrences", "habits", "tombstones", "days"];
 /** Above this many writes, brand-new documents go out as plain batches. */
 const BULK_THRESHOLD = 100;
 /** Guarded writes per transaction: each is also a read, so stay well under 500. */
@@ -410,6 +411,7 @@ export class DocSync {
       tasks: get("tasks"),
       projects: get("projects"),
       recurrences: get("recurrences"),
+      habits: get("habits"),
       tombstones: get("tombstones"),
       log: new Map(),
       days: get("days"),

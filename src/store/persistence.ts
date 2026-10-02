@@ -5,6 +5,9 @@ import type {
   AppState,
   CommandUsage,
   DayRecord,
+  Habit,
+  HabitId,
+  HabitMark,
   Horizon,
   HorizonUnit,
   LogAction,
@@ -27,6 +30,7 @@ import type {
   WontDo,
 } from "../types";
 import { normalizeRule } from "./recurrence";
+import { normalizePerWeek, sortHabits } from "./habits";
 import {
   ACTION_LOG_LIMIT,
   DEFAULT_CAPACITY_BLOCKS,
@@ -280,6 +284,33 @@ function coerceRecurrence(raw: unknown): Recurrence {
   };
 }
 
+// v19: habits. Marks keep only well-formed "YYYY-MM-DD" keys with a known value.
+const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
+
+function coerceChecks(raw: unknown): Record<string, HabitMark> {
+  const out: Record<string, HabitMark> = {};
+  if (!isObject(raw)) return out;
+  for (const [date, mark] of Object.entries(raw)) {
+    if (ISO_DAY.test(date) && (mark === "done" || mark === "skip")) out[date] = mark;
+  }
+  return out;
+}
+
+function coerceHabit(raw: unknown): Habit {
+  const o = isObject(raw) ? raw : {};
+  const createdAt = num(o.createdAt, Date.now());
+  return {
+    id: (str(o.id) || nanoid()) as HabitId,
+    name: str(o.name),
+    cue: str(o.cue),
+    perWeek: normalizePerWeek(num(o.perWeek, 7)),
+    checks: coerceChecks(o.checks),
+    archivedAt: numOrNull(o.archivedAt),
+    createdAt,
+    updatedAt: num(o.updatedAt, createdAt),
+  };
+}
+
 function coerceTrashed(raw: unknown): TrashedTask {
   const o = isObject(raw) ? raw : {};
   return { task: coerceTask(o.task), deletedAt: num(o.deletedAt, Date.now()) };
@@ -443,6 +474,8 @@ export function coerceState(raw: unknown): AppState {
     // v18: rank every sibling list (pre-v18 lists have none; see store/placement).
     tasks: repairRanks(normalizeChildProjects(tasks.map(normalizeProject))),
     recurrences,
+    // v19: pre-v19 data has no habits.
+    habits: Array.isArray(raw.habits) ? sortHabits(raw.habits.map(coerceHabit)) : [],
     trash: trash.map((entry) => ({
       ...entry,
       // v18: a Trash entry's subtasks are ranked like the live tree's, so the
