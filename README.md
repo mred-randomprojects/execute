@@ -184,11 +184,21 @@ re-asking a decision you've made is how a ritual becomes a chore.
 
 ## Shutdown — decide tonight, not tomorrow morning
 
-`⌘k` → "close the day" when you stop working. Shutdown walks today's still-open
+`⌘k` → "close the day" when you stop working, or click the notification that
+arrives at your **shutdown time**. Shutdown walks today's still-open
 commitments one at a time, with the Reckoning's verbs pointed at tomorrow:
 `e` done · `t` carry to tomorrow · `b` break it into something you'd actually do
 · `s` postpone to a named day · `w` won't do · `d` drop. `⇧t` carries everything
 left in one move.
+
+**Your shutdown time** is when you actually stop, set separately for weekdays
+and weekends: type it into `⌘k` ("shutdown 14:15", "shutdown weekends 11am",
+"shutdown every day 6pm"), and switch either kind of day off with "Shutdown on
+weekends … turn off". At that time a notification arrives ("Shutdown · 14:15",
+with what's left and any habits to log), and its **Start shutdown** button (or a
+click on it) opens the ritual. Today's banner says so too. The time only
+*prompts*: Shutdown runs whenever you like, from `⌘k`, the menu bar's
+**Start shutdown…**, or the banner, at 14:15, at 19:00, or not at all.
 
 The Reckoning hasn't moved or softened — it just has nothing to catch when you've
 been here first. That's the trade: the gate stays, and you earn your way past it
@@ -234,9 +244,12 @@ window doesn't:
 - **`⌘⇧space`** from anywhere: shows the window with the cursor already in the
   capture bar, so a stray thought never has to wait;
 - **two notifications a day** and only two — a morning "here's your day" (or
-  "nothing committed yet" — the one empty day worth interrupting for) and an
-  evening "N left, close the day?", silent at zero. Each fires only *during* its
-  hour, so a laptop opened at 3pm doesn't get a stale good-morning;
+  "nothing committed yet" — the one empty day worth interrupting for) and the
+  **shutdown** at your shutdown time (above), which opens straight into the
+  ritual. Neither goes stale: the morning one fires only during its hour, the
+  shutdown one up to 90 minutes after its time, so a laptop opened at 3pm
+  doesn't get a stale good-morning;
+- **Start shutdown…** in the menu-bar menu, any time;
 - optional **launch at login**, off until you ask for it (`⌘k` → "launch at login").
 
 All of it toggles from the command palette; closing the window on macOS leaves

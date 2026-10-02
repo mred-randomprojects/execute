@@ -55,11 +55,11 @@ week's target not yet met.
   opens a small panel with the same keys. `×` dismisses it until the next
   day (stored per device in `localStorage`, key
   `execute.habitPromptDismissed`). It never blocks anything.
-- **The evening nudge counts habits too.** It adds "· 2 habits to log", and
-  it fires for habits alone when no tasks are left. It still opens Shutdown,
-  and it's still the same single evening nudge. The tray menu shows the line
-  as well, but the menu-bar number stays tasks only. The in-app
-  "Closing time" banner also appears for habits.
+- **The shutdown notification counts habits too.** At your shutdown time
+  it adds "· 2 habits to log" and opens Shutdown. It's still one
+  notification. The tray menu shows the line as well, but the menu-bar number
+  stays tasks only. The in-app "Shutdown time" banner also appears for
+  habits.
 - **Habits on Today.** A strip of chips under the period tabs. Click one to
   check in.
 - **`⌘k` from anywhere:** "Check in: Meditate (today)" (it learns your
