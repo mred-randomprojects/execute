@@ -350,8 +350,18 @@ export interface Presence {
   nudges: boolean;
   /** Local hour (0–23) for the morning "here's your day" nudge. */
   morningHour: number;
-  /** Local hour (0–23) for the evening "close the day" nudge. */
-  eveningHour: number;
+  /**
+   * When the day gets closed — the shutdown notification ("Start shutdown")
+   * and the in-app banner. A time per kind of day ("HH:MM"), each with its own
+   * switch so turning weekends off doesn't forget their time. Replaced the
+   * single `eveningHour` (an hour, every day): work stops at 14:15 on weekdays
+   * for some people, and an evening nudge four hours late is no nudge at all.
+   * The ritual itself is never gated on these: ⌘k and the menu bar run it any time.
+   */
+  shutdownWeekdayAt: string;
+  shutdownWeekdayOn: boolean;
+  shutdownWeekendAt: string;
+  shutdownWeekendOn: boolean;
 }
 
 export function defaultPresence(): Presence {
@@ -363,7 +373,10 @@ export function defaultPresence(): Presence {
     openAtLogin: false,
     nudges: true,
     morningHour: 9,
-    eveningHour: 18,
+    shutdownWeekdayAt: "18:00",
+    shutdownWeekdayOn: true,
+    shutdownWeekendAt: "18:00",
+    shutdownWeekendOn: true,
   };
 }
 

@@ -424,15 +424,28 @@ function coerceHour(x: unknown, fallback: number): number {
 
 // v13: menu bar / login item / nudges. Pre-v13 data has none → the defaults,
 // which deliberately leave `openAtLogin` off (see defaultPresence).
+function coerceClock(x: unknown): string | null {
+  return typeof x === "string" && /^([01]\d|2[0-3]):[0-5]\d$/.test(x) ? x : null;
+}
+
 function coercePresence(raw: unknown): Presence {
   const d = defaultPresence();
   if (!isObject(raw)) return d;
+  const legacyEvening =
+    raw.eveningHour === undefined
+      ? d.shutdownWeekdayAt
+      : `${String(coerceHour(raw.eveningHour, 18)).padStart(2, "0")}:00`;
   return {
     tray: bool(raw.tray, d.tray),
     openAtLogin: bool(raw.openAtLogin, d.openAtLogin),
     nudges: bool(raw.nudges, d.nudges),
     morningHour: coerceHour(raw.morningHour, d.morningHour),
-    eveningHour: coerceHour(raw.eveningHour, d.eveningHour),
+    // Before the shutdown schedule there was one evening hour for every day:
+    // carry it over as both times, so nothing moves on upgrade.
+    shutdownWeekdayAt: coerceClock(raw.shutdownWeekdayAt) ?? legacyEvening,
+    shutdownWeekdayOn: bool(raw.shutdownWeekdayOn, d.shutdownWeekdayOn),
+    shutdownWeekendAt: coerceClock(raw.shutdownWeekendAt) ?? legacyEvening,
+    shutdownWeekendOn: bool(raw.shutdownWeekendOn, d.shutdownWeekendOn),
   };
 }
 
