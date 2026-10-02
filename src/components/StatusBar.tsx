@@ -20,6 +20,7 @@ const RECKONING_HINTS: Array<[string, string]> = [
 const SHUTDOWN_HINTS: Array<[string, string]> = [
   ["↑ / ↓", "select"],
   ["e", "done"],
+  ["l", "later today"],
   ["t", "tomorrow"],
   ["b", "break down"],
   ["s", "postpone"],
@@ -30,6 +31,7 @@ const SHUTDOWN_HINTS: Array<[string, string]> = [
 const SHUTDOWN_HABIT_HINTS: Array<[string, string]> = [
   ["↑ / ↓", "select"],
   ["y", "did it"],
+  ["l", "later today"],
   ["r", "rest day"],
   ["x", "not today"],
   ["esc", "leave"],

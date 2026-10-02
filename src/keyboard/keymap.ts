@@ -93,7 +93,7 @@ export const keymap: KeyBinding[] = [
   { key: "s", action: "plan.push", context: "plan", displayKey: "s", description: "not today — pick another day", section: "Plan" },
 
   // ── shutdown (the evening ritual) ─────────────────────────────────
-  { key: "ArrowDown", action: "cursor.down", context: "shutdown", displayKey: "↑ / ↓", description: "next / previous task", section: "Shutdown" },
+  { key: "ArrowDown", action: "cursor.down", context: "shutdown", displayKey: "↑ / ↓", description: "next / previous — tasks, then habits", section: "Shutdown" },
   { key: "ArrowUp", action: "cursor.up", context: "shutdown" },
   { key: "e", action: "shut.complete", context: "shutdown", displayKey: "e", description: "mark it done", section: "Shutdown" },
   { key: "t", action: "shut.carry", context: "shutdown", displayKey: "t", description: "carry it to tomorrow", section: "Shutdown" },
@@ -101,7 +101,9 @@ export const keymap: KeyBinding[] = [
   { key: "s", action: "shut.postpone", context: "shutdown", displayKey: "s", description: "postpone — name the day", section: "Shutdown" },
   { key: "w", action: "shut.wontDo", context: "shutdown", displayKey: "w", description: "won’t do — a decision, not a failure", section: "Shutdown" },
   { key: "d", action: "shut.drop", context: "shutdown", displayKey: "d", description: "drop it", section: "Shutdown", noRepeat: true },
-  { key: "y", action: "shut.habitDone", context: "shutdown", displayKey: "y / r / x", description: "habits (once the tasks are settled): did it · rest day · not today", section: "Shutdown" },
+  { key: "l", action: "shut.later", context: "shutdown", displayKey: "l", description: "later today — not done yet, still today (no carry counted)", section: "Shutdown" },
+  { key: "/", action: "shut.reason", context: "shutdown", displayKey: "/", description: "add why (optional) to the choice you make next", section: "Shutdown" },
+  { key: "y", action: "shut.habitDone", context: "shutdown", displayKey: "y / r / x", description: "on a habit: did it · rest day · not today", section: "Shutdown" },
   { key: "r", action: "shut.habitRest", context: "shutdown" },
   { key: "x", action: "shut.habitNo", context: "shutdown" },
   { key: "T", action: "shut.carryAll", context: "shutdown", displayKey: "⇧ t", description: "carry everything left to tomorrow", section: "Shutdown" },

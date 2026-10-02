@@ -98,8 +98,14 @@ import {
   toggleHabitSkip,
   type PostponeTarget,
 } from "./store/store";
-import { cadenceLabel, habitsToLog, parseHabitName, pendingOn, withMark } from "./store/habits";
-import { HabitLogPanel, nextUnanswered } from "./components/HabitCheckList";
+import { cadenceLabel, habitsToLog, markOn, parseHabitName, pendingOn } from "./store/habits";
+import { HabitLogPanel } from "./components/HabitCheckList";
+
+function withoutId(set: ReadonlySet<string>, id: string): ReadonlySet<string> {
+  const next = new Set(set);
+  next.delete(id);
+  return next;
+}
 
 /** Per device: the last "yesterday" whose unlogged-habits band was dismissed. */
 const HABIT_PROMPT_KEY = "execute.habitPromptDismissed";
@@ -186,7 +192,7 @@ import { ProjectsView } from "./views/ProjectsView";
 import { RecurringView } from "./views/RecurringView";
 import { ReckoningView } from "./views/ReckoningView";
 import { ReckoningBoard, type BoardLeftover } from "./views/ReckoningBoard";
-import { ShutdownView } from "./views/ShutdownView";
+import { ShutdownView, type ShutRow } from "./views/ShutdownView";
 import { PlanView } from "./views/PlanView";
 import { TrashView } from "./views/TrashView";
 import { HABIT_STRIP_DAYS, HabitsView, type HabitEditing, type HabitField } from "./views/HabitsView";
@@ -337,7 +343,17 @@ export function App() {
   // The evening shutdown ritual. Opened deliberately (`q`, the palette, or the
   // evening nudge) — never sprung on you, unlike the gate.
   const [shutdownOpen, setShutdownOpen] = useState(false);
-  const [shutCursorId, setShutCursorId] = useState<TaskId | null>(null);
+  // One cursor over Shutdown's whole list — today's open tasks, then today's
+  // habits. Ids are nanoids either way, so they never collide.
+  const [shutCursorId, setShutCursorId] = useState<string | null>(null);
+  // "Later today": still today, just not done yet — for a shutdown at 14:15
+  // that is most of the afternoon. Not a decision the app records anywhere
+  // (no carried count, no log line): it only lets this pass move on. Lives as
+  // long as this shutdown does; the next one asks again, because by then
+  // "later" has usually arrived.
+  const [shutLater, setShutLater] = useState<ReadonlySet<string>>(() => new Set());
+  // Bumped to ask the focused row to open (and focus) its optional reason field.
+  const [shutReasonTick, setShutReasonTick] = useState(0);
   // The morning half of the pair: shutdown closes the day, this opens it.
   const [planOpen, setPlanOpen] = useState(false);
   const [planCursorId, setPlanCursorId] = useState<TaskId | null>(null);
@@ -768,39 +784,67 @@ export function App() {
         }
       : null;
 
-  // Shutdown's last step: today's habits, once the tasks are settled. The list
-  // keeps answered rows (habitsToLog) so an answer doesn't pull the row away.
+  // Shutdown's list: today's open tasks, then today's habits (answered ones
+  // stay, so an answer doesn't pull a row out from under the cursor).
   const shutHabits = useMemo(
     () => (shutdownActive ? habitsToLog(state.habits, today) : []),
     [shutdownActive, state.habits, today]
   );
-  const shutHabitPhase = shutdownActive && todayOpenLeaves.length === 0 && shutHabits.length > 0;
-  const [shutHabitCursorId, setShutHabitCursorId] = useState<HabitId | null>(null);
+  const shutRows = useMemo<ShutRow[]>(
+    () =>
+      shutdownActive
+        ? [
+            ...todayOpenLeaves.map((task): ShutRow => ({ kind: "task", id: task.id, task })),
+            ...shutHabits.map((habit): ShutRow => ({ kind: "habit", id: habit.id, habit })),
+          ]
+        : [],
+    [shutdownActive, todayOpenLeaves, shutHabits]
+  );
+  /** Still waiting for an answer in this pass. */
+  const shutNeeds = (r: ShutRow): boolean =>
+    !shutLater.has(r.id) && (r.kind === "task" || markOn(r.habit, today) == null);
+  const shutRow = shutRows.find((r) => r.id === shutCursorId) ?? null;
+  const shutTaskId = shutRow?.kind === "task" ? shutRow.id : null;
+  const shutHabitId = shutRow?.kind === "habit" ? shutRow.id : null;
+  /** The next row after `fromId` (wrapping) still needing an answer, `fromId` itself counted as answered. */
+  const nextShutRow = (fromId: string): string | null => {
+    const i = shutRows.findIndex((r) => r.id === fromId);
+    for (let k = 1; k < shutRows.length; k++) {
+      const r = shutRows[(i + k + shutRows.length) % shutRows.length];
+      if (r != null && r.id !== fromId && shutNeeds(r)) return r.id;
+    }
+    return null;
+  };
+  const advanceShutCursorPast = (id: string) => setShutCursorId(nextShutRow(id));
   useEffect(() => {
-    if (!shutHabitPhase) {
-      if (shutHabitCursorId !== null) setShutHabitCursorId(null);
+    if (!shutdownActive) {
+      if (shutCursorId !== null) setShutCursorId(null);
+      if (shutLater.size > 0) setShutLater(new Set());
       return;
     }
-    if (shutHabitCursorId === null || !shutHabits.some((h) => h.id === shutHabitCursorId)) {
-      setShutHabitCursorId(nextUnanswered(shutHabits, today, null) ?? shutHabits[0]?.id ?? null);
+    if (shutCursorId === null || !shutRows.some((r) => r.id === shutCursorId)) {
+      const first = shutRows.find(shutNeeds) ?? shutRows[0] ?? null;
+      setShutCursorId(first?.id ?? null);
     }
-  }, [shutHabitPhase, shutHabits, shutHabitCursorId, today]);
+  }, [shutdownActive, shutRows, shutCursorId, shutLater]);
   const answerShutHabit = (id: HabitId | null, mark: HabitMark) => {
     const h = shutHabits.find((x) => x.id === id);
     if (h == null) return;
     const next = h.checks[today] === mark ? null : mark;
     markHabit(h.id, today, next);
-    const after = shutHabits.map((x) => (x.id === h.id ? withMark(x, today, next) : x));
-    setShutHabitCursorId(nextUnanswered(after, today, h.id) ?? h.id);
+    if (shutLater.has(h.id)) setShutLater((prev) => withoutId(prev, h.id));
+    if (next != null) advanceShutCursorPast(h.id);
   };
-  useEffect(() => {
-    if (!shutdownActive) {
-      if (shutCursorId !== null) setShutCursorId(null);
+  /** Later today ↔ back in the queue, for a task or a habit. */
+  const toggleShutLater = (id: string | null) => {
+    if (id == null) return;
+    if (shutLater.has(id)) {
+      setShutLater((prev) => withoutId(prev, id));
       return;
     }
-    const ids = todayOpenLeaves.map((t) => t.id);
-    if (shutCursorId === null || !ids.includes(shutCursorId)) setShutCursorId(ids[0] ?? null);
-  }, [shutdownActive, todayOpenLeaves, shutCursorId]);
+    setShutLater((prev) => new Set([...prev, id]));
+    advanceShutCursorPast(id);
+  };
   useEffect(() => setReckReason(""), [shutCursorId]);
   // The desktop's evening notification opens straight into the ritual — a nudge
   // that only says "you should" wastes the interruption it just spent.
@@ -1372,14 +1416,6 @@ export function App() {
     const nextCard = reckCards[idx + 1] ?? reckCards[idx - 1] ?? null;
     setReckCursorId(nextCard?.leaves[0]?.task.id ?? null);
   };
-  // Resolving a task removes it from the list; land on the next one so the
-  // review keeps flowing without a keystroke.
-  const advanceShutCursorPast = (resolvedId: TaskId) => {
-    const ids = todayOpenLeaves.map((t) => t.id);
-    const i = ids.indexOf(resolvedId);
-    if (i === -1) return;
-    setShutCursorId(ids[i + 1] ?? ids[i - 1] ?? null);
-  };
   const movePlanCursor = (dir: "up" | "down") => {
     const ids = planList.map((c) => c.id);
     if (ids.length === 0) return;
@@ -1394,17 +1430,10 @@ export function App() {
     setPlanCursorId(ids[i + 1] ?? ids[i - 1] ?? null);
   };
   const moveShutCursor = (dir: "up" | "down") => {
-    if (shutHabitPhase) {
-      const i = shutHabits.findIndex((h) => h.id === shutHabitCursorId);
-      const next = shutHabits[Math.min(Math.max(i + (dir === "down" ? 1 : -1), 0), shutHabits.length - 1)];
-      if (next != null) setShutHabitCursorId(next.id);
-      return;
-    }
-    const ids = todayOpenLeaves.map((t) => t.id);
-    if (ids.length === 0) return;
-    const i = shutCursorId == null ? -1 : ids.indexOf(shutCursorId);
-    const next = i < 0 ? 0 : Math.min(Math.max(i + (dir === "down" ? 1 : -1), 0), ids.length - 1);
-    setShutCursorId(ids[next]);
+    if (shutRows.length === 0) return;
+    const i = shutRows.findIndex((r) => r.id === shutCursorId);
+    const next = i < 0 ? 0 : Math.min(Math.max(i + (dir === "down" ? 1 : -1), 0), shutRows.length - 1);
+    setShutCursorId(shutRows[next]?.id ?? null);
   };
 
   const currentReckCard = (): ReckoningCard | null =>
@@ -1906,40 +1935,41 @@ export function App() {
       setShutdownOpen(true);
     },
     shutComplete: (id?: TaskId) => {
-      const target = id ?? shutCursorId;
+      const target = id ?? shutTaskId;
       if (target == null) return;
       advanceShutCursorPast(target);
       setCompleted(target, true, reckReason || null);
     },
     shutCarry: (id?: TaskId) => {
-      const target = id ?? shutCursorId;
+      const target = id ?? shutTaskId;
       if (target == null) return;
       advanceShutCursorPast(target);
       carryManyTo([target], tomorrow, reckReason || null);
     },
     shutPostpone: (id?: TaskId) => {
-      const target = id ?? shutCursorId;
+      const target = id ?? shutTaskId;
       if (target == null) return;
       openPostponePicker([target]);
     },
     shutWontDo: (id?: TaskId) => {
-      const target = id ?? shutCursorId;
+      const target = id ?? shutTaskId;
       if (target == null) return;
       advanceShutCursorPast(target);
       markWontDo(target, reckReason || null);
     },
     shutDrop: (id?: TaskId) => {
-      const target = id ?? shutCursorId;
+      const target = id ?? shutTaskId;
       if (target == null) return;
       advanceShutCursorPast(target);
       trashTask(target, { reason: reckReason || null, log: true });
     },
     shutBreakdown: (id?: TaskId) => {
-      const target = id ?? shutCursorId;
+      const target = id ?? shutTaskId;
       if (target != null) setBreakingDownId(target);
     },
     shutCarryAll: () => {
-      const ids = todayOpenLeaves.map((t) => t.id);
+      // Everything still waiting — not what you've said you'll do later today.
+      const ids = todayOpenLeaves.map((t) => t.id).filter((tid) => !shutLater.has(tid));
       if (ids.length === 0) return;
       setShutCursorId(null);
       carryManyTo(ids, tomorrow, reckReason || null);
@@ -2192,9 +2222,13 @@ export function App() {
     "shut.drop": () => cmd.shutDrop(),
     "shut.breakdown": () => cmd.shutBreakdown(),
     "shut.carryAll": cmd.shutCarryAll,
-    "shut.habitDone": () => shutHabitPhase && answerShutHabit(shutHabitCursorId, "done"),
-    "shut.habitRest": () => shutHabitPhase && answerShutHabit(shutHabitCursorId, "skip"),
-    "shut.habitNo": () => shutHabitPhase && answerShutHabit(shutHabitCursorId, "missed"),
+    "shut.habitDone": () => answerShutHabit(shutHabitId, "done"),
+    "shut.habitRest": () => answerShutHabit(shutHabitId, "skip"),
+    "shut.habitNo": () => answerShutHabit(shutHabitId, "missed"),
+    "shut.later": () => toggleShutLater(shutCursorId),
+    "shut.reason": () => {
+      if (shutTaskId != null) setShutReasonTick((n) => n + 1);
+    },
     "reck.dropAll": () => {
       const c = currentReckCard();
       if (c != null) cmd.reckDropAll(c);
@@ -3159,14 +3193,23 @@ export function App() {
               />
             ) : shutdownActive ? (
               <ShutdownView
-                open={todayOpenLeaves}
+                rows={shutRows}
                 cursorId={shutCursorId}
+                later={shutLater}
+                today={today}
+                shutdownAt={shutdownTimeOn(state.presence, today)}
+                contextOf={(id) => {
+                  const path = getAncestorPath(state.tasks, id).slice(0, -1).map((t) => t.text || "Untitled");
+                  const task = findById(state.tasks, id);
+                  const project = state.projects.find((p) => p.id === task?.projectId) ?? null;
+                  return { project, path };
+                }}
                 tally={tally}
                 tomorrowCount={tomorrowCount}
-                projects={state.projects}
                 breakdownTask={shutdownBreakdownTask}
                 tomorrow={tomorrow}
                 reason={reckReason}
+                reasonTick={shutReasonTick}
                 onReasonChange={setReckReason}
                 onSelect={setShutCursorId}
                 onComplete={cmd.shutComplete}
@@ -3176,11 +3219,7 @@ export function App() {
                 onDrop={cmd.shutDrop}
                 onStartBreakdown={cmd.shutBreakdown}
                 onCarryAll={cmd.shutCarryAll}
-                habits={shutHabits}
-                habitDate={today}
-                habitCursorId={shutHabitCursorId}
-                habitPhase={shutHabitPhase}
-                onHabitSelect={setShutHabitCursorId}
+                onLater={toggleShutLater}
                 onHabitAnswer={answerShutHabit}
                 onAddStep={(parentId, text) =>
                   addChild(parentId, parseCapture(text).text, tomorrow)
@@ -3339,7 +3378,7 @@ export function App() {
             />
           )}
         </div>
-        <StatusBar reckoning={reckoningActive} shutdown={shutdownActive} habits={habitsActive} shutdownHabits={shutHabitPhase} />
+        <StatusBar reckoning={reckoningActive} shutdown={shutdownActive} habits={habitsActive} shutdownHabits={shutRow?.kind === "habit"} />
       </main>
 
       {showHelp && <HelpOverlay onClose={() => setShowHelp(false)} />}

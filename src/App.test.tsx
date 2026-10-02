@@ -2805,7 +2805,7 @@ describe("Not forgetting to log habits", () => {
       createHabit("Read");
     });
     await runCommand(CMD.shutdown);
-    expect(await screen.findByText("One more thing")).toBeTruthy();
+    expect(await screen.findByText("And your habits")).toBeTruthy();
 
     // Same-millisecond habits sort by id, so read the order the list shows.
     const [first, second, third] = getState().habits.map((h) => h.name);
@@ -2819,17 +2819,59 @@ describe("Not forgetting to log habits", () => {
     expect(getState().tasks).toEqual([]);
   });
 
-  it("habits wait until the tasks are settled", async () => {
+  it("one list: ↓ walks from the tasks into the habits, and each row takes its own keys", async () => {
     await mount(() => createHabit("Meditate"));
     await addTask("finish the deck");
     await runCommand(CMD.shutdown);
     expect(await screen.findByText("Close the day")).toBeTruthy();
-    fireEvent.keyDown(document.body, { key: "y" });
+    fireEvent.keyDown(document.body, { key: "y" }); // a habit key, on a task: nothing
     expect(mark("Meditate", today())).toBeUndefined();
-    fireEvent.keyDown(document.body, { key: "e" }); // the task: done
-    expect(await screen.findByText("One more thing")).toBeTruthy();
+
+    fireEvent.keyDown(document.body, { key: "ArrowDown" }); // into the habits
+    fireEvent.keyDown(document.body, { key: "e" }); // a task key, on a habit: nothing
+    expect(getState().tasks[0].completed).toBe(false);
     fireEvent.keyDown(document.body, { key: "y" });
     await waitFor(() => expect(mark("Meditate", today())).toBe("done"));
+
+    fireEvent.keyDown(document.body, { key: "ArrowUp" });
+    fireEvent.keyDown(document.body, { key: "e" });
+    expect(await screen.findByText("The day is closed.")).toBeTruthy();
+  });
+
+  it("“later today” lets a mid-afternoon shutdown move on without deciding", async () => {
+    await mount(() => createHabit("Meditate"));
+    await addTask("finish the deck");
+    await runCommand(CMD.shutdown);
+    await screen.findByText("Close the day");
+
+    fireEvent.keyDown(document.body, { key: "l" }); // the task: still today
+    fireEvent.keyDown(document.body, { key: "l" }); // the cursor moved on to the habit: later too
+    expect(await screen.findByText("Done for now")).toBeTruthy();
+    expect(screen.getByText("1 task later today")).toBeTruthy();
+    expect(screen.getByText("1 habit later today")).toBeTruthy();
+    const task = getState().tasks[0];
+    expect(task.completed).toBe(false);
+    expect(task.plannedFor).toBe(today()); // still today's…
+    expect(task.carriedCount).toBe(0); // …and not counted as a carry
+    expect(mark("Meditate", today())).toBeUndefined();
+
+    fireEvent.keyDown(document.body, { key: "ArrowUp" });
+    fireEvent.keyDown(document.body, { key: "l" }); // "ask me now" — back in the queue
+    expect(await screen.findByText("Close the day")).toBeTruthy();
+  });
+
+  it("a task shows where it lives: project › parent", async () => {
+    render(<App />);
+    await addTask("Ship the release");
+    await addTask("write the changelog");
+    blurActive();
+    fireEvent.keyDown(document.body, { key: "Tab" }); // a subtask of "Ship the release"
+    await runCommand(CMD.shutdown);
+    await screen.findByText("Close the day");
+    const row = screen.getByText("write the changelog").closest("div.relative");
+    expect(row).not.toBeNull();
+    expect(within(row as HTMLElement).getByText("Ship the release")).toBeTruthy();
+    expect(within(row as HTMLElement).getByText("Inbox")).toBeTruthy();
   });
 
   it("the morning band asks about yesterday, and the panel answers it", async () => {
