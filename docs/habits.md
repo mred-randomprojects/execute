@@ -35,6 +35,35 @@ trackers behind each choice, and the ideas still to build, roughly in order.
 - Engine: `src/store/habits.ts`, pure and tested. It is the place to change
   how anything is scored.
 
+## Not forgetting to log (v1.1)
+
+Forgetting to log is a different failure from not doing the habit, so an
+unmarked day is now kept apart from an answered one. A third mark,
+**`missed`** ("not today"), scores exactly like an unmarked day but records
+that the question was asked. Everything below asks about the same thing,
+`pendingOn(habit, date)`: active, unmarked, and either daily or with that
+week's target not yet met.
+
+- **Shutdown ends with the habits.** Once the tasks are settled, the ritual
+  says "One more thing" and walks today's habits: `y` did it, `r` rest day,
+  `x` not today, with the cursor moving on by itself. The keys only apply
+  after the tasks are settled, so one keystroke can't land on both.
+- **The morning band.** If yesterday has unlogged habits (no shutdown that
+  night), Today shows "Yesterday's habits? 2 not logged: …". Clicking it
+  opens a small panel with the same keys. `×` dismisses it until the next
+  day (stored per device in `localStorage`, key
+  `execute.habitPromptDismissed`). It never blocks anything.
+- **The evening nudge counts habits too.** It adds "· 2 habits to log", and
+  it fires for habits alone when no tasks are left. It still opens Shutdown,
+  and it's still the same single evening nudge. The tray menu shows the line
+  as well, but the menu-bar number stays tasks only. The in-app
+  "Closing time" banner also appears for habits.
+- **Habits on Today.** A strip of chips under the period tabs. Click one to
+  check in.
+- **`⌘k` from anywhere:** "Check in: Meditate (today)" (it learns your
+  daily habits through frecency), plus "Log habits: today…" and "Log habits:
+  yesterday…".
+
 ## Lessons from other habit trackers, and what each one changed here
 
 **1. All-or-nothing streaks backfire.** A counter that drops to zero after one
@@ -112,14 +141,10 @@ list and the badge. Delete takes two steps and can still be undone with ⌘z.
 ## Roadmap: ideas, roughly in order
 
 **Next, cheap and high-leverage**
-1. **Check in from the shutdown ritual.** Add one step tonight: "Did you
-   meditate / run / read today?" The app already has a fixed evening moment,
-   and logging at one is the best known cure for forgetting to log.
-2. **Habits on Today.** A compact strip under the period tabs (✓ ✓ ○) with
-   the check-in a key away, so habits sit next to the day's commitments
-   without being tasks.
-3. **⌘k check-in from anywhere.** "check meditate" works from any view, so
-   there's no need to visit the view.
+1. ~~Check in from the shutdown ritual.~~ Shipped in v1.1.
+2. ~~Habits on Today.~~ Shipped in v1.1, as clickable chips. A keyboard path
+   into the strip is still open.
+3. ~~⌘k check-in from anywhere.~~ Shipped in v1.1.
 4. **Phone check-ins** (web viewer), after the per-day merge (see Known
    limits). This is the biggest friction win: the moment you do a habit is
    rarely the moment you're at the desk.
