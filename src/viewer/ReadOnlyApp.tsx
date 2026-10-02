@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { AppState, ProjectId, TaskId } from "../types";
+import type { AppState, HabitId, HabitMark, ISODate, ProjectId, TaskId } from "../types";
+import { PhoneHabits } from "./PhoneHabits";
 import { findById } from "../store/tasks";
 import { TaskSheet, type TaskPatch } from "./TaskSheet";
 import { sinceLabel, todayISO } from "../store/dates";
@@ -97,6 +98,7 @@ export function ReadOnlyApp({
   onToggle,
   onAdd,
   onUpdate,
+  onHabit = () => {},
 }: {
   state: AppState;
   /** When any client last wrote the cloud document — how fresh this view is. */
@@ -107,6 +109,7 @@ export function ReadOnlyApp({
   onToggle: (id: TaskId) => void;
   onAdd: (text: string, today: boolean) => void;
   onUpdate: (id: TaskId, patch: TaskPatch) => void;
+  onHabit?: (id: HabitId, date: ISODate, mark: HabitMark | null) => void;
 }) {
   const captureRef = useRef<HTMLInputElement>(null);
   const today = todayISO(state.devDateOverride);
@@ -321,6 +324,8 @@ export function ReadOnlyApp({
             onArrowDown={() => {}}
           />
         </div>
+
+        {view === "today" && <PhoneHabits habits={state.habits} today={today} onMark={onHabit} />}
 
         <EditorProvider value={editor}>
           <div className="-mx-2 flex-1">

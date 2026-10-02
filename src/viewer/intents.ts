@@ -1,4 +1,5 @@
-import type { ProjectId, Task, TaskId } from "../types";
+import type { Habit, HabitId, HabitMark, ISODate, ProjectId, Task, TaskId } from "../types";
+import { markStamped } from "../store/habits";
 import { findById, mapById } from "../store/tasks";
 import type { TaskPatch } from "./TaskSheet";
 
@@ -71,4 +72,26 @@ export function updateTask(tasks: Task[], id: TaskId, patch: TaskPatch): Task[] 
     }
     return next;
   });
+}
+
+/**
+ * Set one habit's mark for one day (or clear it, with null) — idempotent, and
+ * stamped on that day alone, so the merge keeps both this and whatever the
+ * desktop marked on other days (or later on this one).
+ */
+export function setHabitMark(
+  habits: Habit[],
+  id: HabitId,
+  date: ISODate,
+  mark: HabitMark | null,
+  now: number = Date.now(),
+): Habit[] {
+  let changed = false;
+  const next = habits.map((h) => {
+    if (h.id !== id) return h;
+    const marked = markStamped(h, date, mark, now);
+    if (marked !== h) changed = true;
+    return marked;
+  });
+  return changed ? next : habits;
 }

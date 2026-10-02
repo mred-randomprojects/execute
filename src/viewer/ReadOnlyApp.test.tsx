@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { ReadOnlyApp } from "./ReadOnlyApp";
 import { makeTask } from "../store/tasks";
 import { todayISO, addDays } from "../store/dates";
-import { emptyState, type AppState } from "../types";
+import { emptyState, type AppState, type Habit, type HabitId } from "../types";
 
 afterEach(cleanup);
 
@@ -84,5 +84,38 @@ describe("the phone's details sheet and account menu", () => {
     fireEvent.click(screen.getByLabelText("Account"));
     fireEvent.click(screen.getByText("Sign out"));
     expect(onSignOut).toHaveBeenCalledOnce();
+  });
+});
+
+describe("habits on the phone", () => {
+  const habit = (name: string, daysOld: number): Habit => ({
+    id: name as HabitId,
+    name,
+    cue: "",
+    perWeek: 7,
+    checks: {},
+    checkedAt: {},
+    archivedAt: null,
+    createdAt: Date.now() - daysOld * 86_400_000,
+    updatedAt: 0,
+  });
+
+  it("checks in today with a tap, and asks about yesterday with a yes and a no", () => {
+    const onHabit = vi.fn();
+    const today = todayISO(null);
+    renderApp({ ...emptyState(), habits: [habit("Stretch", 5)] }, { onHabit });
+
+    fireEvent.click(screen.getByRole("button", { pressed: false, name: /Stretch/ }));
+    expect(onHabit).toHaveBeenLastCalledWith("Stretch", today, "done");
+
+    expect(screen.getByText("Yesterday’s habits?")).toBeTruthy();
+    fireEvent.click(screen.getByLabelText("Stretch: not yesterday"));
+    expect(onHabit).toHaveBeenLastCalledWith("Stretch", addDays(today, -1), "missed");
+  });
+
+  it("a habit born today isn't asked about yesterday", () => {
+    renderApp({ ...emptyState(), habits: [habit("Floss", 0)] });
+    expect(screen.queryByText("Yesterday’s habits?")).toBeNull();
+    expect(screen.getByText("Floss")).toBeTruthy();
   });
 });

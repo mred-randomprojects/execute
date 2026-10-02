@@ -2,9 +2,9 @@ import { useEffect, useRef, useState } from "react";
 import type { User } from "firebase/auth";
 import { AuthProvider, useAuth } from "../auth";
 import { LoginPage } from "../components/LoginPage";
-import type { Task, TaskId } from "../types";
+import type { HabitId, HabitMark, ISODate, Task, TaskId } from "../types";
 import { findById, makeTask } from "../store/tasks";
-import { setCompleted, updateTask } from "./intents";
+import { setCompleted, setHabitMark, updateTask } from "./intents";
 import type { TaskPatch } from "./TaskSheet";
 import { parseCapture } from "../store/capture";
 import { todayISO } from "../store/dates";
@@ -199,6 +199,10 @@ function AuthedViewer({ user, onSignOut }: { user: User; onSignOut: () => void }
     run((s) => ({ ...s, tasks: updateTask(s.tasks, taskId, patch) }));
   };
 
+  const onHabit = (id: HabitId, date: ISODate, mark: HabitMark | null) => {
+    run((s) => ({ ...s, habits: setHabitMark(s.habits, id, date, mark) }));
+  };
+
   return (
     <ReadOnlyApp
       state={state}
@@ -215,6 +219,7 @@ function AuthedViewer({ user, onSignOut }: { user: User; onSignOut: () => void }
       onToggle={onToggle}
       onAdd={onAdd}
       onUpdate={onUpdate}
+      onHabit={onHabit}
     />
   );
 }

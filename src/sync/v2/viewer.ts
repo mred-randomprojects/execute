@@ -9,8 +9,8 @@ import { StaleViewError, docKey, type DocStore, type Expected, type ListenTarget
 //
 // The phone doesn't keep a local copy or run the merge: it shows the cloud and
 // writes its own edits straight to it. It loads only what it shows — open
-// tasks and tasks completed in the last RECENT_DAYS — plus projects and meta,
-// so a cold open costs a few hundred reads, not thousands.
+// tasks and tasks completed in the last RECENT_DAYS — plus projects, habits
+// and meta, so a cold open costs a few hundred reads, not thousands.
 //
 // Each edit is an intent applied to the current view and written as field
 // patches in a guarded transaction: if another device changed one of those
@@ -46,6 +46,7 @@ export class ViewerSync {
   private open = new Map<string, unknown>();
   private recent = new Map<string, unknown>();
   private projects = new Map<string, unknown>();
+  private habits = new Map<string, unknown>();
   private meta = new Map<string, unknown>();
   private got = new Set<string>();
   private unsubs: (() => void)[] = [];
@@ -76,6 +77,7 @@ export class ViewerSync {
     listen("open", "tasks", this.open, { field: "completed", op: "==", value: false });
     listen("recent", "tasks", this.recent, { field: "completedAt", op: ">=", value: cutoff });
     listen("projects", "projects", this.projects);
+    listen("habits", "habits", this.habits);
     listen("meta", "meta", this.meta);
   }
 
@@ -98,7 +100,7 @@ export class ViewerSync {
       tasks: this.rawTasks(),
       projects: this.projects,
       recurrences: new Map(),
-      habits: new Map(),
+      habits: this.habits,
       tombstones: new Map(),
       log: new Map(),
       days: new Map(),
@@ -108,7 +110,7 @@ export class ViewerSync {
   }
 
   snapshot(): ViewerSnapshot {
-    if (!["open", "recent", "projects", "meta"].every((n) => this.got.has(n))) return { phase: "loading" };
+    if (!["open", "recent", "projects", "habits", "meta"].every((n) => this.got.has(n))) return { phase: "loading" };
     const format = this.meta.get(FORMAT_DOC_ID);
     if (!isObject(format) || typeof format.version !== "number" || format.version < FORMAT_VERSION) {
       return { phase: "notMigrated" };
@@ -133,8 +135,8 @@ export class ViewerSync {
     };
   }
 
-  private expected(id: string): Expected {
-    const d = this.rawTasks().get(id);
+  private expected(collection: "tasks" | "habits", id: string): Expected {
+    const d = collection === "habits" ? this.habits.get(id) : this.rawTasks().get(id);
     return d === undefined ? { exists: false } : { exists: true, data: d };
   }
 
@@ -157,7 +159,7 @@ export class ViewerSync {
   /**
    * Apply an edit (an idempotent intent over the current view) and write it.
    * Shows it at once; retries against a refreshed view if another device got
-   * there first. Only task documents are ever written from here.
+   * there first. Only task and habit documents are ever written from here.
    */
   async apply(edit: (s: AppState) => AppState): Promise<void> {
     for (let attempt = 1; ; attempt++) {
@@ -167,14 +169,19 @@ export class ViewerSync {
       const view = this.view();
       const edited = edit(view);
       const placed: AppState = { ...edited, tasks: placeTasks(view.tasks, edited.tasks, this.now()) };
-      const writes = diffDocs(toDocs(view), toDocs(placed)).filter((w) => w.collection === "tasks");
+      const writes = diffDocs(toDocs(view), toDocs(placed)).flatMap((w) =>
+        w.collection === "tasks" || w.collection === "habits" ? [{ ...w, collection: w.collection }] : [],
+      );
       if (writes.length === 0) return;
 
       this.optimistic = { state: placed, until: Date.now() + OPTIMISTIC_MS };
       this.emit();
       const since = this.deliveries;
       try {
-        await this.store.commit(writes, new Map(writes.map((w) => [docKey(w.collection, w.id), this.expected(w.id)])));
+        await this.store.commit(
+          writes,
+          new Map(writes.map((w) => [docKey(w.collection, w.id), this.expected(w.collection, w.id)])),
+        );
         return;
       } catch (e: unknown) {
         this.optimistic = null;

@@ -5,7 +5,9 @@ import { MemoryStore } from "./memoryStore";
 import { initStore } from "../../store/store";
 import { repairRanks } from "../../store/placement";
 import { findById, makeTask, mapById } from "../../store/tasks";
-import { emptyState, type AppState, type Task, type TaskId } from "../../types";
+import { emptyState, type AppState, type Habit, type HabitId, type Task, type TaskId } from "../../types";
+import { markStamped } from "../../store/habits";
+import { setHabitMark } from "../../viewer/intents";
 
 const DAY = 86_400_000;
 
@@ -155,5 +157,46 @@ describe("the phone's view", () => {
     const snap = p.last();
     expect(snap.phase === "ready" && snap.outdated).toBe(true);
     await expect(p.sync.apply((s) => ({ ...s, tasks: [...s.tasks, makeTask("x")] }))).rejects.toThrow(/newer version/);
+  });
+
+  it("habits: the phone checks in, the desktop marks another day, both keep both", async () => {
+    const store = new MemoryStore();
+    const habit: Habit = {
+      id: "habit-1" as HabitId,
+      name: "Stretch",
+      cue: "",
+      perWeek: 7,
+      checks: {},
+      checkedAt: {},
+      archivedAt: null,
+      createdAt: Date.now() - 10 * DAY,
+      updatedAt: Date.now() - 10 * DAY,
+    };
+    const d = desktop(store, { ...sample(), habits: [habit] });
+    await d.engine.syncNow();
+    const p = phone(store);
+    const snap = p.last();
+    expect(snap.phase === "ready" ? snap.state.habits.map((h) => h.name) : []).toEqual(["Stretch"]);
+
+    store.hold(); // neither hears the other for a while
+    d.host.edit((s) => ({
+      ...s,
+      habits: s.habits.map((h) => markStamped(h, "2026-10-01", "done", Date.now())),
+    }));
+    await d.engine.syncNow();
+    const writes = store.writes;
+    const applying = p.sync.apply((s) => ({ ...s, habits: setHabitMark(s.habits, habit.id, "2026-10-02", "done") }));
+    store.release();
+    await applying;
+    expect(store.writes - writes).toBeGreaterThanOrEqual(1);
+    await p.sync.apply((s) => ({ ...s, habits: setHabitMark(s.habits, habit.id, "2026-10-02", "done") })); // idempotent
+
+    await d.engine.syncNow();
+    expect(d.host.state.habits[0].checks).toEqual({ "2026-10-01": "done", "2026-10-02": "done" });
+    const after = p.last();
+    expect(after.phase === "ready" ? after.state.habits[0].checks : null).toEqual({
+      "2026-10-01": "done",
+      "2026-10-02": "done",
+    });
   });
 });
