@@ -268,6 +268,9 @@ let presence = {
   remaining: 0,
   /** Titles of what's still open today, for the nudges — never more than a few. */
   titles: [],
+  /** Habits unanswered today — folded into the evening nudge, never the count. */
+  habitsLeft: 0,
+  habitNames: [],
   tray: true,
   openAtLogin: false,
   nudges: true,
@@ -334,10 +337,11 @@ function updateTray() {
     tray.on("click", showMainWindow);
   }
   tray.setTitle(trayTitle());
+  const habitLine = habitsLine();
   tray.setToolTip(
-    presence.remaining > 0
+    (presence.remaining > 0
       ? `Execute — ${presence.remaining} left today`
-      : "Execute — inbox zero",
+      : "Execute — inbox zero") + (habitLine ? ` · ${habitLine}` : ""),
   );
   tray.setContextMenu(
     Menu.buildFromTemplate([
@@ -345,6 +349,7 @@ function updateTray() {
         label: presence.remaining > 0 ? `${presence.remaining} left today` : "Inbox zero",
         enabled: false,
       },
+      ...(habitLine ? [{ label: habitLine, enabled: false }] : []),
       { type: "separator" },
       { label: "Open Execute", click: showMainWindow },
       { label: "Capture a task…", accelerator: CAPTURE_SHORTCUT, click: focusCapture },
@@ -382,6 +387,13 @@ function titleList(titles, max = 2) {
   if (named.length === 0) return "";
   const extra = presence.remaining - named.length;
   return named.join(", ") + (extra > 0 ? ` +${extra} more` : "");
+}
+
+/** "2 habits to log" — or "" when there's nothing to ask. */
+function habitsLine() {
+  const n = presence.habitsLeft ?? 0;
+  if (n <= 0) return "";
+  return n === 1 ? "1 habit to log" : `${n} habits to log`;
 }
 
 /** Ask the renderer to open the evening shutdown ritual. */
@@ -429,15 +441,21 @@ function checkNudges() {
   if (!nudgedOn.evening && hour === presence.eveningHour) {
     nudgedOn.evening = true;
     // At zero there is nothing to say, and saying it anyway is how an app
-    // teaches you to ignore it.
+    // teaches you to ignore it. Habits ride the same nudge (the shutdown ends
+    // with them) rather than earning one of their own.
+    const habitLine = habitsLine();
     if (presence.remaining > 0) {
       // Straight into the ritual, not just into the app: a nudge that only says
       // "you should" wastes the interruption it just spent.
+      const tasks = titleList(presence.titles);
       notify(
         `${presence.remaining} left today — close the day?`,
-        titleList(presence.titles),
+        habitLine ? (tasks ? `${tasks} · ${habitLine}` : habitLine) : tasks,
         openShutdown,
       );
+    } else if (habitLine) {
+      const names = (presence.habitNames ?? []).filter((t) => typeof t === "string" && t !== "");
+      notify(`${habitLine} — close the day?`, names.join(", "), openShutdown);
     }
   }
 }

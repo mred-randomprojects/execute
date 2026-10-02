@@ -1,4 +1,4 @@
-import type { Presence, Task } from "../types";
+import type { Habit, Presence, Task } from "../types";
 
 // What the desktop shell needs to know to be a presence: how much is left today,
 // what it is, and which of the four surfaces the user has turned on. The renderer
@@ -16,6 +16,13 @@ export interface PresenceSnapshot extends Presence {
   remaining: number;
   /** The first few of those, so a notification can say what rather than only how many. */
   titles: string[];
+  /**
+   * Habits still unanswered today. Never on the menu-bar number (that is the
+   * day's commitments, and a habit isn't one) — only folded into the evening
+   * nudge, which may now fire for habits alone. Still two nudges a day, total.
+   */
+  habitsLeft: number;
+  habitNames: string[];
 }
 
 /**
@@ -25,6 +32,7 @@ export interface PresenceSnapshot extends Presence {
 export function presenceSnapshot(
   presence: Presence,
   openToday: Task[],
+  habitsLeftToday: Habit[] = [],
 ): PresenceSnapshot {
   return {
     ...presence,
@@ -32,6 +40,11 @@ export function presenceSnapshot(
     titles: openToday
       .map((t) => t.text.trim())
       .filter((text) => text !== "")
+      .slice(0, NUDGE_TITLE_LIMIT),
+    habitsLeft: habitsLeftToday.length,
+    habitNames: habitsLeftToday
+      .map((h) => h.name.trim())
+      .filter((name) => name !== "")
       .slice(0, NUDGE_TITLE_LIMIT),
   };
 }

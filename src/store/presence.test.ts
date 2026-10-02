@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import type { Task } from "../types";
+import type { Habit, Task } from "../types";
 import { defaultPresence } from "../types";
 import { makeTask } from "./tasks";
 import { NUDGE_TITLE_LIMIT, presenceSnapshot } from "./presence";
@@ -40,5 +40,22 @@ describe("presenceSnapshot", () => {
     // Everything else here is undone by flipping it back; a login item shows up
     // in the OS's own settings, so it never turns itself on.
     expect(defaultPresence().openAtLogin).toBe(false);
+  });
+
+  it("carries today's unanswered habits for the evening nudge, apart from the task count", () => {
+    const habit = (name: string) => ({
+      id: name as Habit["id"],
+      name,
+      cue: "",
+      perWeek: 7,
+      checks: {},
+      archivedAt: null,
+      createdAt: 0,
+      updatedAt: 0,
+    });
+    const snap = presenceSnapshot(defaultPresence(), open("a"), [habit("Run"), habit(" ")]);
+    expect(snap.remaining).toBe(1);
+    expect(snap.habitsLeft).toBe(2);
+    expect(snap.habitNames).toEqual(["Run"]);
   });
 });
