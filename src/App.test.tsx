@@ -2848,3 +2848,30 @@ describe("Not forgetting to log habits", () => {
     await waitFor(() => expect(mark("Floss", today())).toBe("done"));
   });
 });
+
+describe("Shutdown time", () => {
+  afterEach(() => {
+    delete window.execute;
+  });
+
+  it("typing “shutdown 14:15” in ⌘k sets the weekday time; a switch turns weekends off", async () => {
+    window.execute = {
+      isElectron: true,
+      loadStore: () => Promise.resolve({}),
+      saveStore: () => Promise.resolve(true),
+    };
+    render(<App />);
+    await screen.findByPlaceholderText("Add a task for today…");
+    blurActive();
+    fireEvent.keyDown(document.body, { key: "k", metaKey: true });
+    const input = await screen.findByPlaceholderText("Type a command…");
+    fireEvent.change(input, { target: { value: "shutdown 2:15pm" } });
+    const list = await screen.findByRole("listbox", { name: "Commands" });
+    fireEvent.click(await within(list).findByText("Shutdown time: weekdays at 14:15"));
+    await waitFor(() => expect(getState().presence.shutdownWeekdayAt).toBe("14:15"));
+    expect(getState().presence.shutdownWeekendAt).toBe("18:00");
+
+    await runCommand(/^Shutdown on weekends at 18:00: turn off$/);
+    await waitFor(() => expect(getState().presence.shutdownWeekendOn).toBe(false));
+  });
+});

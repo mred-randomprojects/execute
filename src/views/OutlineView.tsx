@@ -719,6 +719,7 @@ export function OutlineView({
   run,
   capacity,
   closingTime,
+  closingAt = null,
   onShutdown,
   habitPrompt = null,
   habitStrip = null,
@@ -770,6 +771,8 @@ export function OutlineView({
   capacity: CapacityLoad;
   /** Past the evening hour with work still open — offer the shutdown ritual. */
   closingTime: boolean;
+  /** Today's shutdown time, for the banner. */
+  closingAt?: string | null;
   onShutdown: () => void;
   /** Habits left unlogged yesterday — the morning band. Null = nothing to ask. */
   habitPrompt?: { names: string[]; onOpen: () => void; onDismiss: () => void } | null;
@@ -931,12 +934,12 @@ export function OutlineView({
           className="mb-4 flex w-full items-center justify-between rounded border border-accent/40 bg-accent-soft px-4 py-2.5 text-left transition-colors hover:border-accent/70"
         >
           <span className="text-[13px] text-ink">
-            <span className="font-medium">Closing time.</span>{" "}
+            <span className="font-medium">Shutdown time{closingAt != null ? ` (${closingAt})` : ""}.</span>{" "}
             <span className="text-ink-soft">
-              Decide the rest tonight, while you still remember why.
+              Decide the rest now, while you still remember why.
             </span>
           </span>
-          <span className="kbd shrink-0">q</span>
+          <span className="kbd shrink-0">start</span>
         </button>
       )}
 
