@@ -291,7 +291,7 @@ function coerceChecks(raw: unknown): Record<string, HabitMark> {
   const out: Record<string, HabitMark> = {};
   if (!isObject(raw)) return out;
   for (const [date, mark] of Object.entries(raw)) {
-    if (ISO_DAY.test(date) && (mark === "done" || mark === "skip")) out[date] = mark;
+    if (ISO_DAY.test(date) && (mark === "done" || mark === "skip" || mark === "missed")) out[date] = mark;
   }
   return out;
 }

@@ -7,7 +7,8 @@ import {
   normalizePerWeek,
   nudge,
   parseHabitName,
-  pendingToday,
+  habitsToLog,
+  pendingOn,
   recentDays,
   strength,
   streak,
@@ -174,7 +175,7 @@ describe("streak", () => {
   });
 });
 
-describe("nudge & pendingToday", () => {
+describe("nudge & pendingOn", () => {
   it("daily: warns after a miss, never twice", () => {
     const h = habit(7, "2026-09-28", { "2026-09-29": "done" });
     expect(nudge(h, "2026-10-01")?.tone).toBe("warn"); // 30th missed
@@ -191,10 +192,40 @@ describe("nudge & pendingToday", () => {
 
   it("pending: daily until marked; weekly until the target is met", () => {
     const daily = habit(7, "2026-09-07");
-    expect(pendingToday(daily, "2026-10-02")).toBe(true);
-    expect(pendingToday(withMark(daily, "2026-10-02", "skip"), "2026-10-02")).toBe(false);
+    expect(pendingOn(daily, "2026-10-02")).toBe(true);
+    expect(pendingOn(withMark(daily, "2026-10-02", "skip"), "2026-10-02")).toBe(false);
     const weekly = habit(1, "2026-09-07", { "2026-09-28": "done" });
-    expect(pendingToday(weekly, "2026-10-02")).toBe(false);
-    expect(pendingToday({ ...daily, archivedAt: 1 }, "2026-10-02")).toBe(false);
+    expect(pendingOn(weekly, "2026-10-02")).toBe(false);
+    expect(pendingOn({ ...daily, archivedAt: 1 }, "2026-10-02")).toBe(false);
+  });
+});
+
+describe("answered vs unlogged", () => {
+  it("'missed' scores like an unlogged day but is no longer pending", () => {
+    const blank = habit(7, "2026-09-28", run("2026-09-28", 3));
+    const said = withMark(blank, "2026-10-01", "missed");
+    expect(strength(said, "2026-10-02")).toBeCloseTo(strength(blank, "2026-10-02"), 10);
+    expect(pendingOn(blank, "2026-10-01")).toBe(true);
+    expect(pendingOn(said, "2026-10-01")).toBe(false);
+  });
+
+  it("an explicit miss still counts toward never-miss-twice", () => {
+    const h = habit(7, "2026-09-28", { ...run("2026-09-28", 2), "2026-09-30": "missed", "2026-10-01": "missed" });
+    expect(streak(h, "2026-10-01").count).toBe(0);
+    expect(nudge(h, "2026-10-01")?.tone).toBe("warn");
+  });
+
+  it("a 'not today' answered today leaves no day left for the week", () => {
+    const h = habit(3, "2026-09-07", { "2026-10-04": "missed" });
+    expect(weekProgress(h, "2026-10-04").daysLeft).toBe(0);
+  });
+
+  it("lists pending and answered habits, but not met weekly ones or archived", () => {
+    const daily = habit(7, "2026-09-07");
+    const met = { ...habit(1, "2026-09-07", { "2026-09-28": "done" }), id: "h2" as HabitId };
+    const answered = { ...habit(7, "2026-09-07", { "2026-10-02": "done" }), id: "h3" as HabitId };
+    const gone = { ...habit(7, "2026-09-07"), id: "h4" as HabitId, archivedAt: 5 };
+    const future = { ...habit(7, "2026-10-05"), id: "h5" as HabitId };
+    expect(habitsToLog([daily, met, answered, gone, future], "2026-10-02").map((h) => h.id)).toEqual(["h1", "h3"]);
   });
 });

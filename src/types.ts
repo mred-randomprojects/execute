@@ -116,15 +116,19 @@ export interface Recurrence {
 // The design and the lessons behind it: docs/habits.md.
 
 /**
- * What a day says about a habit. A day with no mark is simply "not done" —
- * which only becomes a *miss* once the day is over.
+ * What a day says about a habit. A day with no mark is *unlogged* — scored as
+ * a miss once it's over, but also what the shutdown step and the morning
+ * prompt ask about, because forgetting to log is not the same as not doing.
  *
  *   • `done` — kept.
  *   • `skip` — a deliberate rest day (sick, travelling, a planned day off). It
  *     neither counts for the habit nor against it: strength holds, the streak
  *     survives, and a weekly target shrinks in proportion.
+ *   • `missed` — answered "not today". Scored exactly like an unlogged day; it
+ *     only records that the question was asked and answered, so nothing asks
+ *     again.
  */
-export type HabitMark = "done" | "skip";
+export type HabitMark = "done" | "skip" | "missed";
 
 export interface Habit {
   id: HabitId;

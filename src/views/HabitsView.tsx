@@ -46,9 +46,14 @@ const NEXT_MARK: Record<"none" | HabitMark, HabitMark | null> = {
   none: "done",
   done: "skip",
   skip: null,
+  missed: "done",
 };
 
-/** One day in the strip. Click cycles: not done → done → rest day → not done. */
+/**
+ * One day in the strip. Click cycles: unlogged → done → rest day → unlogged
+ * (an answered "not today" goes to done). Unlogged and answered-no look alike
+ * but for a faint ×, because they score alike — the × only says it was asked.
+ */
 function DayCell({
   date,
   mark,
@@ -65,7 +70,17 @@ function DayCell({
   onClick: () => void;
 }) {
   const state =
-    mark === "done" ? "done" : mark === "skip" ? "rest day" : beforeStart ? "before this habit" : isToday ? "open" : "missed";
+    mark === "done"
+      ? "done"
+      : mark === "skip"
+        ? "rest day"
+        : mark === "missed"
+          ? "not done"
+          : beforeStart
+            ? "before this habit"
+            : isToday
+              ? "open"
+              : "not logged";
   return (
     <button
       tabIndex={-1}
@@ -90,7 +105,7 @@ function DayCell({
         isCursor ? "outline outline-2 outline-offset-1 outline-ink" : "",
       ].join(" ")}
     >
-      {mark === "skip" ? "–" : null}
+      {mark === "skip" ? "–" : mark === "missed" ? <span className="text-ink-faint">×</span> : null}
     </button>
   );
 }

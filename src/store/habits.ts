@@ -113,7 +113,7 @@ function weekProgressOf(h: Habit, key: string, today: ISODate): WeekProgress {
     const mark = markOn(h, d);
     if (mark === "done") done++;
     else if (mark === "skip") skipped++;
-    else if (d >= today) daysLeft++;
+    else if (mark == null && d >= today) daysLeft++;
   }
   const target = Math.ceil((h.perWeek * Math.max(0, available - skipped)) / 7);
   return { done, target, remaining: Math.max(0, target - done), daysLeft };
@@ -175,7 +175,7 @@ export function streak(h: Habit, today: ISODate): Streak {
       if (mark === "done") {
         count++;
         missesInARow = 0;
-      } else if (mark == null) {
+      } else if (mark !== "skip") {
         missesInARow++;
         if (missesInARow >= 2) break;
       }
@@ -221,7 +221,9 @@ export function nudge(h: Habit, today: ISODate): Nudge | null {
     if (mark === "done") return { text: "Done today", tone: "good" };
     if (mark === "skip") return { text: "Rest day", tone: "neutral" };
     const yesterday = addDays(today, -1);
-    if (yesterday >= habitStart(h) && markOn(h, yesterday) == null) {
+    const before = markOn(h, yesterday);
+    if (yesterday >= habitStart(h) && before !== "done" && before !== "skip") {
+      if (mark === "missed") return { text: "Two in a row — tomorrow, just the smallest version", tone: "warn" };
       return { text: "Missed yesterday — don’t miss twice", tone: "warn" };
     }
     return null;
@@ -242,13 +244,26 @@ export function nudge(h: Habit, today: ISODate): Nudge | null {
 }
 
 /**
- * Still worth doing today: active, today unmarked, and either daily or with
- * this week's target not yet met. Drives the sidebar badge.
+ * Still an open question on `date`: active, that day unlogged, and either daily
+ * or with that week's target not yet met (a 2×-a-week habit already done twice
+ * isn't asked about again). Drives the sidebar badge, the shutdown step, the
+ * morning prompt and the evening nudge.
  */
-export function pendingToday(h: Habit, today: ISODate): boolean {
-  if (h.archivedAt != null || markOn(h, today) != null) return false;
-  if (habitStart(h) > today) return false;
-  return isDaily(h) || weekProgress(h, today).remaining > 0;
+export function pendingOn(h: Habit, date: ISODate): boolean {
+  if (h.archivedAt != null || markOn(h, date) != null) return false;
+  if (habitStart(h) > date) return false;
+  return isDaily(h) || weekProgress(h, date).remaining > 0;
+}
+
+/**
+ * The habits a check-in list shows for `date`: everything still pending plus
+ * everything already answered that day, so an answer doesn't make its row
+ * vanish from under the cursor. Active habits only, in their usual order.
+ */
+export function habitsToLog(habits: Habit[], date: ISODate): Habit[] {
+  return habits.filter(
+    (h) => h.archivedAt == null && habitStart(h) <= date && (markOn(h, date) != null || pendingOn(h, date)),
+  );
 }
 
 /** The last `n` days ending today, oldest first — the row's check-in strip. */
