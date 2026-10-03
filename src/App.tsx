@@ -2622,6 +2622,22 @@ export function App() {
     void copyText(`# ${title}\n\n${body}`);
   };
 
+  // "Copy task data" on a task copies its subtree; on a project row it copies
+  // every task shown under that row (each with its subtree), headed by the
+  // project's name — the row has no task of its own, so "underneath" is the
+  // outline group it heads. Silent, like the other copy-* commands.
+  const copyFocused = (includeNotes: boolean) => {
+    if (focusedTask != null) {
+      void copyText(taskToMarkdown(focusedTask, { includeNotes }));
+      return;
+    }
+    if (focusedProjectId == null) return;
+    const group = displayGroups.find((g) => g.project.id === focusedProjectId);
+    if (group == null || group.tasks.length === 0) return;
+    const items = group.tasks.map((t) => taskToMarkdown(t, { includeNotes })).join("\n");
+    void copyText(`# ${group.project.name}\n\n${items}`);
+  };
+
   // Anything the "when" grammar can read becomes a command of its own, so the
   // palette lands the day in one pass instead of handing you the picker. Each
   // entry names the day it resolves to — "Saturday, October 3 · in 2d" — so a
@@ -2876,17 +2892,13 @@ export function App() {
       id: "copy-md",
       label: "Copy task data (markdown, with notes)",
       aliases: ["copy", "markdown", "export", "copy task", "task data"],
-      run: () => {
-        if (focusedTask != null) void copyText(taskToMarkdown(focusedTask, { includeNotes: true }));
-      },
+      run: () => copyFocused(true),
     },
     {
       id: "copy-md-titles",
       label: "Copy task data (markdown, titles only)",
       aliases: ["copy", "markdown", "export", "task data"],
-      run: () => {
-        if (focusedTask != null) void copyText(taskToMarkdown(focusedTask, { includeNotes: false }));
-      },
+      run: () => copyFocused(false),
     },
     {
       id: "copy-view",
