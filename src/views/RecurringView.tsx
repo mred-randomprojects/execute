@@ -6,6 +6,7 @@ import { endsLabel } from "../store/recurrence";
 import { countAll } from "../store/tasks";
 import { useEditor } from "../ui/editor";
 import { renderInline } from "../ui/markdown";
+import { subsequenceMatch } from "../store/search";
 import { RowInput } from "../components/TaskRow";
 import { CaptureBar } from "../components/CaptureBar";
 
@@ -146,7 +147,10 @@ function RecurrenceRow({
               task.text === "" ? "text-ink-faint" : "",
             ].join(" ")}
           >
-            {task.text === "" ? (isRoot ? "Untitled recurring task" : "Untitled step") : renderInline(task.text)}
+            {task.text === "" ? (isRoot ? "Untitled recurring task" : "Untitled step") : renderInline(
+                  task.text,
+                  ed.filterQuery === "" ? [] : (subsequenceMatch(ed.filterQuery, task.text)?.indices ?? [])
+                )}
           </span>
         )}
 

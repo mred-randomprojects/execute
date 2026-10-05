@@ -1104,7 +1104,8 @@ describe("Filter this view (⌘f)", () => {
     fireEvent.change(field, { target: { value: "byml" } });
     await waitFor(() => expect(screen.queryByText("call mom")).toBeNull());
     expect(screen.queryByText("write report")).toBeNull();
-    expect(screen.getByText("buy milk")).toBeTruthy();
+    // Split up by the match marks, so read it as the row's whole text.
+    expect(document.querySelector("main")?.textContent).toContain("buy milk");
 
     // ↵ leaves the field with the cursor on the match: ⌘↵ completes *it*.
     fireEvent.keyDown(field, { key: "Enter" });
@@ -1137,6 +1138,23 @@ describe("Filter this view (⌘f)", () => {
 
     fireEvent.keyDown(field, { key: "Escape" });
     await waitFor(() => expect(screen.queryByText("eggs")).toBeNull());
+  });
+
+  it("marks the matched letters in each row, and not in a parent shown for context", async () => {
+    render(<App />);
+    await addTask("groceries");
+    await addTask("buy milk");
+    blurActive();
+    fireEvent.keyDown(document.body, { key: "Tab" }); // buy milk under groceries
+
+    fireEvent.keyDown(document.body, { key: "f", metaKey: true });
+    const field = await screen.findByLabelText("Filter this view");
+    fireEvent.change(field, { target: { value: "byml" } });
+    await waitFor(() => {
+      const marks = Array.from(document.querySelectorAll("main mark")).map((m) => m.textContent);
+      expect(marks.join("")).toBe("byml");
+    });
+    expect(screen.getByText("groceries").querySelector("mark")).toBeNull();
   });
 
   it("keeps a task made with `n` on screen while you name it", async () => {

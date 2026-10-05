@@ -3,6 +3,8 @@ import type { OutlineId, ProjectId } from "../types";
 import { projectRowId } from "../types";
 import type { ProjectSummary } from "../selectors";
 import { ProjectNameInput } from "./OutlineView";
+import { marked } from "../ui/markdown";
+import { subsequenceMatch } from "../store/search";
 
 function ChevronRight() {
   return (
@@ -31,6 +33,7 @@ function ProjectRow({
   onCommitName,
   onExitRename,
   onArrowName,
+  filterQuery,
 }: {
   summary: ProjectSummary;
   focused: boolean;
@@ -43,8 +46,11 @@ function ProjectRow({
   onCommitName: (projectId: ProjectId, name: string) => void;
   onExitRename: () => void;
   onArrowName: (projectId: ProjectId, name: string, dir: "up" | "down") => void;
+  filterQuery: string;
 }) {
   const { project, open, today, done } = summary;
+  const nameHits =
+    filterQuery === "" ? [] : (subsequenceMatch(filterQuery, project.name)?.indices ?? []);
   const rowId = projectRowId(project.id);
   const active = focused || selected;
 
@@ -100,7 +106,7 @@ function ProjectRow({
             active ? "text-ink" : "text-ink group-hover:text-ink",
           ].join(" ")}
         >
-          {project.name}
+          {marked(project.name, 0, new Set(nameHits))}
         </button>
       )}
 
@@ -140,6 +146,7 @@ export function ProjectsView({
   onCommitProjectName,
   onExitProjectName,
   onArrowProjectName,
+  filterQuery,
 }: {
   summaries: ProjectSummary[];
   focusedId: OutlineId | null;
@@ -153,6 +160,8 @@ export function ProjectsView({
   onCommitProjectName: (projectId: ProjectId, name: string) => void;
   onExitProjectName: () => void;
   onArrowProjectName: (projectId: ProjectId, name: string, dir: "up" | "down") => void;
+  /** The view filter's query, "" when off — matched letters get marked. */
+  filterQuery: string;
 }) {
   return (
     <div className="mx-auto flex h-full w-full max-w-3xl flex-col px-10 py-8">
@@ -189,6 +198,7 @@ export function ProjectsView({
             onCommitName={onCommitProjectName}
             onExitRename={onExitProjectName}
             onArrowName={onArrowProjectName}
+            filterQuery={filterQuery}
           />
         ))}
       </div>

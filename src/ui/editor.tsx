@@ -34,6 +34,8 @@ export interface Editor {
    *  it so the focused row scrolls back into view — its id (hence `isFocused`)
    *  doesn't change on a reorder, so the plain focus effect wouldn't re-fire. */
   scrollTick: number;
+  /** The view filter's query (⌘f), "" when off. Rows mark what it matched. */
+  filterQuery: string;
 
   select: (id: TaskId) => void;
   /** Cmd/Ctrl-click: toggle this row in/out of a discontiguous multi-selection. */

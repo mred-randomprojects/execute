@@ -2355,6 +2355,7 @@ export function App() {
     wrapAll: state.wrapAll,
     collapsed,
     scrollTick,
+    filterQuery,
     select: setFocus,
     toggleSelect: (id) => setSelection((s) => toggleSelected(s, id, flatIds)),
     rangeSelect: (id) => setSelection((s) => rangeTo(s, id, flatIds)),
@@ -2476,6 +2477,7 @@ export function App() {
     togglePeek: () => {},
     collapsed,
     scrollTick,
+    filterQuery,
     select: setFocus,
     toggleSelect: setFocus, // recurrence view navigates one template at a time
     rangeSelect: setFocus,
@@ -3386,6 +3388,7 @@ export function App() {
                 onCommitProjectName={commitProjectName}
                 onExitProjectName={() => setEditingProjectId(null)}
                 onArrowProjectName={exitProjectRename}
+                filterQuery={filterQuery}
               />
             ) : view === "recurring" ? (
               <EditorProvider value={recurrenceEditor}>

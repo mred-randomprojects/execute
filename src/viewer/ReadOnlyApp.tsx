@@ -164,6 +164,7 @@ export function ReadOnlyApp({
     wrapAll: false, // desktop-only preference
     collapsed,
     scrollTick: 0, // no keyboard reorder in the viewer
+    filterQuery: "", // no view filter in the viewer
     // Tapping a task expands it in place (peek): the full title unwraps and any
     // notes render below. On mobile, truncated titles were otherwise unreadable
     // and there was no way to see a task's details.

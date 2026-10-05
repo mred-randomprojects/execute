@@ -10,6 +10,7 @@ import { BlockPips } from "./BlockPips";
 import { DeferralBadges } from "./DeferralBadges";
 import { useEditor, type DropPos } from "../ui/editor";
 import { renderBlock, renderInline } from "../ui/markdown";
+import { subsequenceMatch } from "../store/search";
 import { NO_SPELLCHECK } from "../ui/noSpellcheck";
 
 function FocusIcon() {
@@ -228,6 +229,14 @@ export function TaskRow({ task, depth }: { task: Task; depth: number }) {
   const waitingDays =
     waiting == null ? 0 : Math.floor((Date.now() - waiting.since) / 86_400_000);
   const peeking = (ed.wrapAll || ed.peekId === task.id) && !editing;
+  // What the view filter matched: the title's letters, or else (the filter's
+  // other way in) its notes, flagged on the ¶ and marked inside the peek.
+  const titleHits =
+    ed.filterQuery === "" ? [] : (subsequenceMatch(ed.filterQuery, task.text)?.indices ?? []);
+  const notesHit =
+    ed.filterQuery !== "" &&
+    titleHits.length === 0 &&
+    task.notes.toLowerCase().includes(ed.filterQuery.toLowerCase());
   const hasChildren = task.children.length > 0;
   const isCollapsed = ed.collapsed.has(task.id);
   const isDragging = ed.dragId === task.id;
@@ -272,7 +281,7 @@ export function TaskRow({ task, depth }: { task: Task; depth: number }) {
           task.text === "" ? "text-ink-faint" : "",
         ].join(" ")}
       >
-        {task.text === "" ? "Untitled" : renderInline(task.text)}
+        {task.text === "" ? "Untitled" : renderInline(task.text, titleHits)}
       </span>
     )
   );
@@ -342,8 +351,11 @@ export function TaskRow({ task, depth }: { task: Task; depth: number }) {
             e.currentTarget.blur();
             ed.togglePeek(task.id);
           }}
-          className="flex shrink-0 items-center gap-1 text-ink-faint transition hover:text-ink"
-          title="Has details — peek in place (p)"
+          className={[
+            "flex shrink-0 items-center gap-1 transition hover:text-ink",
+            notesHit ? "rounded-[2px] bg-accent-soft px-1 text-accent" : "text-ink-faint",
+          ].join(" ")}
+          title={notesHit ? "The filter matched these notes — peek in place (p)" : "Has details — peek in place (p)"}
           aria-label="Peek details"
         >
           <span aria-hidden="true">¶</span>
@@ -578,7 +590,7 @@ export function TaskRow({ task, depth }: { task: Task; depth: number }) {
           className="mb-1.5 mr-2 rounded-sm border-l-2 border-accent/40 bg-surface-2/60 px-3 py-2 text-[13px] leading-relaxed text-ink-soft"
           style={{ marginLeft: `${depth * 22 + 55}px` }}
         >
-          {renderBlock(task.notes)}
+          {renderBlock(task.notes, ed.filterQuery)}
         </div>
       )}
 
