@@ -260,3 +260,19 @@ export function highlightSegments(
   if (buf !== "") segments.push({ text: buf, hit: bufHit });
   return segments;
 }
+
+// ─── Filtering a view (⌘f) ──────────────────────────────────────────
+
+/**
+ * Does `task` itself (not its children) match the view filter `query`? The
+ * title matches as a subsequence, like the finder ("byml" → "Buy milk"); the
+ * notes only as a plain substring, because long notes contain almost any short
+ * subsequence and the filter would stop filtering. A blank query matches
+ * everything — no filter.
+ */
+export function matchesFilter(task: Task, query: string): boolean {
+  const q = query.trim();
+  if (q === "") return true;
+  if (subsequenceMatch(q, task.text) != null) return true;
+  return task.notes.toLowerCase().includes(q.toLowerCase());
+}

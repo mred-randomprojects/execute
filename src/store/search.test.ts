@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
-import { subsequenceMatch, searchTasks, highlightSegments } from "./search";
+import { subsequenceMatch, searchTasks, highlightSegments, matchesFilter } from "./search";
 import { makeTask } from "./tasks";
-import { defaultProject, type Project, type ProjectId } from "../types";
+import { defaultProject, type Project, type ProjectId, type Task } from "../types";
 
 describe("subsequenceMatch", () => {
   it("matches non-adjacent chars in order, case-insensitively", () => {
@@ -146,5 +146,18 @@ describe("searchTasks", () => {
     const orphan = { ...makeTask("Orphaned"), projectId: "p-deleted" as ProjectId };
     const res = searchTasks([orphan], projects, "orph");
     expect(res[0].project).toBeUndefined();
+  });
+});
+
+describe("matchesFilter", () => {
+  const task = (text: string, notes = ""): Task => ({ ...makeTask(text), notes });
+  it("matches the title as a subsequence and the notes as a substring", () => {
+    expect(matchesFilter(task("Buy milk"), "byml")).toBe(true);
+    expect(matchesFilter(task("Buy milk", "from the corner shop"), "corner")).toBe(true);
+    // Scattered letters in long notes don't count — that would match everything.
+    expect(matchesFilter(task("Buy milk", "from the corner shop"), "fts")).toBe(false);
+  });
+  it("treats a blank query as no filter", () => {
+    expect(matchesFilter(task("anything"), "  ")).toBe(true);
   });
 });

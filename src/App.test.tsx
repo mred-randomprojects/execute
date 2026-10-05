@@ -1089,6 +1089,85 @@ describe("Trivial editing", () => {
   });
 });
 
+describe("Filter this view (⌘f)", () => {
+  it("narrows the view as you type, hands the cursor to a match, and esc brings everything back", async () => {
+    render(<App />);
+    await addTask("buy milk");
+    await addTask("call mom");
+    await addTask("write report");
+    blurActive();
+
+    fireEvent.keyDown(document.body, { key: "f", metaKey: true });
+    const field = await screen.findByLabelText("Filter this view");
+    expect(document.activeElement).toBe(field);
+
+    fireEvent.change(field, { target: { value: "byml" } });
+    await waitFor(() => expect(screen.queryByText("call mom")).toBeNull());
+    expect(screen.queryByText("write report")).toBeNull();
+    expect(screen.getByText("buy milk")).toBeTruthy();
+
+    // ↵ leaves the field with the cursor on the match: ⌘↵ completes *it*.
+    fireEvent.keyDown(field, { key: "Enter" });
+    expect(document.activeElement).not.toBe(field);
+    fireEvent.keyDown(document.body, { key: "Enter", metaKey: true });
+    await waitFor(() => expect(screen.getByLabelText("Mark incomplete")).toBeTruthy());
+
+    // esc from the list clears the filter and closes the bar.
+    fireEvent.keyDown(document.body, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByLabelText("Filter this view")).toBeNull());
+    expect(screen.getByText("call mom")).toBeTruthy();
+    expect(screen.getByText("write report")).toBeTruthy();
+  });
+
+  it("reveals a match folded under a collapsed parent, and keeps the fold for after", async () => {
+    render(<App />);
+    await addTask("groceries");
+    await addTask("eggs");
+    blurActive();
+    fireEvent.keyDown(document.body, { key: "Tab" }); // eggs under groceries
+    fireEvent.keyDown(document.body, { key: "ArrowUp" }); // → groceries
+    fireEvent.keyDown(document.body, { key: "ArrowLeft" }); // fold it
+    await waitFor(() => expect(screen.queryByText("eggs")).toBeNull());
+
+    fireEvent.keyDown(document.body, { key: "f", metaKey: true });
+    const field = await screen.findByLabelText("Filter this view");
+    fireEvent.change(field, { target: { value: "eggs" } });
+    expect(await screen.findByText("eggs")).toBeTruthy();
+    expect(screen.getByText("groceries")).toBeTruthy(); // the ancestor, for context
+
+    fireEvent.keyDown(field, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByText("eggs")).toBeNull());
+  });
+
+  it("keeps a task made with `n` on screen while you name it", async () => {
+    render(<App />);
+    await addTask("buy milk");
+    await addTask("call mom");
+    blurActive();
+    fireEvent.keyDown(document.body, { key: "f", metaKey: true });
+    const field = await screen.findByLabelText("Filter this view");
+    fireEvent.change(field, { target: { value: "milk" } });
+    await waitFor(() => expect(screen.queryByText("call mom")).toBeNull());
+    fireEvent.keyDown(field, { key: "Enter" });
+
+    fireEvent.keyDown(document.body, { key: "n" });
+    await waitFor(() => {
+      const active = document.activeElement;
+      expect(active instanceof HTMLTextAreaElement || active instanceof HTMLInputElement).toBe(true);
+      expect(active).not.toBe(field);
+    });
+  });
+
+  it("leaves the all-tasks finder on ⌘⇧f", async () => {
+    render(<App />);
+    await addTask("anything");
+    blurActive();
+    fireEvent.keyDown(document.body, { key: "F", metaKey: true, shiftKey: true });
+    expect(await screen.findByLabelText("Search tasks")).toBeTruthy();
+    expect(screen.queryByLabelText("Filter this view")).toBeNull();
+  });
+});
+
 describe("Indent respects the filtered view", () => {
   it("Tab nests under the previous *visible* task, not one the view is hiding", async () => {
     render(<App />);

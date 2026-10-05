@@ -55,7 +55,8 @@ keymap). Highlights:
 | `⌫` | won't do · press again to trash |
 | `1` – `7` | Today / Backlog / All / Projects / Recurring / Habits / Trash · `[` `]` walk the period tabs |
 | `⌘k` | **command palette — everything else lives here** |
-| `⌘z` undo · `⌘⇧z` redo · `⌘y` history · `⌘f` find · `?` help |
+| `⌘f` | filter this view (esc clears) · `⌘⇧f` find any task |
+| `⌘z` undo · `⌘⇧z` redo · `⌘y` history · `?` help |
 
 **Bare letters are deliberately scarce.** A single unmodified letter fires while
 you're *browsing*, so it lands on a real task with no warning — which is how `m`

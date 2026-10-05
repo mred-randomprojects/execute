@@ -206,6 +206,8 @@ import { DevControls } from "./components/DevControls";
 import { StatusBar } from "./components/StatusBar";
 import { CommandPalette, type Command } from "./components/CommandPalette";
 import { SearchPalette } from "./components/SearchPalette";
+import { FilterBar } from "./components/FilterBar";
+import { matchesFilter, subsequenceMatch } from "./store/search";
 import { SchedulePicker, type ScheduleChoice } from "./components/SchedulePicker";
 import { splitScheduleVerb, whenOptions, type WhenOption } from "./store/when";
 import { ProjectPicker } from "./components/ProjectPicker";
@@ -222,6 +224,10 @@ const THEMES: ThemeName[] = ["slate", "ivory", "carbon", "bordeaux"];
  * daunting whether you earned them by being away or by over-committing while
  * you were here.
  */
+// What the folds read as while the view filter is on: nothing folded.
+const NOTHING_COLLAPSED: Set<TaskId> = new Set();
+const NO_PROJECTS_COLLAPSED: Set<ProjectId> = new Set();
+
 const CATCH_UP_PILE = 10;
 const CATCH_UP_DAYS = 3;
 
@@ -283,8 +289,19 @@ export function App() {
   // cursor or Esc closes it.
   const [peekId, setPeekId] = useState<TaskId | null>(null);
   const [editingProjectId, setEditingProjectId] = useState<ProjectId | null>(null);
-  const [collapsed, setCollapsed] = useState<Set<TaskId>>(new Set());
-  const [collapsedProjects, setCollapsedProjects] = useState<Set<ProjectId>>(new Set());
+  const [collapsedSaved, setCollapsed] = useState<Set<TaskId>>(new Set());
+  const [collapsedProjectsSaved, setCollapsedProjects] = useState<Set<ProjectId>>(new Set());
+  // The view filter (⌘f): null while its bar is closed. A non-blank query
+  // narrows the current view to the tasks that match plus their ancestors, and
+  // opens every collapsed parent and project while it does — a match hidden
+  // under a fold is a match you can't see. The saved folds come back with the
+  // filter's end; nothing about them is written while it's on.
+  const [viewFilter, setViewFilter] = useState<string | null>(null);
+  const filterQuery = viewFilter?.trim() ?? "";
+  const filtering = filterQuery !== "";
+  const filterInputRef = useRef<HTMLInputElement>(null);
+  const collapsed = filtering ? NOTHING_COLLAPSED : collapsedSaved;
+  const collapsedProjects = filtering ? NO_PROJECTS_COLLAPSED : collapsedProjectsSaved;
   const [zoom, setZoom] = useState<ZoomTarget | null>(null);
   // Persisted (per device) — it used to reset on every launch.
   const hideCompleted = state.hideCompleted;
@@ -511,13 +528,16 @@ export function App() {
   // planned for today — drops out once that descendant is completed and hidden,
   // instead of stranding an empty, not-for-today row. (A parent still shows while
   // any open today-descendant remains, since it's kept via that child.)
-  const visibleTasks = useMemo(
-    () =>
-      hideCompleted
-        ? filterTreeEffective(filtered, (t) => viewPredicate(view, today, period)(t) && isOpen(t))
-        : filtered,
-    [filtered, hideCompleted, view, today, period]
-  );
+  const visibleTasks = useMemo(() => {
+    const shown = hideCompleted
+      ? filterTreeEffective(filtered, (t) => viewPredicate(view, today, period)(t) && isOpen(t))
+      : filtered;
+    // The row being edited stays whatever its title says, so a task made with
+    // `n` under the filter doesn't vanish before you've named it.
+    return filtering
+      ? filterTree(shown, (t) => t.id === editingId || matchesFilter(t, filterQuery))
+      : shown;
+  }, [filtered, hideCompleted, view, today, period, filtering, filterQuery, editingId]);
   const projectGroups = useMemo(
     () => groupTasksByProject(visibleTasks, state.projects),
     [visibleTasks, state.projects]
@@ -543,50 +563,70 @@ export function App() {
   );
   // The Projects tab is a project index (list + edit details), not a task
   // outline — tasks live in All. Counts come straight from the full tree.
-  const projectIndex = useMemo(
-    () => projectSummaries(state.tasks, state.projects, today),
-    [state.tasks, state.projects, today]
-  );
+  const projectIndex = useMemo(() => {
+    const all = projectSummaries(state.tasks, state.projects, today);
+    return filtering
+      ? all.filter((s) => subsequenceMatch(filterQuery, s.project.name) != null)
+      : all;
+  }, [state.tasks, state.projects, today, filtering, filterQuery]);
   // Zoom (Workflowy-style hoist) overrides the project-grouped outline: when set,
   // the view shows only the focused subtree, with breadcrumbs back out.
   const zoomFocus = useMemo(() => {
     if (zoom == null) return null;
     const z = resolveZoom(state.tasks, state.projects, zoom, VIEW_TITLES[view]);
-    if (z == null || !hideCompleted) return z;
-    return { ...z, subtree: filterTree(z.subtree, (t) => isOpen(t)) };
-  }, [zoom, state.tasks, state.projects, view, hideCompleted]);
+    if (z == null || (!hideCompleted && !filtering)) return z;
+    return {
+      ...z,
+      subtree: filterTree(
+        z.subtree,
+        (t) =>
+          (!hideCompleted || isOpen(t)) && (t.id === editingId || matchesFilter(t, filterQuery))
+      ),
+    };
+  }, [zoom, state.tasks, state.projects, view, hideCompleted, filtering, filterQuery, editingId]);
   // Soft-horizon tasks the engine projects onto today — shown as a passive,
   // non-reckoning "Suggested for today" group at the foot of Today. They join the
   // outline flow so ↑/↓ reach them and `t` (accept) / `s` (reschedule) just work.
   const suggestedTasks = useMemo(
     () =>
       view === "today" && period === "today" && zoom == null
-        ? suggestedForToday(state.tasks, today)
+        ? suggestedForToday(state.tasks, today).filter((t) => matchesFilter(t, filterQuery))
         : [],
-    [view, period, zoom, state.tasks, today]
+    [view, period, zoom, state.tasks, today, filterQuery]
   );
   // Blocked work, trailing Today like the other passive groups. Kept visible so
   // stepping out of the day's maths can't also mean stepping off the screen.
   const waitingTasks = useMemo(
     () =>
       view === "today" && period === "today" && zoom == null
-        ? waitingOnOthers(state.tasks, today)
+        ? waitingOnOthers(state.tasks, today).filter((t) => matchesFilter(t, filterQuery))
         : [],
-    [view, period, zoom, state.tasks, today]
+    [view, period, zoom, state.tasks, today, filterQuery]
   );
   // Recurrence definitions, grouped by pattern for the Recurring view.
   const recurrenceGroups = useMemo(
-    () => (view === "recurring" ? groupRecurrencesByRule(state.recurrences) : []),
-    [view, state.recurrences]
+    () =>
+      view === "recurring"
+        ? groupRecurrencesByRule(
+            // A template stays whole when anything in it matches: its steps
+            // are one routine, not tasks of their own.
+            state.recurrences.filter(
+              (rec) => filterTree([rec.template], (t) => matchesFilter(t, filterQuery)).length > 0
+            )
+          )
+        : [],
+    [view, state.recurrences, filterQuery]
   );
   // Recurrences due today that aren't already accepted — passive suggestions in
   // Today the user can accept (`t`) to materialize as real dated tasks.
   const recurringToday = useMemo(
     () =>
       view === "today" && period === "today" && zoom == null
-        ? recurringForToday(state.recurrences, state.tasks, today)
+        ? recurringForToday(state.recurrences, state.tasks, today).filter(
+            (rec) => filterTree([rec.template], (t) => matchesFilter(t, filterQuery)).length > 0
+          )
         : [],
-    [view, period, zoom, state.recurrences, state.tasks, today]
+    [view, period, zoom, state.recurrences, state.tasks, today, filterQuery]
   );
   const outlineRows = useMemo<OutlineRow[]>(() => {
     /** Flatten one render section's tasks into rows, all stamped with its key. */
@@ -601,7 +641,7 @@ export function App() {
     if (zoomFocus != null) return sectionRows(zoomFocus.subtree, "zoom");
     if (view === "projects") {
       // The index navigates over project rows only — no task rows.
-      return state.projects.map((project) => ({
+      return projectIndex.map(({ project }) => ({
         kind: "project" as const,
         id: projectRowId(project.id),
         projectId: project.id,
@@ -657,7 +697,7 @@ export function App() {
       rows.push({ kind: "task" as const, id, taskId: id, section: null });
     }
     return rows;
-  }, [zoomFocus, view, state.projects, displayGroups, usingBuckets, bucketGroups, collapsed, collapsedProjects, suggestedTasks, waitingTasks, recurrenceGroups, recurringToday]);
+  }, [zoomFocus, view, projectIndex, displayGroups, usingBuckets, bucketGroups, collapsed, collapsedProjects, suggestedTasks, waitingTasks, recurrenceGroups, recurringToday]);
   const flatIds = useMemo(() => outlineRows.map((r) => r.id), [outlineRows]);
   const flatKey = flatIds.join(",");
   /**
@@ -1834,6 +1874,7 @@ export function App() {
       else if (editingId != null) setEditingId(null);
       else if (peekId != null) setPeekId(null);
       else if (showPanel) setShowPanel(false);
+      else if (viewFilter != null) setViewFilter(null);
       else if (zoom != null) {
         // Climb one level out of the zoom; land focus on the node we just left.
         const prevRootId = zoomFocus?.rootId ?? null;
@@ -2087,11 +2128,40 @@ export function App() {
     );
   };
 
-  // ── Task finder (⌘f / f) ──────────────────────────────────────────
+  // ── View filter (⌘f) ──────────────────────────────────────────────
+  // The views the filter has rows to narrow. Habits and Trash have none of its
+  // kind; the rituals own the screen.
+  const filterable =
+    !reckoningActive && !shutdownActive && !planActive && view !== "habits" && view !== "trash";
+  const openFilter = () => {
+    if (!filterable) return openSearch(); // nothing here to narrow: find instead
+    if (viewFilter == null) setViewFilter("");
+    // Already open: back into the field, query selected, ready to retype.
+    const input = filterInputRef.current;
+    if (input != null) {
+      input.focus();
+      input.select();
+    }
+  };
+  // The filter belongs to the view it was typed in.
+  useEffect(() => setViewFilter(null), [view]);
+  // From the field to the list: the first task that matched, else the first row.
+  const leaveFilter = () => {
+    filterInputRef.current?.blur();
+    const first =
+      outlineRows.find((r) => {
+        if (r.kind !== "task") return false;
+        const task = findById(state.tasks, r.taskId);
+        return task != null && matchesFilter(task, filterQuery);
+      }) ?? outlineRows[0];
+    if (first != null) setFocus(first.id);
+  };
+
+  // ── Task finder (⌘⇧f) ─────────────────────────────────────────────
   const openSearch = () => {
     // Only from a settled outline: the rituals own the screen, and a jump would
     // land in a view they'd immediately paint over. (In "normal" none of these
-    // hold; the guard is for the ⌘f-while-editing binding.)
+    // hold; the guard is for the ⌘⇧f-while-editing binding.)
     if (reckoningActive || shutdownActive || planActive) return;
     setShowSearch(true);
   };
@@ -2180,6 +2250,7 @@ export function App() {
     },
     "palette.open": cmd.paletteOpen,
     "search.open": openSearch,
+    "filter.open": openFilter,
     "view.today": cmd.gotoView("today"),
     "view.backlog": cmd.gotoView("backlog"),
     "view.all": cmd.gotoView("all"),
@@ -2763,7 +2834,8 @@ export function App() {
   };
 
   const commands: Command[] = [
-    { id: "search", label: "Search tasks", aliases: ["find"], hint: "⌘f", run: openSearch },
+    { id: "search", label: "Search all tasks", aliases: ["find"], hint: "⌘⇧f", run: openSearch },
+    { id: "filter", label: "Filter this view", aliases: ["search", "narrow"], hint: "⌘f", run: openFilter },
     { id: "today", label: "Go to Today", hint: "1", run: cmd.gotoView("today") },
     { id: "backlog", label: "Go to Backlog", hint: "2", run: cmd.gotoView("backlog") },
     { id: "all", label: "Go to All", hint: "3", run: cmd.gotoView("all") },
@@ -3119,7 +3191,22 @@ export function App() {
 
       <main className="flex flex-1 flex-col overflow-hidden">
         <div className="flex flex-1 overflow-hidden">
-          <div className="flex-1 overflow-hidden">
+          <div className="flex flex-1 flex-col overflow-hidden">
+            {viewFilter != null && filterable && (
+              <FilterBar
+                inputRef={filterInputRef}
+                query={viewFilter}
+                matches={
+                  filtering
+                    ? outlineRows.filter((r) => (view === "projects" && zoomFocus == null) === (r.kind === "project")).length
+                    : null
+                }
+                onChange={setViewFilter}
+                onLeave={leaveFilter}
+                onClose={() => setViewFilter(null)}
+              />
+            )}
+            <div className="min-h-0 flex-1">
             {reckoningActive ? (
               boardMode && breakdownTask == null ? (
                 <ReckoningBoard
@@ -3377,6 +3464,7 @@ export function App() {
                 />
               </EditorProvider>
             )}
+            </div>
           </div>
 
           {panelOpen && focusedTask != null && (

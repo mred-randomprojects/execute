@@ -26,7 +26,8 @@ export const keymap: KeyBinding[] = [
   { key: "Meta+y", action: "history.toggle", context: ["normal", "habits", "reckoning", "board"], displayKey: "⌘ y", description: "history — everything you just did", section: "General" },
   { key: "?", action: "help.toggle", context: ["normal", "habits", "reckoning", "board"], displayKey: "?", description: "keyboard help", section: "General" },
   { key: "Meta+k", action: "palette.open", context: ["normal", "habits", "reckoning", "board", "editing"], displayKey: "⌘ k", description: "command palette — everything lives here", section: "General" },
-  { key: "Meta+f", action: "search.open", context: ["normal", "habits", "editing"], displayKey: "⌘ f", description: "find — search all tasks (subsequence: “byml” → “Buy milk”)", section: "General" },
+  { key: "Meta+f", action: "filter.open", context: ["normal", "habits", "editing"], displayKey: "⌘ f", description: "filter this view — only the tasks that match (↵ / ↓ into the list, esc clears)", section: "General" },
+  { key: "Meta+F", action: "search.open", context: ["normal", "habits", "editing"], displayKey: "⌘ ⇧ f", description: "find — search all tasks (subsequence: “byml” → “Buy milk”)", section: "General" },
 
   // ── history panel ─────────────────────────────────────────────────
   { key: "ArrowDown", action: "history.down", context: "history", displayKey: "↑ / ↓", description: "walk the history", section: "History" },
