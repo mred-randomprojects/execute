@@ -96,7 +96,9 @@ The format is `sync/docs.ts` (`toDocs` / `fromDocs` / `diffDocs`, pure).
 
 **Guards.** The engine never syncs before the local store loads; stops writing
 if `meta/state.schemaVersion` is newer than its own (the web shows "Reload to
-update"); halts if documents don't read back as written, or if it keeps
+update"); halts if documents don't read back as written (a commit counts as
+echoed only once the listener shows its writes: a stale snapshot can arrive
+first), or if it keeps
 committing with no local edit behind it (quota protection); retries failures
 with backoff and on wake/online/focus. The sidebar shows the state; the desktop
 also writes `sync-status.json` (counts and states, no content) to its app-data

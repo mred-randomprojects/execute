@@ -495,6 +495,53 @@ describe("guards", () => {
     expect(store.writes).toBe(writes);
   });
 
+  it("a stale snapshot after a commit is not taken for its echo", async () => {
+    // Firestore with metadata changes on: a snapshot still holding the old
+    // documents can arrive after a transaction commits and before its echo.
+    // Read as the echo, it showed the same delete still pending and halted
+    // sync ("don't read back as written") over a write that had landed.
+    const store = new MemoryStore();
+    const d = device(store, await busy(), { v1: null });
+    await d.engine.syncNow();
+    await store.commit([
+      { collection: "tombstones", id: "expired", op: "set", data: { deletedAt: 1, purged: false } },
+    ]);
+    store.staleSnapshotNextGuarded = true;
+    const run = d.engine.syncNow();
+    setTimeout(() => store.release(), 5);
+    await run;
+    expect(store.read("tombstones", "expired")).toBeUndefined();
+    await d.engine.syncNow();
+    expect(d.engine.getStatus().kind).toBe("inSync");
+  });
+
+  it("still halts when a write really doesn't read back", async () => {
+    // A cloud that answers every delete of a tombstone by keeping it as it was.
+    class Ignoring extends MemoryStore {
+      override async commit(writes: readonly DocWrite[], expect?: Parameters<MemoryStore["commit"]>[1]) {
+        return super.commit(
+          writes.map((w): DocWrite => {
+            const kept = this.read("tombstones", w.id);
+            return w.collection === "tombstones" && w.op === "delete" && kept != null
+              ? { collection: w.collection, id: w.id, op: "set", data: kept }
+              : w;
+          }),
+          expect,
+        );
+      }
+    }
+    const store = new Ignoring();
+    const d = device(store, await busy(), { v1: null });
+    await d.engine.syncNow();
+    await store.commit([
+      { collection: "tombstones", id: "expired", op: "set", data: { deletedAt: 1, purged: false } },
+    ]);
+    await d.engine.syncNow();
+    await new Promise((r) => setTimeout(r, 60));
+    await d.engine.syncNow();
+    expect(d.engine.getStatus().kind).toBe("halted");
+  });
+
   it("writes log lines once, past the watermark", async () => {
     const store = new MemoryStore();
     const line = (id: string, at: number): LogEntry => ({

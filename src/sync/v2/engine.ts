@@ -144,6 +144,11 @@ function isObject(x: unknown): x is Record<string, unknown> {
   return typeof x === "object" && x !== null && !Array.isArray(x);
 }
 
+/** `v` as it would read back from JSON-like storage (undefined fields dropped). */
+function asJson(v: unknown): unknown {
+  return v === undefined ? undefined : JSON.parse(JSON.stringify(v));
+}
+
 function withoutLog(docs: CloudDocs): CloudDocs {
   return { ...docs, log: new Map() };
 }
@@ -489,26 +494,55 @@ export class DocSync {
     }
   }
 
-  /** Resolve true once every target has delivered since `since`, false on timeout. */
-  private waitForDelivery(targets: ReadonlySet<ListenTarget>, since: ReadonlyMap<ListenTarget, number>): Promise<boolean> {
+  /**
+   * Wait for every target to deliver since `since` — and, given `writes`, for
+   * the delivered documents to show them. Any delivery is not enough: with
+   * metadata changes included, a snapshot can arrive after the commit still
+   * holding the old documents (a transaction's writes only reach the listener
+   * with the server's echo), and reading that as the echo halted sync over a
+   * write that had landed.
+   *
+   * "echoed" once they show; on timeout, "unreflected" if the targets did
+   * deliver (just never the writes) and "silent" if they didn't.
+   */
+  private waitForDelivery(
+    targets: ReadonlySet<ListenTarget>,
+    since: ReadonlyMap<ListenTarget, number>,
+    writes: readonly DocWrite[] = [],
+  ): Promise<"echoed" | "unreflected" | "silent"> {
     const heard = () => [...targets].every((t) => (this.delivered.get(t) ?? 0) > (since.get(t) ?? 0));
-    if (heard()) return Promise.resolve(true);
-    return new Promise<boolean>((resolve) => {
+    const shown = () => writes.every((w) => this.reflects(w));
+    if (heard() && shown()) return Promise.resolve("echoed");
+    return new Promise((resolve) => {
       let done = false;
-      const finish = (ok: boolean) => {
+      const finish = (outcome: "echoed" | "unreflected" | "silent") => {
         if (done) return;
         done = true;
         clearTimeout(timer);
         this.waiters.delete(waiter);
-        resolve(ok);
+        resolve(outcome);
       };
       const waiter = () => {
-        if (this.stopped) finish(false);
-        else if (heard()) finish(true);
+        if (this.stopped) finish("silent");
+        else if (heard() && shown()) finish("echoed");
       };
-      const timer = setTimeout(() => finish(false), this.opts.deliveryTimeoutMs ?? 20_000);
+      const timer = setTimeout(
+        () => finish(heard() ? "unreflected" : "silent"),
+        this.opts.deliveryTimeoutMs ?? 20_000,
+      );
       this.waiters.add(waiter);
     });
+  }
+
+  /** Whether the listened documents already show `w` (log lines aren't listened to). */
+  private reflects(w: DocWrite): boolean {
+    if (w.collection === "log") return true;
+    const doc = this.raw.get(w.collection)?.get(w.id);
+    if (w.op === "delete") return doc === undefined;
+    if (!isObject(doc)) return false;
+    const written: Record<string, unknown> = w.op === "set" ? { ...w.data } : w.fields;
+    // Through JSON on both sides: Firestore drops undefined fields, nested ones too.
+    return Object.entries(written).every(([k, v]) => jsonEqual(asJson(doc[k]), asJson(v)));
   }
 
   private async mergeV1(): Promise<void> {
@@ -640,11 +674,15 @@ export class DocSync {
 
       const targets = new Set<ListenTarget>();
       for (const w of writes) if (w.collection !== "log") targets.add(w.collection);
-      if (!(await this.waitForDelivery(targets, since))) {
+      const echo = await this.waitForDelivery(targets, since, writes);
+      if (echo === "silent") {
         // The cloud hasn't echoed yet; its delivery will call request().
         this.lastCommittedKey = null;
         return;
       }
+      // Echoed — or delivered without showing the writes for the whole
+      // timeout, which is what a cloud that really doesn't read back looks
+      // like: if the same writes come up again, the check above halts.
       this.lastCommittedKey = key;
     }
   }

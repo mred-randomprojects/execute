@@ -47,6 +47,12 @@ export class MemoryStore implements DocStore {
   failNext: Error | null = null;
   /** Make the next GUARDED commit (one with expectations) reject with this, once. */
   failNextGuarded: Error | null = null;
+  /**
+   * On the next guarded commit, deliver the touched collections as they were
+   * BEFORE it, and hold the real echo until `release()` — Firestore's order
+   * when a metadata-only snapshot beats a transaction's server echo.
+   */
+  staleSnapshotNextGuarded = false;
   private listeners = new Set<Listener>();
   private held = false;
   private queued = new Set<Listener>();
@@ -134,6 +140,13 @@ export class MemoryStore implements DocStore {
         throw new Error(`NOT_FOUND: ${docKey(w.collection, w.id)}`);
       }
     }
+    const stale = this.staleSnapshotNextGuarded && expect != null && expect.size > 0;
+    const before = new Map<Listener, Map<string, unknown>>();
+    if (stale) {
+      this.staleSnapshotNextGuarded = false;
+      const targets = new Set<ListenTarget>(writes.map((w) => w.collection as ListenTarget));
+      for (const l of this.listeners) if (targets.has(l.target)) before.set(l, this.snapshot(l));
+    }
     const touched = new Set<ListenTarget>();
     for (const w of writes) {
       const c = this.coll(w.collection);
@@ -144,6 +157,10 @@ export class MemoryStore implements DocStore {
     }
     this.commits++;
     this.writes += writes.length;
+    if (stale) {
+      for (const [l, docs] of before) l.onDocs(docs);
+      this.held = true;
+    }
     for (const l of this.listeners) if (touched.has(l.target)) this.deliver(l);
   }
 }
