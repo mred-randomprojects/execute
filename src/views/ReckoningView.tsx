@@ -109,7 +109,7 @@ export function ReckoningView({
 }) {
   if (breakdownTask != null) {
     return (
-      <div className="mx-auto flex h-full w-full max-w-3xl flex-col px-10 py-10">
+      <div className="mx-auto flex h-full w-full page-width flex-col px-10 py-10">
         <BreakdownPanel
           task={breakdownTask}
           stepDate={today}
@@ -194,7 +194,7 @@ export function ReckoningView({
   };
 
   return (
-    <div className="mx-auto flex h-full w-full max-w-3xl flex-col px-10 py-10">
+    <div className="mx-auto flex h-full w-full page-width flex-col px-10 py-10">
       {/* The front door never closes: capture stays available even mid-gate, so a
           stray thought lands in the system (planned for today) without resolving
           a single leftover or making the pile any longer. */}

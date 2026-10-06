@@ -102,7 +102,7 @@ export function ShutdownView({
 }) {
   if (breakdownTask != null) {
     return (
-      <div className="mx-auto flex h-full w-full max-w-3xl flex-col px-10 py-10">
+      <div className="mx-auto flex h-full w-full page-width flex-col px-10 py-10">
         <BreakdownPanel
           task={breakdownTask}
           stepDate={tomorrow}
@@ -145,7 +145,7 @@ export function ShutdownView({
     .join(" and ");
 
   return (
-    <div className="mx-auto flex h-full w-full max-w-3xl flex-col px-10 py-10">
+    <div className="mx-auto flex h-full w-full page-width flex-col px-10 py-10">
       <header className="mb-5 border-b border-line pb-5">
         <div className="flex items-start justify-between gap-4">
           <div>

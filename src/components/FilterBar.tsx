@@ -29,7 +29,7 @@ export function FilterBar({
   }, [inputRef]);
 
   return (
-    <div className="mx-auto w-full max-w-3xl shrink-0 px-10 pt-9">
+    <div className="mx-auto w-full page-width shrink-0 px-10 pt-9">
       <div className="flex items-center gap-2.5 rounded border border-line bg-surface px-3 py-1.5 focus-within:border-accent/60">
         <span aria-hidden="true" className="text-[13px] text-ink-faint">
           ⌕

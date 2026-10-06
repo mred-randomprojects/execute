@@ -796,7 +796,7 @@ export function OutlineView({
 }) {
   const usingBuckets = zoom == null && view === "backlog" && laterLayout === "date";
   return (
-    <div className="mx-auto flex h-full w-full max-w-3xl flex-col px-10 py-8">
+    <div className="mx-auto flex h-full w-full page-width flex-col px-10 py-8">
       {zoom != null ? (
         <header className="mb-5 border-b border-line pb-4">
           <Breadcrumb crumbs={zoom.crumbs} onCrumb={onCrumb} />

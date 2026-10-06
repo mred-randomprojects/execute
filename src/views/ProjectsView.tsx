@@ -164,7 +164,7 @@ export function ProjectsView({
   filterQuery: string;
 }) {
   return (
-    <div className="mx-auto flex h-full w-full max-w-3xl flex-col px-10 py-8">
+    <div className="mx-auto flex h-full w-full page-width flex-col px-10 py-8">
       <header className="mb-5 flex items-end justify-between gap-3 border-b border-line pb-4">
         <div>
           <h1 className="font-serif text-[32px] font-medium leading-none tracking-tight text-ink">

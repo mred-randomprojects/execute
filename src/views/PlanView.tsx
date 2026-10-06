@@ -51,7 +51,7 @@ export function PlanView({
   const over = capacity.overBlocks > 0;
 
   return (
-    <div className="mx-auto flex h-full w-full max-w-3xl flex-col px-10 py-10">
+    <div className="mx-auto flex h-full w-full page-width flex-col px-10 py-10">
       <header className="mb-5 flex items-start justify-between gap-4 border-b border-line pb-5">
         <div>
           <div className="eyebrow mb-1.5 text-accent">Plan</div>

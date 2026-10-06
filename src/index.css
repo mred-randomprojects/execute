@@ -52,6 +52,13 @@
     font-variant-numeric: tabular-nums;
   }
 
+  /* The main column: 48rem on a narrow window, growing with the space beside
+     it on a wide one, up to 72rem. The percentage is of <main>, so the
+     sidebar is already out of it. */
+  .page-width {
+    max-width: clamp(48rem, 72%, 72rem);
+  }
+
   /* Native-window drag regions (Electron, macOS hiddenInset title bar). */
   .drag-region {
     -webkit-app-region: drag;
