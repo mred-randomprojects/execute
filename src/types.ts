@@ -130,6 +130,23 @@ export interface Recurrence {
  */
 export type HabitMark = "done" | "skip" | "missed";
 
+/** How often a KPI is asked for: one number a day, a week or a month. */
+export type KpiEvery = "day" | "week" | "month";
+
+/**
+ * v21: what makes a habit a KPI — a number logged per day instead of a yes/no
+ * ("dizzy spells today: 0 / 1 / 2 / 3+", "worst one, 0–10", a monthly
+ * questionnaire score 0–100). A KPI is measured, not kept: no strength, no
+ * streak, no target — only the values, asked at the same moments a habit is.
+ */
+export interface HabitMeasure {
+  min: number;
+  max: number;
+  /** The top of the range means "or more" — 3 reads "3+". */
+  openTop: boolean;
+  every: KpiEvery;
+}
+
 export interface Habit {
   id: HabitId;
   name: string;
@@ -147,6 +164,13 @@ export interface Habit {
   perWeek: number;
   /** Marked days. A missing key = unlogged. */
   checks: Record<ISODate, HabitMark>;
+  /** v21: `null` = a yes/no habit; set = a KPI, logged in {@link Habit.values}. */
+  measure: HabitMeasure | null;
+  /**
+   * v21: a KPI's logged numbers, by day. A missing key = unlogged. Shares the
+   * per-day clock with `checks` ({@link Habit.checkedAt}).
+   */
+  values: Record<ISODate, number>;
   /**
    * v20: when each day's mark last changed, clears included (a cleared day
    * keeps its stamp and loses its `checks` entry). The merge's clock for
@@ -593,7 +617,7 @@ export interface AppState {
   days: DayRecord[];
 }
 
-export const SCHEMA_VERSION = 20;
+export const SCHEMA_VERSION = 21;
 export const DEFAULT_PROJECT_ID = "project-inbox" as ProjectId;
 export const PROJECT_ROW_PREFIX = "project:";
 

@@ -1,5 +1,5 @@
-import type { Habit, HabitMark, ISODate } from "../types";
-import { addDays, toISO, weekKey, weekStart } from "./dates";
+import type { Habit, HabitMark, HabitMeasure, ISODate, KpiEvery } from "../types";
+import { addDays, monthKey, toISO, weekKey, weekStart } from "./dates";
 
 // ─── Habits: the pure engine ─────────────────────────────────────────
 //
@@ -81,8 +81,22 @@ export function withMark(h: Habit, date: ISODate, mark: HabitMark | null): Habit
 // the same way.
 
 /** The fields `updatedAt` covers. */
-export function habitOwnFields(h: Habit): Pick<Habit, "name" | "cue" | "perWeek" | "archivedAt" | "createdAt"> {
-  return { name: h.name, cue: h.cue, perWeek: h.perWeek, archivedAt: h.archivedAt, createdAt: h.createdAt };
+export function habitOwnFields(
+  h: Habit,
+): Pick<Habit, "name" | "cue" | "perWeek" | "measure" | "archivedAt" | "createdAt"> {
+  return {
+    name: h.name,
+    cue: h.cue,
+    perWeek: h.perWeek,
+    measure: h.measure,
+    archivedAt: h.archivedAt,
+    createdAt: h.createdAt,
+  };
+}
+
+export function sameMeasure(a: HabitMeasure | null, b: HabitMeasure | null): boolean {
+  if (a == null || b == null) return a === b;
+  return a.min === b.min && a.max === b.max && a.openTop === b.openTop && a.every === b.every;
 }
 
 function sameOwn(a: Habit, b: Habit): boolean {
@@ -90,9 +104,25 @@ function sameOwn(a: Habit, b: Habit): boolean {
     a.name === b.name &&
     a.cue === b.cue &&
     a.perWeek === b.perWeek &&
+    sameMeasure(a.measure, b.measure) &&
     a.archivedAt === b.archivedAt &&
     a.createdAt === b.createdAt
   );
+}
+
+/** Every day either map has an entry for — what the per-day clock covers. */
+function loggedDays(h: Habit | undefined): string[] {
+  if (h == null) return [];
+  return [...Object.keys(h.checks), ...Object.keys(h.values)];
+}
+
+/**
+ * One day's entry, mark and value together — what the per-day clock stamps.
+ * An empty day sorts lowest, so a tie keeps the answer over the blank.
+ */
+function dayEntry(h: Habit | undefined, d: ISODate): string {
+  if (h == null) return "\t";
+  return `${h.checks[d] ?? ""}\t${h.values[d] ?? ""}`;
 }
 
 /** The newest stamp a habit carries — what a tombstone has to beat. */
@@ -118,9 +148,9 @@ export function stampHabit(prev: Habit | undefined, next: Habit, now: number): H
     updatedAt = prev.updatedAt; // an undo restoring old stamps on equal fields
   }
   let checkedAt = next.checkedAt;
-  const days = new Set([...Object.keys(next.checks), ...Object.keys(prev?.checks ?? {})]);
+  const days = new Set([...loggedDays(next), ...loggedDays(prev)]);
   for (const d of days) {
-    if ((prev?.checks[d] ?? null) === (next.checks[d] ?? null)) continue;
+    if (dayEntry(prev, d) === dayEntry(next, d)) continue;
     const floor = Math.max(prev?.checkedAt[d] ?? -Infinity, next.checkedAt[d] ?? -Infinity) + 1;
     const stamp = Math.max(now, floor);
     if (next.checkedAt[d] === stamp) continue;
@@ -137,6 +167,12 @@ export function markStamped(h: Habit, date: ISODate, mark: HabitMark | null, now
   return marked === h ? h : stampHabit(h, marked, now);
 }
 
+/** One day's KPI value, set and stamped — the phone's idempotent intent. */
+export function valueStamped(h: Habit, date: ISODate, value: number | null, now: number): Habit {
+  const next = withValue(h, date, value);
+  return next === h ? h : stampHabit(h, next, now);
+}
+
 /**
  * Two copies of one habit, merged: own fields from the newer `updatedAt`, each
  * day from the newer `checkedAt[day]`. Ties resolve the same way on every
@@ -147,20 +183,19 @@ export function mergeHabit(a: Habit, b: Habit, tie: <T>(x: T, y: T) => T): Habit
   const fb = habitOwnFields(b);
   const own = a.updatedAt > b.updatedAt ? a : b.updatedAt > a.updatedAt ? b : tie(fa, fb) === fa ? a : b;
   const checks: Record<ISODate, HabitMark> = {};
+  const values: Record<ISODate, number> = {};
   const checkedAt: Record<ISODate, number> = {};
-  const days = new Set([
-    ...Object.keys(a.checks),
-    ...Object.keys(a.checkedAt),
-    ...Object.keys(b.checks),
-    ...Object.keys(b.checkedAt),
-  ]);
+  const days = new Set([...loggedDays(a), ...Object.keys(a.checkedAt), ...loggedDays(b), ...Object.keys(b.checkedAt)]);
   for (const d of days) {
     const sa = a.checkedAt[d] ?? 0;
     const sb = b.checkedAt[d] ?? 0;
-    const ma = markOn(a, d) ?? "";
-    const mb = markOn(b, d) ?? "";
-    const mark: HabitMark | "" = sa > sb ? ma : sb > sa ? mb : ma >= mb ? ma : mb;
-    if (mark !== "") checks[d] = mark;
+    // The day's mark and value travel together, from whichever side stamped
+    // it last; on a tie, the same side on every device (by value).
+    const from = sa > sb ? a : sb > sa ? b : dayEntry(a, d) >= dayEntry(b, d) ? a : b;
+    const mark = from.checks[d];
+    if (mark != null) checks[d] = mark;
+    const value = from.values[d];
+    if (value != null) values[d] = value;
     const at = Math.max(sa, sb);
     if (at > 0) checkedAt[d] = at;
   }
@@ -170,6 +205,7 @@ export function mergeHabit(a: Habit, b: Habit, tie: <T>(x: T, y: T) => T): Habit
     id: a.id,
     updatedAt: Math.max(a.updatedAt, b.updatedAt),
     checks,
+    values,
     checkedAt,
   };
 }
@@ -181,7 +217,7 @@ export function mergeHabit(a: Habit, b: Habit, tie: <T>(x: T, y: T) => T): Habit
  */
 export function habitStart(h: Habit): ISODate {
   let start = toISO(new Date(h.createdAt));
-  for (const d of Object.keys(h.checks)) if (d < start) start = d;
+  for (const d of loggedDays(h)) if (d < start) start = d;
   return start;
 }
 
@@ -351,20 +387,28 @@ export function nudge(h: Habit, today: ISODate): Nudge | null {
  * morning prompt and the evening nudge.
  */
 export function pendingOn(h: Habit, date: ISODate): boolean {
-  if (h.archivedAt != null || markOn(h, date) != null) return false;
-  if (habitStart(h) > date) return false;
+  if (h.archivedAt != null || habitStart(h) > date) return false;
+  if (h.measure != null) return loggedInPeriod(h, date) == null;
+  if (markOn(h, date) != null) return false;
   return isDaily(h) || weekProgress(h, date).remaining > 0;
+}
+
+/** Answered on `date`: a mark for a habit, a value for a KPI. */
+export function answeredOn(h: Habit, date: ISODate): boolean {
+  return h.measure != null ? valueOn(h, date) != null : markOn(h, date) != null;
 }
 
 /**
  * The habits a check-in list shows for `date`: everything still pending plus
  * everything already answered that day, so an answer doesn't make its row
- * vanish from under the cursor. Active habits only, in their usual order.
+ * vanish from under the cursor. Active habits only, in their usual order —
+ * the yes/no habits first, then the KPIs, as the Habits view lists them.
  */
 export function habitsToLog(habits: Habit[], date: ISODate): Habit[] {
-  return habits.filter(
-    (h) => h.archivedAt == null && habitStart(h) <= date && (markOn(h, date) != null || pendingOn(h, date)),
+  const due = habits.filter(
+    (h) => h.archivedAt == null && habitStart(h) <= date && (answeredOn(h, date) || pendingOn(h, date)),
   );
+  return [...due.filter((h) => h.measure == null), ...due.filter((h) => h.measure != null)];
 }
 
 /** The last `n` days ending today, oldest first — the row's check-in strip. */
@@ -372,4 +416,158 @@ export function recentDays(today: ISODate, n: number): ISODate[] {
   const out: ISODate[] = [];
   for (let i = n - 1; i >= 0; i--) out.push(addDays(today, -i));
   return out;
+}
+
+// ─── KPIs ────────────────────────────────────────────────────────────
+//
+// A KPI is a habit with a `measure`: one number per day (or week, or month),
+// asked at the same moments as a habit — shutdown, the morning band, ⌘k — and
+// stored the same way, so it syncs per day on the same clock. Nothing is
+// scored: no strength, no streak, no target. The number is the point, and
+// whoever reads it (a person, an agent reading Firestore) does the analysis.
+
+export const DEFAULT_MEASURE: HabitMeasure = { min: 0, max: 10, openTop: false, every: "day" };
+
+export const isKpi = (h: Pick<Habit, "measure">): boolean => h.measure != null;
+
+export function valueOn(h: Habit, date: ISODate): number | null {
+  return h.values[date] ?? null;
+}
+
+/** The KPI with `date` set to `value` (or cleared, for null). */
+export function withValue(h: Habit, date: ISODate, value: number | null): Habit {
+  if (valueOn(h, date) === value) return h;
+  const values = { ...h.values };
+  if (value == null) delete values[date];
+  else values[date] = value;
+  return { ...h, values };
+}
+
+function periodKey(every: KpiEvery, date: ISODate): string {
+  return every === "day" ? date : every === "week" ? weekKey(date) : monthKey(date);
+}
+
+/** The day a value was logged in `date`'s period (day, week or month), if any — the newest. */
+export function loggedInPeriod(h: Habit, date: ISODate): ISODate | null {
+  const every = h.measure?.every ?? "day";
+  if (every === "day") return valueOn(h, date) != null ? date : null;
+  const key = periodKey(every, date);
+  let found: ISODate | null = null;
+  for (const d of Object.keys(h.values)) {
+    if (periodKey(every, d) === key && (found == null || d > found)) found = d;
+  }
+  return found;
+}
+
+/** "3+" for the open top of the range, otherwise the number as typed. */
+export function formatValue(m: HabitMeasure, v: number): string {
+  if (m.openTop && v >= m.max) return `${m.max}+`;
+  return String(Math.round(v * 100) / 100);
+}
+
+/** "0–3+", "0–10". */
+export function rangeLabel(m: HabitMeasure): string {
+  return `${m.min}–${m.max}${m.openTop ? "+" : ""}`;
+}
+
+export function everyLabel(every: KpiEvery): string {
+  return every === "day" ? "Every day" : every === "week" ? "Once a week" : "Once a month";
+}
+
+/**
+ * A value as typed into a KPI: "2", "3+", "7.5". `null` = not a number. Out of
+ * range clamps — above an open top is that bucket ("5" on 0–3+ is 3+).
+ */
+export function parseValue(m: HabitMeasure, raw: string): number | null {
+  const text = raw.trim().replace(",", ".").replace(/\+$/, "");
+  if (text === "" || !/^-?\d+(?:\.\d+)?$/.test(text)) return null;
+  const n = Number(text);
+  if (!Number.isFinite(n)) return null;
+  return Math.min(m.max, Math.max(m.min, n));
+}
+
+const NUM = String.raw`-?\d+(?:[.,]\d+)?`;
+const RANGE_SUFFIX = new RegExp(String.raw`\s+(${NUM})\s*(?:-|–|—|\.\.|to)\s*(${NUM})(\+)?\s*$`, "i");
+const EVERY_SUFFIX = /\s+(?:(daily|every\s*day|a\s*day|\/\s*day)|(weekly|every\s*week|a\s*week|\/\s*w(?:ee)?k)|(monthly|every\s*month|a\s*month|\/\s*mo(?:nth)?))\s*$/i;
+
+/**
+ * A KPI name as typed, with a range and a cadence read off its end, in either
+ * order: "Dizzy spells 0-3+" → 0–3+; "DHI 0-100 monthly" → 0–100, once a
+ * month. What isn't there comes back null (keep the current setting).
+ */
+export function parseKpiName(raw: string): {
+  name: string;
+  range: Pick<HabitMeasure, "min" | "max" | "openTop"> | null;
+  every: KpiEvery | null;
+} {
+  let text = raw.trim();
+  let range: Pick<HabitMeasure, "min" | "max" | "openTop"> | null = null;
+  let every: KpiEvery | null = null;
+  for (let pass = 0; pass < 2; pass++) {
+    const e: RegExpExecArray | null = every == null ? EVERY_SUFFIX.exec(text) : null;
+    if (e != null && e.index > 0) {
+      every = e[1] != null ? "day" : e[2] != null ? "week" : "month";
+      text = text.slice(0, e.index).trim();
+      continue;
+    }
+    const r: RegExpExecArray | null = range == null ? RANGE_SUFFIX.exec(text) : null;
+    if (r != null && r.index > 0) {
+      const a: number = Number(r[1].replace(",", "."));
+      const b: number = Number(r[2].replace(",", "."));
+      if (Number.isFinite(a) && Number.isFinite(b) && a !== b) {
+        range = { min: Math.min(a, b), max: Math.max(a, b), openTop: r[3] != null };
+        text = text.slice(0, r.index).trim();
+        continue;
+      }
+    }
+    break;
+  }
+  return { name: text, range, every };
+}
+
+export interface KpiSummary {
+  /** The headline number: the latest value, or the recent average. */
+  main: string;
+  /** What it's compared with — "28d 1.4", "was 52". */
+  aside: string;
+  title: string;
+}
+
+function mean(xs: number[]): number | null {
+  return xs.length === 0 ? null : xs.reduce((a, b) => a + b, 0) / xs.length;
+}
+
+const one = (n: number): string => String(Math.round(n * 10) / 10);
+
+/**
+ * The row's numbers. A daily KPI: the 7-day average beside the 28-day one
+ * (only logged days count — an unlogged day is missing data, not a zero). A
+ * weekly or monthly one: the latest value beside the one before it.
+ */
+export function kpiSummary(h: Habit, today: ISODate): KpiSummary {
+  const m = h.measure ?? DEFAULT_MEASURE;
+  if (m.every === "day") {
+    const window = (n: number) => recentDays(today, n).flatMap((d) => (h.values[d] != null ? [h.values[d]] : []));
+    const w7 = window(7);
+    const w28 = window(28);
+    const a7 = mean(w7);
+    const a28 = mean(w28);
+    return {
+      main: a7 == null ? "—" : one(a7),
+      aside: a28 == null ? "" : `28d ${one(a28)}`,
+      title: `Average of the logged days: last 7 (${w7.length} logged), last 28 (${w28.length} logged)`,
+    };
+  }
+  const logged = Object.keys(h.values)
+    .filter((d) => d <= today)
+    .sort();
+  const last = logged[logged.length - 1];
+  const before = logged[logged.length - 2];
+  if (last == null) return { main: "—", aside: "", title: "Nothing logged yet" };
+  const lastV = h.values[last];
+  return {
+    main: formatValue(m, lastV),
+    aside: before == null ? "" : `was ${formatValue(m, h.values[before])}`,
+    title: before == null ? `Logged ${last}` : `Logged ${last}; the one before, ${before}`,
+  };
 }

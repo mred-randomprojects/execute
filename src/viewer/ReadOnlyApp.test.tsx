@@ -95,6 +95,8 @@ describe("habits on the phone", () => {
     perWeek: 7,
     checks: {},
     checkedAt: {},
+    measure: null,
+    values: {},
     archivedAt: null,
     createdAt: Date.now() - daysOld * 86_400_000,
     updatedAt: 0,

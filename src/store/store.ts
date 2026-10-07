@@ -7,6 +7,7 @@ import type {
   Habit,
   HabitId,
   HabitMark,
+  HabitMeasure,
   Horizon,
   ISODate,
   LogAction,
@@ -58,7 +59,17 @@ import {
   setProjectForIds,
 } from "./tasks";
 import { normalizeRule } from "./recurrence";
-import { normalizePerWeek, sortHabits, stampHabit, withMark } from "./habits";
+import {
+  everyLabel,
+  formatValue,
+  normalizePerWeek,
+  rangeLabel,
+  sameMeasure,
+  sortHabits,
+  stampHabit,
+  withMark,
+  withValue,
+} from "./habits";
 import { horizonWords } from "../selectors";
 import { todayISO } from "./dates";
 import { coerceState, loadRaw, saveRaw } from "./persistence";
@@ -1654,8 +1665,8 @@ function habitName(id: HabitId): string {
   return quoteText(state.habits.find((h) => h.id === id)?.name ?? "");
 }
 
-/** Create a daily habit with this name. Returns its id. */
-export function createHabit(name: string, perWeek = 7): HabitId {
+/** Create a daily habit with this name — or, given a measure, a KPI. Returns its id. */
+export function createHabit(name: string, perWeek = 7, measure: HabitMeasure | null = null): HabitId {
   const id = nanoid() as HabitId;
   const now = Date.now();
   const habit: Habit = {
@@ -1664,14 +1675,20 @@ export function createHabit(name: string, perWeek = 7): HabitId {
     cue: "",
     perWeek: normalizePerWeek(perWeek),
     checks: {},
+    measure,
+    values: {},
     checkedAt: {},
     archivedAt: null,
     createdAt: now,
     updatedAt: now,
   };
+  const noun = measure == null ? "habit" : "KPI";
   // Kept in the canonical order the cloud and the merge produce, or a same-ms
   // pair would read back swapped and look like a change.
-  update((s) => ({ ...s, habits: sortHabits([...s.habits, habit]) }), name.trim() === "" ? "New habit" : `New habit ${quoteText(name)}`);
+  update(
+    (s) => ({ ...s, habits: sortHabits([...s.habits, habit]) }),
+    name.trim() === "" ? `New ${noun}` : `New ${noun} ${quoteText(name)}`,
+  );
   return id;
 }
 
@@ -1714,6 +1731,24 @@ export function toggleHabitSkip(id: HabitId, date: ISODate): void {
   const h = state.habits.find((x) => x.id === id);
   if (h == null) return;
   markHabit(id, date, h.checks[date] === "skip" ? null : "skip");
+}
+
+/** A KPI's range or cadence. */
+export function setHabitMeasure(id: HabitId, measure: HabitMeasure): void {
+  const h = state.habits.find((x) => x.id === id);
+  if (h == null || h.measure == null || sameMeasure(h.measure, measure)) return;
+  update(
+    mapHabit(id, (x) => ({ ...x, measure })),
+    `Set ${habitName(id)} to ${rangeLabel(measure)}, ${everyLabel(measure.every).toLowerCase()}`,
+  );
+}
+
+/** Log a KPI's number for a day (or clear it, with null). */
+export function setKpiValue(id: HabitId, date: ISODate, value: number | null): void {
+  const h = state.habits.find((x) => x.id === id);
+  if (h == null || h.measure == null) return;
+  const label = value == null ? `Clear ${habitName(id)} · ${date}` : `${habitName(id)} = ${formatValue(h.measure, value)} · ${date}`;
+  update(mapHabit(id, (x) => withValue(x, date, value)), label);
 }
 
 /** Retire a habit from the active list, keeping its history; or bring it back. */

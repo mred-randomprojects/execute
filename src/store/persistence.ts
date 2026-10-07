@@ -8,6 +8,8 @@ import type {
   Habit,
   HabitId,
   HabitMark,
+  HabitMeasure,
+  KpiEvery,
   Horizon,
   HorizonUnit,
   LogAction,
@@ -307,6 +309,29 @@ function coerceStamps(raw: unknown): Record<string, number> {
   return out;
 }
 
+// v21: KPIs. Pre-v21 habits have no measure (a yes/no habit) and no values.
+function coerceMeasure(raw: unknown): HabitMeasure | null {
+  if (!isObject(raw)) return null;
+  const min = num(raw.min, 0);
+  const max = num(raw.max, 10);
+  const every: KpiEvery = raw.every === "week" || raw.every === "month" ? raw.every : "day";
+  return {
+    min: Math.min(min, max),
+    max: max === min ? min + 1 : Math.max(min, max),
+    openTop: raw.openTop === true,
+    every,
+  };
+}
+
+function coerceValues(raw: unknown): Record<string, number> {
+  const out: Record<string, number> = {};
+  if (!isObject(raw)) return out;
+  for (const [date, v] of Object.entries(raw)) {
+    if (ISO_DAY.test(date) && typeof v === "number" && Number.isFinite(v)) out[date] = v;
+  }
+  return out;
+}
+
 function coerceHabit(raw: unknown): Habit {
   const o = isObject(raw) ? raw : {};
   const createdAt = num(o.createdAt, Date.now());
@@ -316,6 +341,8 @@ function coerceHabit(raw: unknown): Habit {
     cue: str(o.cue),
     perWeek: normalizePerWeek(num(o.perWeek, 7)),
     checks: coerceChecks(o.checks),
+    measure: coerceMeasure(o.measure),
+    values: coerceValues(o.values),
     // v20: per-day stamps. v19 marks have none → stamp 0, which any newer
     // answer on another device outvotes.
     checkedAt: coerceStamps(o.checkedAt),

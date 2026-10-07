@@ -50,6 +50,8 @@ describe("presenceSnapshot", () => {
       perWeek: 7,
       checks: {},
       checkedAt: {},
+      measure: null,
+      values: {},
       archivedAt: null,
       createdAt: 0,
       updatedAt: 0,

@@ -7,7 +7,9 @@ import {
   initStore,
   markHabit,
   renameHabit,
+  setHabitMeasure,
   setHabitPerWeek,
+  setKpiValue,
   toggleHabitDone,
   toggleHabitSkip,
   undo,
@@ -16,7 +18,7 @@ import { mergeStates } from "../sync/merge";
 import { asRaw, fromDocs, toDocs } from "../sync/docs";
 import { jsonEqual } from "../sync/merge";
 import type { AppState, Habit, HabitId } from "../types";
-import { markStamped } from "./habits";
+import { DEFAULT_MEASURE, markStamped, valueStamped } from "./habits";
 
 // Habits through the store and the merge: undoable, tombstoned on delete, and
 // never anywhere near the task tree the Reckoning reads.
@@ -131,6 +133,8 @@ describe("per-day check-in merge (v20)", () => {
     perWeek: 7,
     checks: {},
     checkedAt: {},
+    measure: null,
+    values: {},
     archivedAt: null,
     createdAt: 1,
     updatedAt: 1,
@@ -194,5 +198,88 @@ describe("per-day check-in merge (v20)", () => {
     expect(mergeStates(s(null, t + 200), s(checkedLate, null)).habits).toHaveLength(1);
     const checkedEarly = markStamped(h, "2026-10-01", "done", t + 100);
     expect(mergeStates(s(null, t + 200), s(checkedEarly, null)).habits).toHaveLength(0);
+  });
+});
+
+describe("KPIs (v21)", () => {
+  const kpi = (over: Partial<Habit> = {}): Habit => ({
+    id: "kx" as HabitId,
+    name: "Dizzy spells",
+    cue: "",
+    perWeek: 7,
+    checks: {},
+    checkedAt: {},
+    measure: { min: 0, max: 3, openTop: true, every: "day" },
+    values: {},
+    archivedAt: null,
+    createdAt: 1,
+    updatedAt: 1,
+    ...over,
+  });
+  const withHabit = (h: Habit): AppState => ({ ...getState(), habits: [h] });
+  const both = (a: Habit, b: Habit) => {
+    const ab = mergeStates(withHabit(a), withHabit(b)).habits[0];
+    const ba = mergeStates(withHabit(b), withHabit(a)).habits[0];
+    expect(ab).toEqual(ba);
+    return ab;
+  };
+
+  it("logs, changes and clears a value — undoable, and stamped per day", async () => {
+    const id = createHabit("Dizzy spells", 7, DEFAULT_MEASURE);
+    await tick();
+    setKpiValue(id, "2026-10-01", 2);
+    const first = habitOf(getState(), id);
+    expect(first?.values).toEqual({ "2026-10-01": 2 });
+    expect(first?.checkedAt["2026-10-01"]).toBeGreaterThan(0);
+    await tick();
+    setKpiValue(id, "2026-10-01", null);
+    expect(habitOf(getState(), id)?.values).toEqual({});
+    undo();
+    expect(habitOf(getState(), id)?.values).toEqual({ "2026-10-01": 2 });
+    expect(getState().tasks).toEqual([]);
+  });
+
+  it("refuses a value on a yes/no habit, and a measure on one", () => {
+    const id = createHabit("Run");
+    setKpiValue(id, "2026-10-01", 3);
+    setHabitMeasure(id, DEFAULT_MEASURE);
+    expect(habitOf(getState(), id)?.values).toEqual({});
+    expect(habitOf(getState(), id)?.measure).toBeNull();
+  });
+
+  it("changing the range stamps the habit's own fields", async () => {
+    const id = createHabit("DHI", 7, DEFAULT_MEASURE);
+    const before = habitOf(getState(), id)?.updatedAt ?? 0;
+    await tick();
+    setHabitMeasure(id, { min: 0, max: 100, openTop: false, every: "month" });
+    const h = habitOf(getState(), id);
+    expect(h?.measure).toEqual({ min: 0, max: 100, openTop: false, every: "month" });
+    expect(h?.updatedAt).toBeGreaterThan(before);
+  });
+
+  it("merge: values on different days both survive; the same day goes to the newer", () => {
+    const phone = valueStamped(kpi(), "2026-10-01", 1, 100);
+    const desk = valueStamped(kpi(), "2026-10-02", 3, 90);
+    expect(both(phone, desk).values).toEqual({ "2026-10-01": 1, "2026-10-02": 3 });
+    const newer = valueStamped(kpi(), "2026-10-01", 0, 200);
+    expect(both(phone, newer).values).toEqual({ "2026-10-01": 0 });
+    const cleared = valueStamped(newer, "2026-10-01", null, 300);
+    expect(both(newer, cleared).values).toEqual({});
+  });
+
+  it("merge: a range change on one device and a value on the other both survive", () => {
+    const desk = { ...kpi({ measure: { min: 0, max: 10, openTop: false, every: "day" } }), updatedAt: 50 };
+    const phone = valueStamped(kpi(), "2026-10-01", 2, 100);
+    const merged = both(desk, phone);
+    expect(merged.measure?.max).toBe(10);
+    expect(merged.values).toEqual({ "2026-10-01": 2 });
+  });
+
+  it("reads back from cloud documents exactly", async () => {
+    const id = createHabit("DHI", 7, { min: 0, max: 100, openTop: false, every: "month" });
+    setKpiValue(id, "2026-10-01", 42);
+    const s = getState();
+    expect(jsonEqual(fromDocs(asRaw(toDocs(s)), s).habits, s.habits)).toBe(true);
+    expect(fromDocs(asRaw(toDocs(s)), s).habits[0].values).toEqual({ "2026-10-01": 42 });
   });
 });

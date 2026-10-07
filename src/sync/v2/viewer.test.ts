@@ -168,6 +168,8 @@ describe("the phone's view", () => {
       perWeek: 7,
       checks: {},
       checkedAt: {},
+      measure: null,
+      values: {},
       archivedAt: null,
       createdAt: Date.now() - 10 * DAY,
       updatedAt: Date.now() - 10 * DAY,

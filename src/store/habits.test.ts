@@ -14,6 +14,11 @@ import {
   streak,
   weekProgress,
   withMark,
+  formatValue,
+  habitsToLog as toLog,
+  kpiSummary,
+  parseKpiName,
+  parseValue,
 } from "./habits";
 
 // 2026-09-07 and 2026-09-28 are Mondays.
@@ -25,6 +30,8 @@ function habit(perWeek: number, created: ISODate, checks: Record<ISODate, HabitM
     perWeek,
     checks,
     checkedAt: {},
+    measure: null,
+    values: {},
     archivedAt: null,
     createdAt: parseISO(created).getTime(),
     updatedAt: 0,
@@ -228,5 +235,95 @@ describe("answered vs unlogged", () => {
     const gone = { ...habit(7, "2026-09-07"), id: "h4" as HabitId, archivedAt: 5 };
     const future = { ...habit(7, "2026-10-05"), id: "h5" as HabitId };
     expect(habitsToLog([daily, met, answered, gone, future], "2026-10-02").map((h) => h.id)).toEqual(["h1", "h3"]);
+  });
+});
+
+describe("KPIs", () => {
+  const kpi = (
+    every: "day" | "week" | "month",
+    values: Record<ISODate, number> = {},
+    created: ISODate = "2026-09-01",
+  ): Habit => ({
+    ...habit(7, created),
+    measure: { min: 0, max: 3, openTop: true, every },
+    values,
+  });
+
+  it("reads a range and a cadence off the name, in either order", () => {
+    expect(parseKpiName("Dizzy spells 0-3+")).toEqual({
+      name: "Dizzy spells",
+      range: { min: 0, max: 3, openTop: true },
+      every: null,
+    });
+    expect(parseKpiName("DHI 0–100 monthly")).toEqual({
+      name: "DHI",
+      range: { min: 0, max: 100, openTop: false },
+      every: "month",
+    });
+    expect(parseKpiName("Weight weekly 50 to 120")).toEqual({
+      name: "Weight",
+      range: { min: 50, max: 120, openTop: false },
+      every: "week",
+    });
+    expect(parseKpiName("Worst one 10-0")).toEqual({ name: "Worst one", range: { min: 0, max: 10, openTop: false }, every: null });
+    expect(parseKpiName("Sleep")).toEqual({ name: "Sleep", range: null, every: null });
+    expect(parseKpiName("0-10")).toEqual({ name: "0-10", range: null, every: null });
+    expect(parseKpiName("Mood 5-5")).toEqual({ name: "Mood 5-5", range: null, every: null });
+  });
+
+  it("parses a typed value, clamping into the range and reading 3+ as the top", () => {
+    const m = { min: 0, max: 3, openTop: true, every: "day" as const };
+    expect(parseValue(m, "2")).toBe(2);
+    expect(parseValue(m, "3+")).toBe(3);
+    expect(parseValue(m, "7")).toBe(3);
+    expect(parseValue(m, "-1")).toBe(0);
+    expect(parseValue(m, "1,5")).toBe(1.5);
+    expect(parseValue(m, "")).toBeNull();
+    expect(parseValue(m, "two")).toBeNull();
+    expect(formatValue(m, 3)).toBe("3+");
+    expect(formatValue(m, 2)).toBe("2");
+    expect(formatValue({ ...m, openTop: false }, 3)).toBe("3");
+  });
+
+  it("a daily KPI is pending until that day has a value — a 0 counts as logged", () => {
+    const k = kpi("day", { "2026-10-01": 0 });
+    expect(pendingOn(k, "2026-10-01")).toBe(false);
+    expect(pendingOn(k, "2026-10-02")).toBe(true);
+    expect(pendingOn({ ...k, archivedAt: 1 }, "2026-10-02")).toBe(false);
+    expect(pendingOn(k, "2026-08-01")).toBe(false); // before it existed
+  });
+
+  it("a monthly KPI is pending until one value lands anywhere in that month", () => {
+    const k = kpi("month", { "2026-09-03": 40 });
+    expect(pendingOn(k, "2026-09-28")).toBe(false);
+    expect(pendingOn(k, "2026-10-01")).toBe(true);
+    // Listed on the day it was logged, gone from the rest of the month.
+    expect(toLog([k], "2026-09-03")).toHaveLength(1);
+    expect(toLog([k], "2026-09-04")).toHaveLength(0);
+  });
+
+  it("a weekly KPI goes by ISO week", () => {
+    const k = kpi("week", { "2026-09-29": 1 }); // a Tuesday
+    expect(pendingOn(k, "2026-10-04")).toBe(false); // that Sunday
+    expect(pendingOn(k, "2026-10-05")).toBe(true); // next Monday
+  });
+
+  it("summarises a daily KPI as averages of logged days only", () => {
+    const k = kpi("day", { "2026-10-07": 2, "2026-10-06": 0, "2026-09-20": 3 });
+    const s = kpiSummary(k, "2026-10-07");
+    expect(s.main).toBe("1");
+    expect(s.aside).toBe("28d 1.7");
+    expect(kpiSummary(kpi("day"), "2026-10-07").main).toBe("—");
+  });
+
+  it("summarises a monthly KPI as the latest value beside the one before", () => {
+    const k = { ...kpi("month", { "2026-08-02": 52, "2026-09-03": 34 }), measure: { min: 0, max: 100, openTop: false, every: "month" as const } };
+    const s = kpiSummary(k, "2026-10-07");
+    expect(s.main).toBe("34");
+    expect(s.aside).toBe("was 52");
+  });
+
+  it("a KPI's start counts its earliest value, like a habit's earliest mark", () => {
+    expect(habitStart(kpi("day", { "2026-08-20": 1 }))).toBe("2026-08-20");
   });
 });
