@@ -53,7 +53,7 @@ keymap). Highlights:
 | `p` | peek — unwrap title + notes in place |
 | `tab` / `⇧ tab` | indent / outdent |
 | `⌫` | won't do · press again to trash |
-| `1` – `7` | Today / Backlog / All / Projects / Recurring / Habits / Trash · `[` `]` walk the period tabs |
+| `1` – `7` | Today / Backlog / All / Projects / Recurring / Habits & KPIs / Trash · `[` `]` walk the period tabs |
 | `⌘k` | **command palette — everything else lives here** |
 | `⌘f` | filter this view (esc clears) · `⌘⇧f` find any task |
 | `⌘z` undo · `⌘⇧z` redo · `⌘y` history · `?` help |
@@ -111,6 +111,16 @@ and the evening nudge counts habits too. Chips under Today's tabs and
 "Check in: …" in `⌘k` work from anywhere, and the phone has the same chips,
 plus a yes/no for anything left unlogged yesterday. The design, the lessons behind it
 and what comes next: [`docs/habits.md`](docs/habits.md).
+
+**KPIs** sit in the same view, under the habits: a number to log instead of a
+yes/no — a symptom count, a 0–10 rating, a monthly questionnaire score. `k`
+adds one, and the range and cadence go after the name: "Dizzy spells 0-3+",
+"Worst one 0-10", "DHI 0-100 monthly". `space` logs the picked day's number.
+They're asked at the same moments as habits (Shutdown, the morning band, `⌘k`
+"Log habits"), where you type the number and press `↵`. A KPI has no
+strength or streak, only its values, and the row shows the 7-day average beside
+the 28-day one (the latest value beside the previous one for a weekly or monthly
+KPI). The phone doesn't log KPIs yet.
 
 ## Your week, read back to you
 
@@ -191,7 +201,7 @@ tasks, each shown with where it lives (project › parent), then today's habits.
 `↑`/`↓` walk all of it. On a task, the Reckoning's verbs point at tomorrow:
 `e` done · `t` carry to tomorrow · `b` break it into something you'd actually do
 · `s` postpone to a named day · `w` won't do · `d` drop. On a habit: `y` did it ·
-`r` rest day · `x` not today. `⇧t` carries every waiting task in one move, and
+`r` rest day · `x` not today. On a KPI, type the number and press `↵`. `⇧t` carries every waiting task in one move, and
 `/` adds an optional *why* to the next choice.
 
 On anything, **`l` means later today**: not done yet, but still today's. It isn't

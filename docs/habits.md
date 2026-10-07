@@ -135,6 +135,33 @@ alone and written as a guarded patch. So the phone and the desktop can mark
 the same habit at once: different days both survive, and on the same day the
 newer answer wins.
 
+## KPIs: a number instead of a yes/no (v21)
+
+Some things are worth tracking but can't be kept: how many dizzy spells today
+(0 / 1 / 2 / 3+), how bad the worst one was (0–10), a monthly questionnaire
+score (DHI, 0–100). A **KPI** is a habit with a `measure` (`min`, `max`,
+`openTop` for "3+", and `every`: day, week or month) and a per-day `values` map.
+
+- **Same array, same clocks.** A KPI's values share `checkedAt` with the
+  marks, so the per-day merge, tombstones, undo and history all work unchanged.
+  `measure` is an own field under `updatedAt`. Schema v21, so an older client
+  stops at "outdated" instead of dropping values it can't read.
+- **Measured, not kept.** No strength, streak or target. An unlogged day is
+  missing data, not a zero, so averages count only logged days.
+- **Asked like a habit.** `pendingOn` asks a daily KPI until that day has a
+  value, and a weekly or monthly one until any day in that ISO week or calendar
+  month does. So it shows up in Shutdown, the morning band, the log panel, the
+  sidebar badge and the evening nudge. In those lists the KPI's field takes the
+  keyboard as soon as the cursor lands on it: type, `↵`, and the cursor moves on.
+- **Typing the range:** the name carries it, in either order: "Dizzy spells
+  0-3+", "DHI 0-100 monthly", "Weight weekly 50 to 120". A value above an open
+  top is stored as the top ("5" on 0–3+ is 3+).
+- **Reading it from outside:** each KPI is `users/{uid}/habits/{id}` in
+  Firestore, with `measure` and `values: { "YYYY-MM-DD": n }`.
+
+Not yet: logging KPIs on the phone, a chart per KPI, and a KPI tied to another
+one (log 0 spells, and "worst" fills itself with 0).
+
 ## Known limits
 
 - An archived habit that comes back counts the archived days as misses.
