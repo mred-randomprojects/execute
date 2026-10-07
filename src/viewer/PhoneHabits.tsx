@@ -15,9 +15,11 @@ export function PhoneHabits({
   today: ISODate;
   onMark: (id: HabitId, date: ISODate, mark: HabitMark | null) => void;
 }) {
-  const todayList = habitsToLog(habits, today);
+  // KPIs want a number, and the phone can't log one yet — yes/no habits only.
+  const yesNo = habits.filter((h) => h.measure == null);
+  const todayList = habitsToLog(yesNo, today);
   const yesterday = addDays(today, -1);
-  const unloggedYesterday = habits.filter((h) => pendingOn(h, yesterday));
+  const unloggedYesterday = yesNo.filter((h) => pendingOn(h, yesterday));
   if (todayList.length === 0 && unloggedYesterday.length === 0) return null;
 
   return (

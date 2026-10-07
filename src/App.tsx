@@ -93,12 +93,26 @@ import {
   renameHabit,
   setHabitArchived,
   setHabitCue,
+  setHabitMeasure,
   setHabitPerWeek,
+  setKpiValue,
   toggleHabitDone,
   toggleHabitSkip,
   type PostponeTarget,
 } from "./store/store";
-import { cadenceLabel, habitsToLog, markOn, parseHabitName, pendingOn } from "./store/habits";
+import {
+  DEFAULT_MEASURE,
+  answeredOn,
+  cadenceLabel,
+  everyLabel,
+  formatValue,
+  habitsToLog,
+  parseHabitName,
+  parseKpiName,
+  pendingOn,
+  rangeLabel,
+  valueOn,
+} from "./store/habits";
 import { HabitLogPanel } from "./components/HabitCheckList";
 
 function withoutId(set: ReadonlySet<string>, id: string): ReadonlySet<string> {
@@ -181,7 +195,7 @@ import {
 import { keymap } from "./keyboard/keymap";
 import { useKeyboard } from "./keyboard/useKeyboard";
 import type { ContextState } from "./keyboard/types";
-import type { HabitId, HabitMark, ISODate } from "./types";
+import type { Habit, HabitId, HabitMark, HabitMeasure, ISODate, KpiEvery } from "./types";
 import { EditorProvider, type Editor } from "./ui/editor";
 import { copyText } from "./ui/clipboard";
 import { Sidebar } from "./components/Sidebar";
@@ -842,7 +856,7 @@ export function App() {
   );
   /** Still waiting for an answer in this pass. */
   const shutNeeds = (r: ShutRow): boolean =>
-    !shutLater.has(r.id) && (r.kind === "task" || markOn(r.habit, today) == null);
+    !shutLater.has(r.id) && (r.kind === "task" || !answeredOn(r.habit, today));
   const shutRow = shutRows.find((r) => r.id === shutCursorId) ?? null;
   const shutTaskId = shutRow?.kind === "task" ? shutRow.id : null;
   const shutHabitId = shutRow?.kind === "habit" ? shutRow.id : null;
@@ -874,6 +888,11 @@ export function App() {
     markHabit(h.id, today, next);
     if (shutLater.has(h.id)) setShutLater((prev) => withoutId(prev, h.id));
     if (next != null) advanceShutCursorPast(h.id);
+  };
+  const logShutKpi = (id: HabitId, value: number | null) => {
+    setKpiValue(id, today, value);
+    if (shutLater.has(id)) setShutLater((prev) => withoutId(prev, id));
+    if (value != null) advanceShutCursorPast(id);
   };
   /** Later today ↔ back in the queue, for a task or a habit. */
   const toggleShutLater = (id: string | null) => {
@@ -917,9 +936,11 @@ export function App() {
   const [habitDayOffset, setHabitDayOffset] = useState(0);
   const [habitEditing, setHabitEditing] = useState<HabitEditing | null>(null);
   const habitsActive = view === "habits" && !reckoningActive && !shutdownActive && !planActive;
+  // The order the view shows them in: habits, then KPIs, then the archive.
   const habitList = useMemo(
     () => [
-      ...state.habits.filter((h) => h.archivedAt == null),
+      ...state.habits.filter((h) => h.archivedAt == null && h.measure == null),
+      ...state.habits.filter((h) => h.archivedAt == null && h.measure != null),
       ...state.habits.filter((h) => h.archivedAt != null),
     ],
     [state.habits]
@@ -945,32 +966,50 @@ export function App() {
     setHabitDayOffset(0);
     setHabitEditing({ id, field: "name" });
   };
+  const newKpi = () => {
+    const id = createHabit("", 7, DEFAULT_MEASURE);
+    setHabitCursorId(id);
+    setHabitDayOffset(0);
+    setHabitEditing({ id, field: "name" });
+  };
   const commitHabitField = (id: HabitId, field: HabitField, value: string, then: HabitField | null) => {
     const habit = state.habits.find((h) => h.id === id);
     if (habit == null) return setHabitEditing(null);
     if (field === "name") {
-      const { name, perWeek } = parseHabitName(value);
+      const kpi = habit.measure != null ? parseKpiName(value) : null;
+      const { name, perWeek } = kpi != null ? { name: kpi.name, perWeek: null } : parseHabitName(value);
       // A habit left nameless at birth is a slip of the `n` key: take it back.
-      if (name === "" && habit.name === "" && then == null && Object.keys(habit.checks).length === 0) {
+      const blank = Object.keys(habit.checks).length === 0 && Object.keys(habit.values).length === 0;
+      if (name === "" && habit.name === "" && then == null && blank) {
         deleteHabit(id);
         setHabitEditing(null);
         return;
       }
       if (name !== habit.name) renameHabit(id, name);
       if (perWeek != null && perWeek !== habit.perWeek) setHabitPerWeek(id, perWeek);
+      if (kpi != null && habit.measure != null && (kpi.range != null || kpi.every != null)) {
+        setHabitMeasure(id, { ...habit.measure, ...kpi.range, every: kpi.every ?? habit.measure.every });
+      }
+    } else if (field === "value") {
+      // Values are committed by the value field itself (commitKpiValue).
     } else if (value.trim() !== habit.cue) {
       setHabitCue(id, value);
     }
     setHabitEditing(then == null ? null : { id, field: then });
   };
+  const commitKpiValue = (id: HabitId, date: ISODate, value: number | null) => {
+    setKpiValue(id, date, value);
+    setHabitEditing(null);
+  };
   const archiveOrDeleteHabit = () => {
     const h = focusedHabit;
     if (h == null) return;
     if (h.archivedAt == null) return setHabitArchived(h.id, true);
+    const noun = h.measure == null ? "habit" : "KPI";
     setConfirm({
-      title: "Delete this habit?",
-      body: `“${h.name || "Untitled habit"}” and its whole history go. ⌘z can still bring it back.`,
-      confirmLabel: "Delete habit",
+      title: `Delete this ${noun}?`,
+      body: `“${h.name || `Untitled ${noun}`}” and its whole history go. ⌘z can still bring it back.`,
+      confirmLabel: `Delete ${noun}`,
       onConfirm: () => deleteHabit(h.id),
     });
   };
@@ -2263,12 +2302,15 @@ export function App() {
     "habits.dayPrev": () => setHabitDayOffset((o) => Math.min(HABIT_STRIP_DAYS - 1, o + 1)),
     "habits.dayNext": () => setHabitDayOffset((o) => Math.max(0, o - 1)),
     "habits.toggle": () => {
-      if (focusedHabit != null) toggleHabitDone(focusedHabit.id, habitDay);
+      if (focusedHabit == null) return;
+      if (focusedHabit.measure != null) setHabitEditing({ id: focusedHabit.id, field: "value" });
+      else toggleHabitDone(focusedHabit.id, habitDay);
     },
     "habits.rename": () => {
       if (focusedHabit != null) setHabitEditing({ id: focusedHabit.id, field: "name" });
     },
     "habits.new": newHabit,
+    "habits.newKpi": newKpi,
     "habits.archive": archiveOrDeleteHabit,
     "dismiss": cmd.dismiss,
     // Arg-less wrappers: the keyboard engine calls handlers with the dispatch
@@ -2749,6 +2791,7 @@ export function App() {
     const h = focusedHabit;
     if (h == null) return [];
     const day = habitDay === today ? "today" : habitDay === addDays(today, -1) ? "yesterday" : habitDay;
+    if (h.measure != null) return kpiCommands(h, h.measure, day);
     const marked = h.checks[habitDay];
     const targets: Command[] = [7, 6, 5, 4, 3, 2, 1].map((n) => ({
       id: `habit-target-${n}`,
@@ -2799,6 +2842,71 @@ export function App() {
     ];
   };
 
+  const kpiCommands = (h: Habit, m: HabitMeasure, day: string): Command[] => {
+    const logged = valueOn(h, habitDay);
+    const cadences: KpiEvery[] = ["day", "week", "month"];
+    return [
+      {
+        id: "kpi-log",
+        label: logged == null ? `KPI: log a value for ${day}…` : `KPI: change ${day}’s value (${formatValue(m, logged)})…`,
+        aliases: ["log", "value", "number", "measure"],
+        hint: "space",
+        run: () => setHabitEditing({ id: h.id, field: "value" }),
+      },
+      ...(logged != null
+        ? [{
+            id: "kpi-clear",
+            label: `KPI: clear ${day}’s value`,
+            aliases: ["clear", "remove value", "unlog"],
+            run: () => setKpiValue(h.id, habitDay, null),
+          }]
+        : []),
+      {
+        id: "kpi-cue",
+        label: h.cue === "" ? "KPI: set a cue (when to log it)…" : "KPI: edit the cue…",
+        aliases: ["cue", "trigger", "after", "when"],
+        run: () => setHabitEditing({ id: h.id, field: "cue" }),
+      },
+      {
+        id: "kpi-range",
+        label: `KPI: change the range (now ${rangeLabel(m)}) — type it after the name…`,
+        aliases: ["range", "scale", "min", "max"],
+        run: () => setHabitEditing({ id: h.id, field: "name" }),
+      },
+      ...cadences.map((every) => ({
+        id: `kpi-every-${every}`,
+        label: `KPI: ask ${everyLabel(every).toLowerCase()}${m.every === every ? " ✓" : ""}`,
+        aliases: ["cadence", "frequency", every === "day" ? "daily" : every === "week" ? "weekly" : "monthly"],
+        run: () => setHabitMeasure(h.id, { ...m, every }),
+      })),
+      {
+        id: "kpi-open-top",
+        label: m.openTop ? `KPI: ${m.max} is just ${m.max} (not “${m.max}+”)` : `KPI: ${m.max} means “${m.max} or more”`,
+        aliases: ["open", "plus", "or more", "bucket"],
+        run: () => setHabitMeasure(h.id, { ...m, openTop: !m.openTop }),
+      },
+      {
+        id: "kpi-archive",
+        label: h.archivedAt == null ? "KPI: archive (keep its history)" : "KPI: restore from the archive",
+        aliases: ["archive", "pause", "retire", "restore", "unarchive"],
+        hint: h.archivedAt == null ? "⌫" : undefined,
+        run: () => setHabitArchived(h.id, h.archivedAt == null),
+      },
+      {
+        id: "kpi-delete",
+        label: "KPI: delete it and its history…",
+        aliases: ["delete", "remove"],
+        run: () =>
+          setConfirm({
+            title: "Delete this KPI?",
+            body: `“${h.name || "Untitled KPI"}” and its whole history go. ⌘z can still bring it back.`,
+            confirmLabel: "Delete KPI",
+            onConfirm: () => deleteHabit(h.id),
+          }),
+      },
+    ];
+  };
+
   // "shutdown 14:15", "shutdown weekends 11am", "close the day at 2:15pm": a
   // time typed after the word sets the schedule — the kind of day it names
   // first, the others after. Desktop only, like the rest of Presence.
@@ -2843,7 +2951,13 @@ export function App() {
     { id: "all", label: "Go to All", hint: "3", run: cmd.gotoView("all") },
     { id: "projects", label: "Go to Projects", hint: "4", run: cmd.gotoView("projects") },
     { id: "recurring", label: "Go to Recurring", hint: "5", run: cmd.gotoView("recurring") },
-    { id: "habits", label: "Go to Habits", hint: "6", aliases: ["habit", "streak", "routine"], run: cmd.gotoView("habits") },
+    {
+      id: "habits",
+      label: "Go to Habits & KPIs",
+      hint: "6",
+      aliases: ["habit", "streak", "routine", "kpi", "metrics", "measure"],
+      run: cmd.gotoView("habits"),
+    },
     { id: "trash", label: "Go to Trash", hint: "7", run: cmd.gotoView("trash") },
     {
       id: "habit-new",
@@ -2854,22 +2968,44 @@ export function App() {
         newHabit();
       },
     },
+    {
+      id: "kpi-new",
+      label: "New KPI",
+      aliases: ["add kpi", "track a number", "measure", "metric"],
+      run: () => {
+        cmd.gotoView("habits")();
+        newKpi();
+      },
+    },
     ...habitCommands(),
     // Check in from anywhere: "check med" → ✓ Meditate, without visiting the view.
-    ...habitsTodayList.map((h): Command => ({
-      id: `habit-checkin:${h.id}`,
-      label:
-        h.checks[today] === "done"
-          ? `Undo today’s check-in: ${h.name || "Untitled habit"}`
-          : `Check in: ${h.name || "Untitled habit"} (today)`,
-      aliases: ["habit", "check in", "did", "done"],
-      run: () => toggleHabitDone(h.id, today),
-    })),
+    // A KPI asks for its number in the log panel instead.
+    ...habitsTodayList.map((h): Command =>
+      h.measure != null
+        ? {
+            id: `habit-checkin:${h.id}`,
+            label:
+              valueOn(h, today) != null
+                ? `Log: ${h.name || "Untitled KPI"} (today, ${formatValue(h.measure, valueOn(h, today) ?? 0)})…`
+                : `Log: ${h.name || "Untitled KPI"} (today)…`,
+            aliases: ["kpi", "log", "measure", "value"],
+            run: () => setHabitLogDate(today),
+          }
+        : {
+            id: `habit-checkin:${h.id}`,
+            label:
+              h.checks[today] === "done"
+                ? `Undo today’s check-in: ${h.name || "Untitled habit"}`
+                : `Check in: ${h.name || "Untitled habit"} (today)`,
+            aliases: ["habit", "check in", "did", "done"],
+            run: () => toggleHabitDone(h.id, today),
+          },
+    ),
     ...(habitsTodayList.length > 0
       ? [{
           id: "habit-log-today",
           label: "Log habits: today…",
-          aliases: ["habits", "log habits", "check in", "did i"],
+          aliases: ["habits", "log habits", "check in", "did i", "kpis"],
           run: () => setHabitLogDate(today),
         }]
       : []),
@@ -3322,6 +3458,8 @@ export function App() {
                 onCarryAll={cmd.shutCarryAll}
                 onLater={toggleShutLater}
                 onHabitAnswer={answerShutHabit}
+                onKpiValue={logShutKpi}
+                onMove={(dir) => moveShutCursor(dir === 1 ? "down" : "up")}
                 onAddStep={(parentId, text) =>
                   addChild(parentId, parseCapture(text).text, tomorrow)
                 }
@@ -3344,12 +3482,14 @@ export function App() {
                   setHabitDayOffset(Math.max(0, daysBetween(date, today)));
                 }}
                 onMark={markHabit}
+                onValue={commitKpiValue}
                 onCommit={commitHabitField}
                 onEdit={(id, field) => {
                   setHabitCursorId(id);
                   setHabitEditing({ id, field });
                 }}
                 onNew={newHabit}
+                onNewKpi={newKpi}
               />
             ) : view === "trash" ? (
               <TrashView
@@ -3444,7 +3584,11 @@ export function App() {
                   habitStrip={{
                     habits: habitsTodayList,
                     today,
-                    onToggle: (id) => toggleHabitDone(id, today),
+                    // A KPI wants a number, not a tick: ask in the log panel.
+                    onToggle: (id) =>
+                      state.habits.find((h) => h.id === id)?.measure != null
+                        ? setHabitLogDate(today)
+                        : toggleHabitDone(id, today),
                     onOpen: cmd.gotoView("habits"),
                   }}
                   captureRef={captureRef}
@@ -3639,6 +3783,7 @@ export function App() {
                 : `Habits · ${habitLogDate}`
           }
           onAnswer={(id, mark) => markHabit(id, habitLogDate, mark)}
+          onValue={(id, value) => setKpiValue(id, habitLogDate, value)}
           onClose={() => setHabitLogDate(null)}
         />
       )}

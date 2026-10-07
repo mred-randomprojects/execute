@@ -2885,6 +2885,71 @@ describe("Habits", () => {
   });
 });
 
+describe("KPIs", () => {
+  const today = () => todayISO(getState().devDateOverride);
+
+  it("k creates a KPI, its name sets the range, and space logs a number", async () => {
+    render(<App />);
+    await screen.findByPlaceholderText("Add a task for today…");
+    blurActive();
+    fireEvent.keyDown(document.body, { key: "6" });
+    fireEvent.keyDown(document.body, { key: "k" });
+    const name = await screen.findByPlaceholderText(/What to measure/);
+    fireEvent.change(name, { target: { value: "Dizzy spells 0-3+" } });
+    fireEvent.keyDown(name, { key: "Enter" });
+    await waitFor(() =>
+      expect(getState().habits[0]).toMatchObject({
+        name: "Dizzy spells",
+        measure: { min: 0, max: 3, openTop: true, every: "day" },
+      }),
+    );
+
+    blurActive();
+    fireEvent.keyDown(document.body, { key: " " });
+    const field = await screen.findByLabelText("Value, 0–3+");
+    fireEvent.change(field, { target: { value: "2" } });
+    fireEvent.keyDown(field, { key: "Enter" });
+    await waitFor(() => expect(getState().habits[0].values[today()]).toBe(2));
+    expect(getState().habits[0].checks).toEqual({});
+    expect(getState().tasks).toEqual([]);
+  });
+
+  it("shutdown asks a KPI for its number after the habits, and closes once it's in", async () => {
+    render(<App />);
+    await screen.findByPlaceholderText("Add a task for today…");
+    act(() => {
+      createHabit("Meditate");
+    });
+    act(() => {
+      createHabit("Worst dizzy spell", 7, { min: 0, max: 10, openTop: false, every: "day" });
+    });
+    await runCommand(CMD.shutdown);
+    expect(await screen.findByText("And your habits")).toBeTruthy();
+    fireEvent.keyDown(document.body, { key: "y" }); // Meditate; the cursor moves to the KPI
+    const field = await screen.findByLabelText("Value, 0–10");
+    await waitFor(() => expect(document.activeElement).toBe(field));
+    fireEvent.change(field, { target: { value: "4" } });
+    fireEvent.keyDown(field, { key: "Enter" });
+    await waitFor(() => expect(getState().habits.find((h) => h.measure != null)?.values[today()]).toBe(4));
+    expect(await screen.findByText("The day is closed.")).toBeTruthy();
+  });
+
+  it("the log panel puts a KPI's field under the cursor straight away", async () => {
+    render(<App />);
+    await screen.findByPlaceholderText("Add a task for today…");
+    act(() => {
+      createHabit("Dizzy spells", 7, { min: 0, max: 3, openTop: true, every: "day" });
+    });
+    await runCommand(/^Log habits: today…$/);
+    const field = await screen.findByLabelText("Value, 0–3+");
+    await waitFor(() => expect(document.activeElement).toBe(field));
+    fireEvent.change(field, { target: { value: "3+" } });
+    fireEvent.keyDown(field, { key: "Enter" });
+    await waitFor(() => expect(getState().habits[0].values[today()]).toBe(3));
+    expect(await screen.findByText("All logged.")).toBeTruthy();
+  });
+});
+
 describe("Not forgetting to log habits", () => {
   const today = () => todayISO(getState().devDateOverride);
   const mark = (name: string, date: string) => getState().habits.find((h) => h.name === name)?.checks[date];

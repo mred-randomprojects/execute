@@ -46,7 +46,7 @@ export const VIEW_TITLES: Record<ViewKind, string> = {
   all: "All tasks",
   projects: "Projects",
   recurring: "Recurring",
-  habits: "Habits",
+  habits: "Habits & KPIs",
   trash: "Trash",
 };
 

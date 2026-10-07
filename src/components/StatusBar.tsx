@@ -40,9 +40,9 @@ const SHUTDOWN_HABIT_HINTS: Array<[string, string]> = [
 const HABITS_HINTS: Array<[string, string]> = [
   ["↑ / ↓", "move"],
   ["← / →", "pick a day"],
-  ["space", "check in"],
+  ["space", "check in · log"],
   ["↵", "rename · tab cue"],
-  ["n", "new"],
+  ["n / k", "new habit / KPI"],
   ["⌫", "archive"],
   ["⌘k", "target · rest day · more"],
   ["?", "help"],

@@ -5,7 +5,8 @@ import { ActionChip } from "../components/ActionChip";
 import { BreakdownPanel } from "../components/BreakdownPanel";
 import { DeferralBadges } from "../components/DeferralBadges";
 import { NO_SPELLCHECK } from "../ui/noSpellcheck";
-import { markOn } from "../store/habits";
+import { answeredOn, formatValue, markOn, valueOn } from "../store/habits";
+import { KpiValueInput } from "../components/KpiValueInput";
 
 /** One line of Shutdown's list: an open task of today's, or one of today's habits. */
 export type ShutRow =
@@ -65,6 +66,8 @@ export function ShutdownView({
   onCarryAll,
   onLater,
   onHabitAnswer,
+  onKpiValue,
+  onMove,
   onAddStep,
   onFinishBreakdown,
   onExit,
@@ -96,6 +99,10 @@ export function ShutdownView({
   onCarryAll: () => void;
   onLater: (id: string) => void;
   onHabitAnswer: (id: HabitId, mark: HabitMark) => void;
+  /** A KPI's number for today (null clears it). */
+  onKpiValue: (id: HabitId, value: number | null) => void;
+  /** ↑/↓ from inside a KPI's field. */
+  onMove: (dir: 1 | -1) => void;
   onAddStep: (parentId: TaskId, text: string) => void;
   onFinishBreakdown: () => void;
   onExit: () => void;
@@ -117,10 +124,10 @@ export function ShutdownView({
   const tasks = rows.filter((r): r is Extract<ShutRow, { kind: "task" }> => r.kind === "task");
   const habits = rows.filter((r): r is Extract<ShutRow, { kind: "habit" }> => r.kind === "habit");
   const tasksLeft = tasks.filter((r) => !later.has(r.id)).length;
-  const habitsLeft = habits.filter((r) => !later.has(r.id) && markOn(r.habit, today) == null).length;
+  const habitsLeft = habits.filter((r) => !later.has(r.id) && !answeredOn(r.habit, today)).length;
   const laterCount =
     tasks.filter((r) => later.has(r.id)).length +
-    habits.filter((r) => later.has(r.id) && markOn(r.habit, today) == null).length;
+    habits.filter((r) => later.has(r.id) && !answeredOn(r.habit, today)).length;
   const resolvedToday = tally.done + tally.skipped;
   const allAnswered = tasksLeft === 0 && habitsLeft === 0;
 
@@ -135,7 +142,7 @@ export function ShutdownView({
 
   const laterWords = [
     tasks.filter((r) => later.has(r.id)).length,
-    habits.filter((r) => later.has(r.id) && markOn(r.habit, today) == null).length,
+    habits.filter((r) => later.has(r.id) && !answeredOn(r.habit, today)).length,
   ];
   const laterPhrase = [
     laterWords[0] > 0 ? `${laterWords[0]} ${laterWords[0] === 1 ? "task" : "tasks"}` : null,
@@ -240,18 +247,32 @@ export function ShutdownView({
           <section className="mb-6">
             <SectionHeading label="Habits today" left={habitsLeft} later={laterWords[1]} />
             <div className="flex flex-col gap-1">
-              {habits.map((r) => (
-                <ShutHabitRow
-                  key={r.id}
-                  habit={r.habit}
-                  mark={markOn(r.habit, today)}
-                  focused={r.id === cursorId}
-                  isLater={later.has(r.id)}
-                  onSelect={() => onSelect(r.id)}
-                  onAnswer={(m) => onHabitAnswer(r.habit.id, m)}
-                  onLater={() => onLater(r.id)}
-                />
-              ))}
+              {habits.map((r) =>
+                r.habit.measure != null ? (
+                  <ShutKpiRow
+                    key={r.id}
+                    habit={r.habit}
+                    value={valueOn(r.habit, today)}
+                    focused={r.id === cursorId}
+                    isLater={later.has(r.id)}
+                    onSelect={() => onSelect(r.id)}
+                    onValue={(v) => onKpiValue(r.habit.id, v)}
+                    onMove={onMove}
+                    onLater={() => onLater(r.id)}
+                  />
+                ) : (
+                  <ShutHabitRow
+                    key={r.id}
+                    habit={r.habit}
+                    mark={markOn(r.habit, today)}
+                    focused={r.id === cursorId}
+                    isLater={later.has(r.id)}
+                    onSelect={() => onSelect(r.id)}
+                    onAnswer={(m) => onHabitAnswer(r.habit.id, m)}
+                    onLater={() => onLater(r.id)}
+                  />
+                ),
+              )}
             </div>
           </section>
         )}
@@ -507,6 +528,80 @@ function ShutHabitRow({
           <ActionChip label={isLater ? "Ask me now" : "Later today"} hint="l" tone="today" onClick={onLater} />
           <ActionChip label="Rest day" hint="r" tone="soft" onClick={() => onAnswer("skip")} />
           <ActionChip label="Not today" hint="x" tone="soft" onClick={() => onAnswer("missed")} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * A KPI in the shutdown: one number. The field takes the keyboard as soon as
+ * the cursor lands — type it, ↵, and the cursor moves on; ↑/↓ and `l` work
+ * from inside it, esc hands the keys back to the list.
+ */
+function ShutKpiRow({
+  habit,
+  value,
+  focused,
+  isLater,
+  onSelect,
+  onValue,
+  onMove,
+  onLater,
+}: {
+  habit: Habit;
+  value: number | null;
+  focused: boolean;
+  isLater: boolean;
+  onSelect: () => void;
+  onValue: (v: number | null) => void;
+  onMove: (dir: 1 | -1) => void;
+  onLater: () => void;
+}) {
+  const ref = useScrollIntoView(focused);
+  const m = habit.measure;
+  if (m == null) return null;
+  const dim = (value != null || isLater) && !focused;
+  return (
+    <div
+      ref={ref}
+      onClick={onSelect}
+      className={[
+        "relative rounded px-3 py-2.5",
+        focused ? "bg-surface-2" : "cursor-pointer hover:bg-surface-2/60",
+        dim ? "opacity-60" : "",
+      ].join(" ")}
+    >
+      {focused && <span className="absolute left-0 top-2 bottom-2 w-[2px] bg-accent" />}
+      <div className="flex items-center gap-3">
+        <span
+          aria-hidden="true"
+          className="mono grid h-[16px] min-w-[16px] shrink-0 place-items-center rounded-sm border border-line-strong px-0.5 text-[10px] leading-none text-ink-soft"
+        >
+          {value == null ? "#" : formatValue(m, value)}
+        </span>
+        <span className={`min-w-0 flex-1 truncate text-[14px] ${focused ? "text-ink" : "text-ink-soft"}`}>
+          {habit.name === "" ? "Untitled KPI" : habit.name}
+          {habit.cue !== "" && <span className="ml-2 text-[12px] italic text-ink-faint">{habit.cue}</span>}
+        </span>
+        {value != null ? (
+          <span className="mono shrink-0 text-[11px] text-ink-faint">logged</span>
+        ) : (
+          isLater && <LaterTag />
+        )}
+      </div>
+      {focused && (
+        <div className="mt-2.5 flex flex-wrap items-center gap-1.5 pl-7">
+          <KpiValueInput
+            key={`${habit.id}:${value ?? ""}`}
+            measure={m}
+            value={value}
+            autoFocus
+            onCommit={onValue}
+            onMove={onMove}
+            onLater={onLater}
+          />
+          <ActionChip label={isLater ? "Ask me now" : "Later today"} hint="l" tone="today" onClick={onLater} />
         </div>
       )}
     </div>

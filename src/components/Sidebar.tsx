@@ -43,7 +43,7 @@ export function Sidebar({
     { key: "all", label: "All", hint: "3" },
     { key: "projects", label: "Projects", hint: "4", badge: projectCount },
     { key: "recurring", label: "Recurring", hint: "5", badge: recurring },
-    { key: "habits", label: "Habits", hint: "6", badge: habitsPending },
+    { key: "habits", label: "Habits & KPIs", hint: "6", badge: habitsPending },
     { key: "trash", label: "Trash", hint: "7", badge: trash },
   ];
 

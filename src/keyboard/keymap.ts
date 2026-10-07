@@ -41,7 +41,7 @@ export const keymap: KeyBinding[] = [
   { key: "3", action: "view.all", context: ["normal", "habits"], displayKey: "3", description: "go to All", section: "Views" },
   { key: "4", action: "view.projects", context: ["normal", "habits"], displayKey: "4", description: "go to Projects", section: "Views" },
   { key: "5", action: "view.recurring", context: ["normal", "habits"], displayKey: "5", description: "go to Recurring", section: "Views" },
-  { key: "6", action: "view.habits", context: ["normal", "habits"], displayKey: "6", description: "go to Habits", section: "Views" },
+  { key: "6", action: "view.habits", context: ["normal", "habits"], displayKey: "6", description: "go to Habits & KPIs", section: "Views" },
   { key: "7", action: "view.trash", context: ["normal", "habits"], displayKey: "7", description: "go to Trash", section: "Views" },
   { key: "]", action: "period.next", context: ["normal", "habits"], displayKey: "[ / ]", description: "period tab: earlier / later (Today ↔ Tomorrow ↔ …)", section: "Views" },
   { key: "[", action: "period.prev", context: ["normal", "habits"] },
@@ -79,10 +79,11 @@ export const keymap: KeyBinding[] = [
   { key: "ArrowUp", action: "habits.up", context: "habits" },
   { key: "ArrowLeft", action: "habits.dayPrev", context: "habits", displayKey: "← / →", description: "pick a day (the last two weeks)", section: "Habits" },
   { key: "ArrowRight", action: "habits.dayNext", context: "habits" },
-  { key: " ", action: "habits.toggle", context: "habits", displayKey: "space", description: "check in / undo, on the picked day", section: "Habits" },
+  { key: " ", action: "habits.toggle", context: "habits", displayKey: "space", description: "check in / undo, on the picked day · on a KPI, log its number", section: "Habits" },
   { key: "Meta+Enter", action: "habits.toggle", context: "habits" },
   { key: "Enter", action: "habits.rename", context: "habits", displayKey: "↵", description: "rename · tab moves on to the cue", section: "Habits" },
   { key: "n", action: "habits.new", context: "habits", displayKey: "n", description: "new habit", section: "Habits" },
+  { key: "k", action: "habits.newKpi", context: "habits", displayKey: "k", description: "new KPI — a number to log (“Dizzy spells 0-3+”, “DHI 0-100 monthly”)", section: "Habits" },
   { key: "Backspace", action: "habits.archive", context: "habits", displayKey: "⌫", description: "archive · on an archived habit, delete it", section: "Habits", noRepeat: true },
 
   // ── plan (the morning ritual; shutdown's other half) ─────────────

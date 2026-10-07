@@ -44,7 +44,7 @@ import type { Run } from "../store/streak";
 import { Donut } from "../components/Donut";
 import { formatMinutes } from "../store/estimate";
 import { NO_SPELLCHECK } from "../ui/noSpellcheck";
-import { markOn } from "../store/habits";
+import { formatValue, markOn, valueOn } from "../store/habits";
 
 /**
  * Habits beside the day's commitments without being any: one chip each,
@@ -69,11 +69,35 @@ function HabitStrip({
         tabIndex={-1}
         onClick={onOpen}
         className="eyebrow mr-1 hover:text-ink"
-        title="Go to Habits (6)"
+        title="Go to Habits & KPIs (6)"
       >
         Habits
       </button>
       {habits.map((h) => {
+        if (h.measure != null) {
+          const value = valueOn(h, today);
+          return (
+            <button
+              key={h.id}
+              type="button"
+              tabIndex={-1}
+              onClick={(e) => {
+                e.currentTarget.blur();
+                onToggle(h.id);
+              }}
+              title={value == null ? `Log ${h.name || "KPI"} for today` : "Logged today — click to change"}
+              className={[
+                "flex items-center gap-1.5 rounded-full border px-2.5 py-[3px] text-[12px] transition-colors",
+                value != null
+                  ? "border-accent/50 bg-accent-soft text-accent"
+                  : "border-line-strong text-ink-soft hover:border-accent/60 hover:text-ink",
+              ].join(" ")}
+            >
+              <span aria-hidden="true" className="mono">{value == null ? "#" : formatValue(h.measure, value)}</span>
+              <span className="max-w-[160px] truncate">{h.name || "Untitled KPI"}</span>
+            </button>
+          );
+        }
         const mark = markOn(h, today);
         const done = mark === "done";
         return (
