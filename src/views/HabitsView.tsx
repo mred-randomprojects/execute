@@ -4,6 +4,7 @@ import {
   cadenceLabel,
   everyLabel,
   formatValue,
+  kpiEditText,
   kpiSummary,
   loggedInPeriod,
   rangeLabel,
@@ -454,7 +455,7 @@ function KpiRow({
           <div className="truncate text-[14px] text-ink">
             {editing === "name" ? (
               <InlineInput
-                initial={habit.name}
+                initial={kpiEditText(habit.name, measure)}
                 placeholder="What to measure — a range and “weekly”/“monthly” can follow: “Dizzy spells 0-3+”"
                 onCommit={(v) => onCommit("name", v, null)}
                 onTab={(v) => onCommit("name", v, "cue")}

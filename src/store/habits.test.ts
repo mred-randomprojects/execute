@@ -17,6 +17,7 @@ import {
   formatValue,
   habitsToLog as toLog,
   kpiSummary,
+  kpiEditText,
   parseKpiName,
   parseValue,
 } from "./habits";
@@ -269,6 +270,16 @@ describe("KPIs", () => {
     expect(parseKpiName("Sleep")).toEqual({ name: "Sleep", range: null, every: null });
     expect(parseKpiName("0-10")).toEqual({ name: "0-10", range: null, every: null });
     expect(parseKpiName("Mood 5-5")).toEqual({ name: "Mood 5-5", range: null, every: null });
+  });
+
+  it("renaming starts from the name with its range, and reads back unchanged", () => {
+    const daily = { min: 0, max: 3, openTop: true, every: "day" as const };
+    const monthly = { min: 0, max: 100, openTop: false, every: "month" as const };
+    expect(kpiEditText("Mareos", daily)).toBe("Mareos 0–3+");
+    expect(kpiEditText("DHI", monthly)).toBe("DHI 0–100 monthly");
+    expect(kpiEditText("", daily)).toBe("");
+    expect(parseKpiName(kpiEditText("Mareos", daily))).toEqual({ name: "Mareos", range: { min: 0, max: 3, openTop: true }, every: null });
+    expect(parseKpiName(kpiEditText("DHI", monthly))).toEqual({ name: "DHI", range: { min: 0, max: 100, openTop: false }, every: "month" });
   });
 
   it("parses a typed value, clamping into the range and reading 3+ as the top", () => {

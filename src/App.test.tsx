@@ -2912,6 +2912,15 @@ describe("KPIs", () => {
     await waitFor(() => expect(getState().habits[0].values[today()]).toBe(2));
     expect(getState().habits[0].checks).toEqual({});
     expect(getState().tasks).toEqual([]);
+
+    // ↵ renames starting from "Dizzy spells 0–3+": change the range in place.
+    blurActive();
+    fireEvent.keyDown(document.body, { key: "Enter" });
+    const rename = (await screen.findByDisplayValue("Dizzy spells 0–3+")) as HTMLInputElement;
+    fireEvent.change(rename, { target: { value: "Dizzy spells 0-5+" } });
+    fireEvent.keyDown(rename, { key: "Enter" });
+    await waitFor(() => expect(getState().habits[0].measure).toMatchObject({ min: 0, max: 5, openTop: true }));
+    expect(getState().habits[0].name).toBe("Dizzy spells");
   });
 
   it("shutdown asks a KPI for its number after the habits, and closes once it's in", async () => {

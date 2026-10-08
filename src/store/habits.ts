@@ -470,6 +470,18 @@ export function rangeLabel(m: HabitMeasure): string {
   return `${m.min}–${m.max}${m.openTop ? "+" : ""}`;
 }
 
+/**
+ * What renaming a KPI starts from: its name with the range (and a cadence
+ * other than daily) after it — "Dizzy spells 0–3+", "DHI 0–100 monthly" — so
+ * the range is in plain sight and edited the same way it was typed.
+ * parseKpiName reads it back unchanged.
+ */
+export function kpiEditText(name: string, m: HabitMeasure): string {
+  if (name === "") return "";
+  const every = m.every === "week" ? " weekly" : m.every === "month" ? " monthly" : "";
+  return `${name} ${rangeLabel(m)}${every}`;
+}
+
 export function everyLabel(every: KpiEvery): string {
   return every === "day" ? "Every day" : every === "week" ? "Once a week" : "Once a month";
 }
