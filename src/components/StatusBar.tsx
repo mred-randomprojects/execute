@@ -43,6 +43,7 @@ const HABITS_HINTS: Array<[string, string]> = [
   ["space", "check in · log"],
   ["↵", "rename · tab cue"],
   ["n / k", "new habit / KPI"],
+  ["⌥↑↓", "reorder"],
   ["⌫", "archive"],
   ["⌘k", "target · rest day · more"],
   ["?", "help"],

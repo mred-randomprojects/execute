@@ -77,6 +77,8 @@ export const keymap: KeyBinding[] = [
   // can't land on a task — there are none here — and ⌘z takes it back.
   { key: "ArrowDown", action: "habits.down", context: "habits", displayKey: "↑ / ↓", description: "next / previous habit", section: "Habits" },
   { key: "ArrowUp", action: "habits.up", context: "habits" },
+  { key: "Alt+ArrowUp", action: "habits.moveUp", context: "habits", displayKey: "⌥ ↑ / ⌥ ↓", description: "move it up / down its list", section: "Habits" },
+  { key: "Alt+ArrowDown", action: "habits.moveDown", context: "habits" },
   { key: "ArrowLeft", action: "habits.dayPrev", context: "habits", displayKey: "← / →", description: "pick a day (the last two weeks)", section: "Habits" },
   { key: "ArrowRight", action: "habits.dayNext", context: "habits" },
   { key: " ", action: "habits.toggle", context: "habits", displayKey: "space", description: "check in / undo, on the picked day · on a KPI, log its number", section: "Habits" },

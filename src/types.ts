@@ -181,6 +181,12 @@ export interface Habit {
   checkedAt: Record<ISODate, number>;
   /** Retired from the active list (history kept). `null` = active. */
   archivedAt: number | null;
+  /**
+   * v22: where it sits in the list (⌥↑/↓) — smaller first, ties by createdAt
+   * then id. Starts as createdAt, so a new habit goes last. An own field: the
+   * newer `updatedAt` wins it in the merge.
+   */
+  rank: number;
   createdAt: number;
   /**
    * The merge's clock for the habit's own fields (name, cue, target,
@@ -617,7 +623,7 @@ export interface AppState {
   days: DayRecord[];
 }
 
-export const SCHEMA_VERSION = 21;
+export const SCHEMA_VERSION = 22;
 export const DEFAULT_PROJECT_ID = "project-inbox" as ProjectId;
 export const PROJECT_ROW_PREFIX = "project:";
 

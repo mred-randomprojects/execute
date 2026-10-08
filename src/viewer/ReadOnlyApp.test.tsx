@@ -98,6 +98,7 @@ describe("habits on the phone", () => {
     measure: null,
     values: {},
     archivedAt: null,
+    rank: 0,
     createdAt: Date.now() - daysOld * 86_400_000,
     updatedAt: 0,
   });

@@ -53,6 +53,7 @@ describe("presenceSnapshot", () => {
       measure: null,
       values: {},
       archivedAt: null,
+      rank: 0,
       createdAt: 0,
       updatedAt: 0,
     });

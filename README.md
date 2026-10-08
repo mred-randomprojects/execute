@@ -103,7 +103,7 @@ task tree, so a habit can't reckon or change the day's counts. Each habit has a
 weekly target ("Run 3x" when you name it sets 3× a week), an optional cue
 ("after my morning coffee"), a two-week strip, a forgiving **strength** score
 and a streak that survives a single miss (*never miss twice*). `space` checks
-in, `←`/`→` pick an earlier day to backfill, and `⌘k` marks a rest day, which
+in, `←`/`→` pick an earlier day to backfill, `⌥↑`/`⌥↓` reorder, and `⌘k` marks a rest day, which
 costs nothing. You're asked at the moments the app already owns, so a habit
 doesn't go unlogged: Shutdown ends with "did each one happen today?"
 (`y` / `r` / `x`), Today shows a band for anything left unlogged yesterday,

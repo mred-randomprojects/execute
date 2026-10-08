@@ -347,6 +347,8 @@ function coerceHabit(raw: unknown): Habit {
     // answer on another device outvotes.
     checkedAt: coerceStamps(o.checkedAt),
     archivedAt: numOrNull(o.archivedAt),
+    // v22: pre-v22 habits were in creation order — rank them that way.
+    rank: num(o.rank, createdAt),
     createdAt,
     updatedAt: num(o.updatedAt, createdAt),
   };

@@ -168,7 +168,6 @@ one (log 0 spells, and "worst" fills itself with 0).
   The fix is real pause ranges (roadmap).
 - Backfill reaches two weeks back. Older days can't be marked from the app
   yet.
-- Order is creation order. There is no reordering yet.
 - The phone can check in today and answer yes/no about yesterday. It can't
   mark rest days, and it has no Habits view (strip, strength, editing). Those
   stay on the desktop for now.
@@ -214,7 +213,8 @@ one (log 0 spells, and "worst" fills itself with 0).
     Reckoning collects, to feed the AI analysis in `LogEntry` later.
 16. **Identity line per habit** ("I'm someone who moves every day"), shown
     on the view. This is identity-based habits from Atomic Habits.
-17. **Reorder and group habits** (`⌥↑/↓`, by time of day).
+17. ~~Reorder~~ (`⌥↑/↓`, v22: a synced `rank` per habit, moving within its
+    own list). Grouping by time of day is still open.
 
 **Anti-goals:** points, levels, HP, leaderboards, social pressure,
 streak-shaming notifications, and anything that makes a habit reckon.

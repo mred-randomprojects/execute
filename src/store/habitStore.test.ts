@@ -8,6 +8,7 @@ import {
   markHabit,
   renameHabit,
   setHabitMeasure,
+  moveHabit,
   setHabitPerWeek,
   setKpiValue,
   toggleHabitDone,
@@ -18,7 +19,7 @@ import { mergeStates } from "../sync/merge";
 import { asRaw, fromDocs, toDocs } from "../sync/docs";
 import { jsonEqual } from "../sync/merge";
 import type { AppState, Habit, HabitId } from "../types";
-import { DEFAULT_MEASURE, markStamped, valueStamped } from "./habits";
+import { DEFAULT_MEASURE, markStamped, moveHabitRank, valueStamped } from "./habits";
 
 // Habits through the store and the merge: undoable, tombstoned on delete, and
 // never anywhere near the task tree the Reckoning reads.
@@ -136,6 +137,7 @@ describe("per-day check-in merge (v20)", () => {
     measure: null,
     values: {},
     archivedAt: null,
+    rank: 0,
     createdAt: 1,
     updatedAt: 1,
     ...over,
@@ -212,6 +214,7 @@ describe("KPIs (v21)", () => {
     measure: { min: 0, max: 3, openTop: true, every: "day" },
     values: {},
     archivedAt: null,
+    rank: 0,
     createdAt: 1,
     updatedAt: 1,
     ...over,
@@ -281,5 +284,51 @@ describe("KPIs (v21)", () => {
     const s = getState();
     expect(jsonEqual(fromDocs(asRaw(toDocs(s)), s).habits, s.habits)).toBe(true);
     expect(fromDocs(asRaw(toDocs(s)), s).habits[0].values).toEqual({ "2026-10-01": 42 });
+  });
+});
+
+describe("reordering (v22)", () => {
+
+  it("moves within its own list — habits, KPIs, archive — undoably, and reads back from the cloud", async () => {
+    const a = createHabit("A");
+    await tick();
+    createHabit("B");
+    await tick();
+    const k1 = createHabit("K1", 7, DEFAULT_MEASURE);
+    await tick();
+    createHabit("K2", 7, DEFAULT_MEASURE);
+    await tick();
+    const c = createHabit("C");
+
+    moveHabit(c, -1); // past B, and past nothing in the KPIs
+    const habitsOnly = () => getState().habits.filter((h) => h.measure == null).map((h) => h.name);
+    const kpisOnly = () => getState().habits.filter((h) => h.measure != null).map((h) => h.name);
+    expect(habitsOnly()).toEqual(["A", "C", "B"]);
+    moveHabit(c, -1);
+    expect(habitsOnly()).toEqual(["C", "A", "B"]);
+    moveHabit(c, -1); // already first: nothing
+    expect(habitsOnly()).toEqual(["C", "A", "B"]);
+    moveHabit(k1, 1);
+    expect(kpisOnly()).toEqual(["K2", "K1"]);
+    moveHabit(a, 1);
+    expect(habitsOnly()).toEqual(["C", "B", "A"]);
+
+    undo();
+    expect(habitsOnly()).toEqual(["C", "A", "B"]);
+    const s = getState();
+    expect(jsonEqual(fromDocs(asRaw(toDocs(s)), s).habits, s.habits)).toBe(true);
+  });
+
+  it("spreads equal ranks apart instead of getting stuck", () => {
+    const a = createHabit("A");
+    const b = createHabit("B");
+    // Same rank (same millisecond, or an old copy): the move still lands.
+    const s = getState();
+    const same = s.habits.map((h) => ({ ...h, rank: 5 }));
+    const order = (hs: Habit[]) => [...hs].sort((x, y) => x.rank - y.rank || x.createdAt - y.createdAt || (x.id < y.id ? -1 : 1));
+    const before = order(same).map((h) => h.id);
+    const moved = moveHabitRank(same, before[1], -1);
+    expect(order(moved).map((h) => h.id)).toEqual([before[1], before[0]]);
+    expect([a, b].sort()).toEqual([...before].sort());
   });
 });

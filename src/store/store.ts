@@ -62,6 +62,7 @@ import { normalizeRule } from "./recurrence";
 import {
   everyLabel,
   formatValue,
+  moveHabitRank,
   normalizePerWeek,
   rangeLabel,
   sameMeasure,
@@ -1679,6 +1680,7 @@ export function createHabit(name: string, perWeek = 7, measure: HabitMeasure | n
     values: {},
     checkedAt: {},
     archivedAt: null,
+    rank: now,
     createdAt: now,
     updatedAt: now,
   };
@@ -1749,6 +1751,17 @@ export function setKpiValue(id: HabitId, date: ISODate, value: number | null): v
   if (h == null || h.measure == null) return;
   const label = value == null ? `Clear ${habitName(id)} · ${date}` : `${habitName(id)} = ${formatValue(h.measure, value)} · ${date}`;
   update(mapHabit(id, (x) => withValue(x, date, value)), label);
+}
+
+/** One place up or down within its list (habits, KPIs, or the archive). */
+export function moveHabit(id: HabitId, dir: 1 | -1): void {
+  update(
+    (s) => {
+      const habits = moveHabitRank(s.habits, id, dir);
+      return habits === s.habits ? s : { ...s, habits: sortHabits(habits) };
+    },
+    `Move ${habitName(id)} ${dir === 1 ? "down" : "up"}`,
+  );
 }
 
 /** Retire a habit from the active list, keeping its history; or bring it back. */

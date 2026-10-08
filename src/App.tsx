@@ -94,6 +94,7 @@ import {
   setHabitArchived,
   setHabitCue,
   setHabitMeasure,
+  moveHabit,
   setHabitPerWeek,
   setKpiValue,
   toggleHabitDone,
@@ -2310,6 +2311,12 @@ export function App() {
       if (focusedHabit != null) setHabitEditing({ id: focusedHabit.id, field: "name" });
     },
     "habits.new": newHabit,
+    "habits.moveUp": () => {
+      if (focusedHabit != null) moveHabit(focusedHabit.id, -1);
+    },
+    "habits.moveDown": () => {
+      if (focusedHabit != null) moveHabit(focusedHabit.id, 1);
+    },
     "habits.newKpi": newKpi,
     "habits.archive": archiveOrDeleteHabit,
     "dismiss": cmd.dismiss,

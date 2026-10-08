@@ -34,6 +34,7 @@ function habit(perWeek: number, created: ISODate, checks: Record<ISODate, HabitM
     measure: null,
     values: {},
     archivedAt: null,
+    rank: 0,
     createdAt: parseISO(created).getTime(),
     updatedAt: 0,
   };

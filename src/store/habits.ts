@@ -22,11 +22,41 @@ import { addDays, monthKey, toISO, weekKey, weekStart } from "./dates";
 export const PER_WEEK_MIN = 1;
 export const PER_WEEK_MAX = 7;
 
-/** Oldest first, ties by id — one canonical order, so two devices agree on it. */
+/** By rank, then oldest first, ties by id — one canonical order, so two devices agree on it. */
 export function sortHabits(habits: Habit[]): Habit[] {
   return [...habits].sort(
-    (a, b) => a.createdAt - b.createdAt || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0),
+    (a, b) => a.rank - b.rank || a.createdAt - b.createdAt || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0),
   );
+}
+
+/** Which list a habit sits in on the view: habits, KPIs, or the archive. */
+function habitGroup(h: Habit): string {
+  return h.archivedAt != null ? "archived" : h.measure != null ? "kpi" : "habit";
+}
+
+/**
+ * `id` moved one place up or down within its own list (habits, KPIs, or the
+ * archive), as new ranks. The list keeps the ranks it already had, handed out
+ * again in the new order, so only the rows that moved change. Equal ranks
+ * get spread apart first. Returns the habits unchanged when it can't move.
+ */
+export function moveHabitRank(habits: Habit[], id: string, dir: 1 | -1): Habit[] {
+  const sorted = sortHabits(habits);
+  const me = sorted.find((h) => h.id === id);
+  if (me == null) return habits;
+  const group = sorted.filter((h) => habitGroup(h) === habitGroup(me));
+  const i = group.indexOf(me);
+  const j = i + dir;
+  if (j < 0 || j >= group.length) return habits;
+  const ranks = group.map((h) => h.rank);
+  for (let k = 1; k < ranks.length; k++) if (ranks[k] <= ranks[k - 1]) ranks[k] = ranks[k - 1] + 1;
+  const order = [...group];
+  [order[i], order[j]] = [order[j], order[i]];
+  const next = new Map(order.map((h, k) => [h.id, ranks[k]]));
+  return habits.map((h) => {
+    const rank = next.get(h.id);
+    return rank == null || rank === h.rank ? h : { ...h, rank };
+  });
 }
 
 /** Clamp a weekly target into 1–7 whole days. */
@@ -83,13 +113,14 @@ export function withMark(h: Habit, date: ISODate, mark: HabitMark | null): Habit
 /** The fields `updatedAt` covers. */
 export function habitOwnFields(
   h: Habit,
-): Pick<Habit, "name" | "cue" | "perWeek" | "measure" | "archivedAt" | "createdAt"> {
+): Pick<Habit, "name" | "cue" | "perWeek" | "measure" | "archivedAt" | "rank" | "createdAt"> {
   return {
     name: h.name,
     cue: h.cue,
     perWeek: h.perWeek,
     measure: h.measure,
     archivedAt: h.archivedAt,
+    rank: h.rank,
     createdAt: h.createdAt,
   };
 }
@@ -106,6 +137,7 @@ function sameOwn(a: Habit, b: Habit): boolean {
     a.perWeek === b.perWeek &&
     sameMeasure(a.measure, b.measure) &&
     a.archivedAt === b.archivedAt &&
+    a.rank === b.rank &&
     a.createdAt === b.createdAt
   );
 }

@@ -207,7 +207,7 @@ function HabitRow({
   const rowRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (focused) rowRef.current?.scrollIntoView?.({ block: "nearest" });
-  }, [focused]);
+  }, [focused, habit.rank]); // ⌥↑/↓ moves the row: keep it in view
 
   return (
     <div
@@ -419,7 +419,7 @@ function KpiRow({
   const rowRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (focused) rowRef.current?.scrollIntoView?.({ block: "nearest" });
-  }, [focused]);
+  }, [focused, habit.rank]); // ⌥↑/↓ moves the row: keep it in view
 
   return (
     <div
