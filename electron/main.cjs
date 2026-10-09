@@ -1,5 +1,6 @@
 const fs = require("node:fs");
 const path = require("node:path");
+const { pathToFileURL } = require("node:url");
 const http = require("node:http");
 const crypto = require("node:crypto");
 const {
@@ -15,6 +16,7 @@ const {
 } = require("electron");
 const { readStoreFile } = require("./storeFile.cjs");
 const { backUpDaily, localDate } = require("./backups.cjs");
+const { isAppNavigation, isExternalUrlAllowed } = require("./navigation.cjs");
 
 if (require("electron-squirrel-startup")) {
   app.quit();
@@ -619,17 +621,29 @@ function createWindow() {
     mainWindow = undefined;
   });
 
-  // External links open in the user's browser, never inside the app window.
+  // External links open in the user's browser, never inside the app window —
+  // and only web and mail links: openExternal hands any other scheme (file:,
+  // custom app schemes) to whatever app claims it.
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    shell.openExternal(url);
+    if (isExternalUrlAllowed(url)) {
+      shell.openExternal(url).catch((error) => console.error("Could not open link:", error));
+    }
     return { action: "deny" };
+  });
+
+  // The window only ever shows the app itself; a link that tries to navigate it
+  // anywhere else is stopped (links open through the handler above instead).
+  const indexFile = path.join(__dirname, "..", "dist", "index.html");
+  const appUrl = pathToFileURL(indexFile).href;
+  mainWindow.webContents.on("will-navigate", (event) => {
+    if (!isAppNavigation(event.url, appUrl, isDev ? DEV_URL : null)) event.preventDefault();
   });
 
   if (isDev) {
     mainWindow.loadURL(DEV_URL);
     mainWindow.webContents.openDevTools({ mode: "detach" });
   } else {
-    mainWindow.loadFile(path.join(__dirname, "..", "dist", "index.html"));
+    mainWindow.loadFile(indexFile);
   }
 }
 
