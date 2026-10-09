@@ -41,4 +41,4 @@ browser scopes by origin is a single pool they all share:
 
 <!-- /mred-randomprojects:shared-origin -->
 
-**In this repo:** Served at `/execute/`. Keys: `execute-store`, and `execute.v2.logWatermark.<uid>` per account. Uses Firebase, so its session is one of the records in `firebaseLocalStorageDb`. The desktop build (Electron, `install.sh`) keeps storage of its own, apart from any browser's, so none of this reaches it.
+**In this repo:** Served at `/execute/`, where only the web viewer runs. localStorage: none of its own (the Firestore SDK can leave a transient `firestore_zombie_*` key when a tab closes). sessionStorage: none. IndexedDB: Firestore's persistent cache `firestore/[DEFAULT]/execute-todo-1d3bc/main`. Cache Storage: none, no service worker. Cookies: none. Uses Firebase, so its session is one of the records in `firebaseLocalStorageDb`. The code's three localStorage keys — `execute-store` (the `pnpm dev` browser fallback), `execute.v2.logWatermark.<uid>` and `execute.habitPromptDismissed` — are written only by the desktop app (Electron's own `file://` storage, apart from any browser's) and the localhost dev server, never on the shared site.

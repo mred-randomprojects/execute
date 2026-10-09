@@ -1323,7 +1323,7 @@ export function App() {
     bumpScroll();
   };
 
-  // ── Scheduling (the `s` picker + the detail panel's chips) ────────
+  // ── Scheduling (the ⌘k "Schedule…" picker + the detail panel's chips) ──
   /** A picker choice as the two mutually-exclusive fields it actually sets. */
   const scheduleFieldsFor = (choice: ScheduleChoice): PostponeTarget => {
     if (typeof choice === "object") return { plannedFor: choice.date, horizon: null };
@@ -1468,7 +1468,7 @@ export function App() {
     setShowSchedule(true);
   };
 
-  // ── Filing under a project (the ⇧p picker + the palette's set-project) ──
+  // ── Filing under a project (the ⌘k "File under a project…" picker) ──
   // The cursor can be sitting on a recurrence *template* rather than a task —
   // in the Recurring view, or on a "Recurring today" suggestion. Filing there
   // moves the whole definition, so every occurrence it spawns lands in that

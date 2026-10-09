@@ -2,12 +2,15 @@ import { defineConfig } from "vitest/config";
 import { loadEnv, type PluginOption } from "vite";
 import react from "@vitejs/plugin-react";
 
-// The Electron renderer ships a deliberately strict, localhost-only CSP in
-// index.html (script-src 'self', connect only to the dev HMR socket). That is
-// correct for a local-first app that loads no remote content — but the web
-// viewer (VITE_VIEWER=1) MUST talk to Google for Firebase Auth + Firestore, so
-// for that build only we swap the CSP meta tag for one that permits exactly the
-// Google/Firebase origins the SDK needs (and nothing broader).
+// The Electron renderer ships the CSP in index.html: scripts from 'self' plus
+// 'unsafe-inline' (React fast-refresh's inline preamble in dev; production keeps
+// it too, for now), and connections to the dev HMR socket and the Google
+// endpoints that desktop cloud sync calls (Firebase Auth token exchange,
+// Firestore). No Google script or frame origins: desktop sign-in runs in the
+// system browser. The web viewer (VITE_VIEWER=1) also loads Google's sign-in
+// scripts and frames, so for that build only we swap the CSP meta tag for one
+// that permits exactly the Google/Firebase origins the SDK needs (and nothing
+// broader).
 function viewerCsp(authDomain: string, isDev: boolean): string {
   const connect = [
     "'self'",

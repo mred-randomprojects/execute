@@ -26,8 +26,9 @@ const isViewer = import.meta.env.VITE_VIEWER === "1";
 // landed — but never before the store has loaded successfully, when "the
 // current state" is still the empty placeholder and writing it would erase the
 // real one (saveNow refuses then; this stays quiet behind the error screen). The
-// viewer is read-only and its one edit (ticking a task) goes straight to the
-// cloud, so there it only keeps the browser's "Save page" dialog away.
+// viewer has no local store: its edits (title, notes, plan date, project,
+// completion, habit check-ins) go straight to the cloud, so there ⌘S only keeps
+// the browser's "Save page" dialog away.
 interceptSave(
   isViewer
     ? {}
@@ -40,7 +41,7 @@ interceptSave(
 );
 
 if (isViewer) {
-  // Web viewer build: auth-gated, read-only. The dynamic import keeps the
+  // Web viewer build: auth-gated, light editing. The dynamic import keeps the
   // viewer's own UI out of the desktop build. It does NOT keep Firebase out —
   // App.tsx imports sync/desktopSync statically, so the SDK is in both bundles.
   // What makes that harmless is that the SDK is now built lazily and only

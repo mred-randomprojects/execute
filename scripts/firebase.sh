@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # Run the Firebase CLI (pinned major) for this repo.
 #
-# firebase-tools needs Node >= 20, but the app itself builds on Node 18 (see
-# the Node-18 constraints in README). So use the current Node when it's new
-# enough, else the newest one nvm has installed.
+# firebase-tools needs Node >= 20, and a login shell may still resolve an older
+# Node (the repo pins 22 in .nvmrc, but nothing switches to it by itself). So
+# use the current Node when it's new enough, else the newest one nvm has
+# installed.
 set -euo pipefail
 
 node_major() { "$1" -p 'process.versions.node.split(".")[0]'; }

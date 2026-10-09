@@ -142,7 +142,7 @@ practice.
 - `store/store.ts` — `setSchedule`, `demoteSchedule`; update `setPlannedFor*`
   callers; `postponeToBacklog` becomes "demote to a horizon / inbox."
 - `selectors.ts` — `leftoverLeaves`, view predicates, a `groupByHorizon`.
-- `App.tsx` / `OutlineView` — Later view, the `s` picker, badges.
+- `App.tsx` / `OutlineView` — Later view, the schedule picker (then `s`; now ⌘k "Schedule…"), badges.
 - `keyboard/keymap.ts` — `schedule.open`, `schedule.demote`.
 
 ## Test plan

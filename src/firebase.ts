@@ -74,12 +74,13 @@ function init(): Services {
     auth: getAuth(app),
     // initializeFirestore (not getFirestore) so we can tune the transport + cache.
     db: initializeFirestore(app, {
-      // ROOT CAUSE of the "stuck on Loading your tasks…" hang: Firestore's default
-      // transport is a streaming WebChannel, which some mobile carriers / 5G NATs /
-      // proxies silently break — the listen stream never establishes, so onSnapshot
-      // never delivers a first snapshot and the app hangs forever with no error.
-      // Auto-detecting long-polling falls back to plain HTTP polling on exactly
-      // those networks. (Firebase's own recommended fix for this class of hang.)
+      // Firestore's streaming WebChannel can be silently broken by some mobile
+      // carriers / NATs / proxies, so the listen stream never delivers a first
+      // snapshot; auto-detected long-polling falls back to plain HTTP there.
+      // It is the SDK's default anyway (checked in firebase 12.16), so this line
+      // only states it and changes nothing. It is not, on its own, a fix for a
+      // "stuck on Loading your tasks…" hang: 78ed0c5, which added it, also
+      // changed how the viewer's first load works.
       experimentalAutoDetectLongPolling: true,
       // A stray `undefined` anywhere in the ~800 KB state would otherwise make
       // every write throw — and the JSON file on disk hides it (JSON.stringify
