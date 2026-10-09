@@ -128,6 +128,10 @@ export function ReadOnlyApp({
 
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", state.theme);
+    // The phone's status and URL bar take the theme's own background: the
+    // `theme-color` in index.html is Slate's, a light bar over Carbon.
+    const bg = getComputedStyle(document.documentElement).getPropertyValue("--bg").trim();
+    if (bg !== "") document.querySelector('meta[name="theme-color"]')?.setAttribute("content", bg);
   }, [state.theme]);
 
   const filtered = useMemo(

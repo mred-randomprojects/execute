@@ -122,3 +122,36 @@ describe("habits on the phone", () => {
     expect(screen.getByText("Floss")).toBeTruthy();
   });
 });
+
+describe("the phone's browser chrome", () => {
+  it("colours the status and URL bar with the theme's background, not Slate's", () => {
+    // theme.css isn't loaded under vitest: just the two rules this reads.
+    const style = document.createElement("style");
+    style.textContent = ':root { --bg: #f1f1ef; } [data-theme="carbon"] { --bg: #0c0d10; }';
+    const meta = document.createElement("meta");
+    meta.name = "theme-color";
+    meta.content = "#f1f1ef";
+    document.head.append(style, meta);
+    try {
+      const { rerender } = renderApp({ ...emptyState(), theme: "carbon" });
+      expect(meta.content).toBe("#0c0d10");
+      rerender(
+        <ReadOnlyApp
+          state={{ ...emptyState(), theme: "slate" }}
+          cloudUpdatedAt={null}
+          notice={null}
+          email="me@example.com"
+          onSignOut={() => {}}
+          onToggle={() => {}}
+          onAdd={() => {}}
+          onUpdate={() => {}}
+        />,
+      );
+      expect(meta.content).toBe("#f1f1ef");
+    } finally {
+      style.remove();
+      meta.remove();
+      document.documentElement.removeAttribute("data-theme");
+    }
+  });
+});
