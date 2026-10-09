@@ -14,8 +14,7 @@ import "./theme.css";
 import "./index.css";
 import { App } from "./App";
 import { interceptSave } from "cmd-s";
-import { getLoaded, getState } from "./store/store";
-import { saveRaw } from "./store/persistence";
+import { getLoaded, saveNow } from "./store/store";
 
 const root = document.getElementById("root");
 if (root == null) throw new Error("Root element #root not found");
@@ -23,9 +22,10 @@ if (root == null) throw new Error("Root element #root not found");
 const isViewer = import.meta.env.VITE_VIEWER === "1";
 
 // ⌘S / Ctrl+S. The desktop store writes itself 200ms after every edit; ⌘S
-// writes the current state right now, ahead of that timer, and says so — but
-// never before the store has loaded successfully, when "the current state" is
-// still the empty placeholder and writing it would erase the real one. The
+// writes the current state right now, ahead of that timer, and says whether it
+// landed — but never before the store has loaded successfully, when "the
+// current state" is still the empty placeholder and writing it would erase the
+// real one (saveNow refuses then; this stays quiet behind the error screen). The
 // viewer is read-only and its one edit (ticking a task) goes straight to the
 // cloud, so there it only keeps the browser's "Save page" dialog away.
 interceptSave(
@@ -34,8 +34,7 @@ interceptSave(
     : {
         onSave: async () => {
           if (!getLoaded()) return;
-          await saveRaw(getState());
-          return "Saved";
+          return (await saveNow()) ? "Saved" : "Not saved to disk — retrying";
         },
       },
 );

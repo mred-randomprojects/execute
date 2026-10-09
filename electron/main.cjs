@@ -574,6 +574,17 @@ function registerIpc() {
     writeStore(data);
     return true;
   });
+  // Synchronous twin of store:save, for the renderer's pagehide/beforeunload
+  // flush. It must always set returnValue: the renderer is blocked until it does.
+  ipcMain.on("store:saveSync", (event, data) => {
+    try {
+      writeStore(data);
+      event.returnValue = true;
+    } catch (error) {
+      console.error("Saving the store on close failed:", error);
+      event.returnValue = false;
+    }
+  });
   ipcMain.handle("auth:google", (_event, { clientId, clientSecret }) => {
     if (!clientId || !clientSecret) throw new Error("Missing Google OAuth client config");
     return googleOAuth(clientId, clientSecret);

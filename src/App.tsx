@@ -28,6 +28,7 @@ import {
   indent,
   indentRecurrenceNode,
   dropManyWithLog,
+  flushPendingSave,
   initStore,
   carryManyTo,
   keepManyForToday,
@@ -280,7 +281,7 @@ interface OutlineTaskRow {
 type OutlineRow = OutlineProjectRow | OutlineTaskRow;
 
 export function App() {
-  const { state, ready, loadError } = useStore();
+  const { state, ready, loadError, saveError } = useStore();
   // Loaded *successfully*. After a failed load `ready` is true too, but the
   // state is the empty placeholder: nothing below may write it or report it.
   const loaded = ready && loadError == null;
@@ -406,6 +407,16 @@ export function App() {
 
   useEffect(() => {
     void initStore();
+  }, []);
+  // Closing the window or quitting inside the 200 ms save debounce would drop
+  // the last edit: write it on the way out.
+  useEffect(() => {
+    window.addEventListener("pagehide", flushPendingSave);
+    window.addEventListener("beforeunload", flushPendingSave);
+    return () => {
+      window.removeEventListener("pagehide", flushPendingSave);
+      window.removeEventListener("beforeunload", flushPendingSave);
+    };
   }, []);
   // Auto cloud-sync (desktop only; no-op elsewhere). Rides the store's persist
   // hook, so every change syncs without per-action wiring.
@@ -3338,6 +3349,17 @@ export function App() {
       </Sidebar>
 
       <main className="flex flex-1 flex-col overflow-hidden">
+        {saveError != null && (
+          // Stays up until a save lands; the store retries by itself meanwhile.
+          <div
+            role="alert"
+            title={saveError}
+            className="flex items-center gap-2 border-b border-bad bg-bad-soft px-4 py-1.5 text-[12px]"
+          >
+            <span className="shrink-0 font-medium text-bad">Not saved to disk — retrying</span>
+            <span className="truncate text-ink-soft">{saveError}</span>
+          </div>
+        )}
         <div className="flex flex-1 overflow-hidden">
           <div className="flex flex-1 flex-col overflow-hidden">
             {viewFilter != null && filterable && (

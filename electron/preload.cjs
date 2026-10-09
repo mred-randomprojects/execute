@@ -6,6 +6,9 @@ contextBridge.exposeInMainWorld("execute", {
   isElectron: true,
   loadStore: () => ipcRenderer.invoke("store:load"),
   saveStore: (data) => ipcRenderer.invoke("store:save", data),
+  // The same write, finished before it returns: only for a window that is
+  // closing (or the app quitting), which can't wait for an async reply.
+  saveStoreSync: (data) => ipcRenderer.sendSync("store:saveSync", data),
   // Optional cloud-sync sign-in: runs the loopback Google OAuth in the main
   // process and resolves with a Google id_token for Firebase signInWithCredential.
   signInWithGoogle: (clientId, clientSecret) =>

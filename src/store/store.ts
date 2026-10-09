@@ -73,7 +73,14 @@ import {
 } from "./habits";
 import { horizonWords } from "../selectors";
 import { todayISO } from "./dates";
-import { coerceState, corruptStore, corruptStoreMessage, loadRaw, saveRaw } from "./persistence";
+import {
+  coerceState,
+  corruptStore,
+  corruptStoreMessage,
+  loadRaw,
+  saveRaw,
+  saveRawSync,
+} from "./persistence";
 
 // ─── Singleton store ────────────────────────────────────────────────
 
@@ -82,6 +89,9 @@ let ready = false;
 // Set when the initial load ultimately fails, so the UI can show a retry prompt
 // instead of hanging on the blank loading screen forever.
 let loadError: string | null = null;
+// Set while the latest save to disk failed; cleared by the next one that lands.
+// The app shows a banner meanwhile, and keeps retrying (see saveNow).
+let saveError: string | null = null;
 const listeners = new Set<() => void>();
 
 const MAX_UNDO = 100;
@@ -156,7 +166,7 @@ export function adoptRemote(next: AppState): void {
   if (!getLoaded()) return;
   state = next;
   notify();
-  void saveRaw(state);
+  void saveNow();
 }
 
 function scheduleSave() {
@@ -168,9 +178,95 @@ function scheduleSave() {
     // file on disk; after a failed load an edit (or App's open-day effect) only
     // changes memory, which the next successful load replaces anyway.
     if (!getLoaded()) return;
-    void saveRaw(state);
+    void saveNow();
     onPersist?.();
   }, 200);
+}
+
+// ─── Saving to disk ─────────────────────────────────────────────────
+//
+// Every save writes the whole state, so only the newest one matters: a result
+// from an older save that is still in flight is ignored (`saveSeq`). A failure
+// sets `saveError` and retries the current state with backoff — 1 s, 2 s, 4 s,
+// up to every 30 s — until a save lands, which clears it.
+
+const SAVE_RETRY_FIRST_MS = 1000;
+const SAVE_RETRY_MAX_MS = 30_000;
+let saveSeq = 0;
+let retryTimer: ReturnType<typeof setTimeout> | null = null;
+let retryDelay = SAVE_RETRY_FIRST_MS;
+
+/** Write the current state to disk now. Resolves true when it landed. Never
+ * writes before a successful load (see getLoaded). */
+export function saveNow(): Promise<boolean> {
+  if (!getLoaded()) return Promise.resolve(false);
+  if (retryTimer != null) {
+    clearTimeout(retryTimer);
+    retryTimer = null;
+  }
+  const seq = ++saveSeq;
+  return saveRaw(state).then(
+    () => {
+      if (seq === saveSeq) settleSave(null);
+      return true;
+    },
+    (e: unknown) => {
+      if (seq === saveSeq) settleSave(e instanceof Error ? e.message : String(e));
+      return false;
+    },
+  );
+}
+
+/** Record how the newest save ended: clear the error, or keep it and retry. */
+function settleSave(error: string | null): void {
+  if (error == null) {
+    retryDelay = SAVE_RETRY_FIRST_MS;
+    if (saveError != null) {
+      saveError = null;
+      notify();
+    }
+    return;
+  }
+  if (saveError !== error) {
+    // eslint-disable-next-line no-console
+    console.error("Saving to disk failed; retrying:", error);
+    saveError = error;
+    notify();
+  }
+  if (retryTimer != null) clearTimeout(retryTimer);
+  retryTimer = setTimeout(() => {
+    retryTimer = null;
+    void saveNow();
+  }, retryDelay);
+  retryDelay = Math.min(retryDelay * 2, SAVE_RETRY_MAX_MS);
+}
+
+/**
+ * The window is going away (closed, reloaded, the app quitting): write a save
+ * that is still waiting on its 200 ms debounce, or retrying after a failure,
+ * before returning. A closing window can't wait for an async reply, so this
+ * uses the bridge's synchronous save; a bridge without one gets an async save
+ * started, which is the best left to do.
+ */
+export function flushPendingSave(): void {
+  const debounced = saveTimer != null;
+  if (saveTimer != null) {
+    clearTimeout(saveTimer);
+    saveTimer = null;
+  }
+  if ((!debounced && saveError == null) || !getLoaded()) return;
+  const landed = saveRawSync(state);
+  if (landed == null) {
+    void saveNow();
+  } else {
+    if (retryTimer != null) {
+      clearTimeout(retryTimer);
+      retryTimer = null;
+    }
+    saveSeq += 1; // newer than any async save still in flight
+    settleSave(landed ? null : "The last save before closing didn't reach the disk.");
+  }
+  if (debounced) onPersist?.();
 }
 
 function subscribe(listener: () => void): () => void {
@@ -188,13 +284,19 @@ interface StoreSnapshot {
   state: AppState;
   ready: boolean;
   loadError: string | null;
+  saveError: string | null;
 }
-let snapshot: StoreSnapshot = { state, ready, loadError };
+let snapshot: StoreSnapshot = { state, ready, loadError, saveError };
 
 function getSnapshot(): StoreSnapshot {
   // Same object while nothing changed, as useSyncExternalStore requires.
-  if (snapshot.state !== state || snapshot.ready !== ready || snapshot.loadError !== loadError) {
-    snapshot = { state, ready, loadError };
+  if (
+    snapshot.state !== state ||
+    snapshot.ready !== ready ||
+    snapshot.loadError !== loadError ||
+    snapshot.saveError !== saveError
+  ) {
+    snapshot = { state, ready, loadError, saveError };
   }
   return snapshot;
 }
@@ -671,6 +773,12 @@ export function getReady(): boolean {
  * empty placeholder: nothing may save it to disk, sync it, or build on it. */
 export function getLoaded(): boolean {
   return ready && loadError == null;
+}
+
+/** Non-null while the latest save to disk failed — the UI shows a banner, and
+ * the store keeps retrying until a save lands. */
+export function getSaveError(): string | null {
+  return saveError;
 }
 
 /** Non-null when the initial load failed (after retries) — the UI shows a retry

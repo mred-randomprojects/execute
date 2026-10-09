@@ -56,6 +56,9 @@ interface ExecuteBridge {
   isElectron: boolean;
   loadStore: () => Promise<unknown>;
   saveStore: (data: AppState) => Promise<boolean>;
+  /** The same write, finished before it returns: for a window that is closing.
+   * True when it landed. Absent on bridges that predate it. */
+  saveStoreSync?: (data: AppState) => boolean;
   // Present only in builds with cloud sync wired: loopback Google OAuth run in
   // the Electron main process, resolving with a Google id_token.
   signInWithGoogle?: (
@@ -126,6 +129,29 @@ export async function saveRaw(state: AppState): Promise<void> {
     return;
   }
   localStorage.setItem(LS_KEY, JSON.stringify(state));
+}
+
+/**
+ * Write `state` before returning, for a window that is closing. True when it
+ * landed, false when it failed, null when this bridge can only save
+ * asynchronously (it has no `saveStoreSync`).
+ */
+export function saveRawSync(state: AppState): boolean | null {
+  const bridge = window.execute;
+  if (bridge?.isElectron) {
+    if (bridge.saveStoreSync == null) return null;
+    try {
+      return bridge.saveStoreSync(state) === true;
+    } catch {
+      return false;
+    }
+  }
+  try {
+    localStorage.setItem(LS_KEY, JSON.stringify(state));
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 // ─── Defensive coercion (we own the format, but never trust on read) ────

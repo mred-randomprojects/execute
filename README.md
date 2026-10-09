@@ -307,7 +307,9 @@ pnpm make     # → out/make/**/Execute.dmg  (+ .zip)
   loaded (a read error, or a file that isn't valid JSON) the app shows an error
   screen and writes nothing, so the file stays as it was. The first save of
   each day copies the file to `backups/execute-store.YYYY-MM-DD.json` beside it
-  (the newest 30 are kept; nothing else in `backups/` is touched). Local-first; no
+  (the newest 30 are kept; nothing else in `backups/` is touched). A save that
+  fails shows a banner and is retried until one lands, and closing the window
+  writes a save still waiting on its debounce. Local-first; no
   CDN (fonts are bundled). Optional two-way cloud sync (Firebase, one small
   document per task) keeps it in step with a light-edit **web companion** — see
   [FIREBASE_SETUP.md](./FIREBASE_SETUP.md) and the Sync section of

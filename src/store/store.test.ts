@@ -1,14 +1,17 @@
-import { describe, it, expect, afterEach } from "vitest";
+import { describe, it, expect, afterEach, vi } from "vitest";
 import {
   adoptRemote,
   canUndo,
   createProject,
+  flushPendingSave,
   getLoadError,
   getLoaded,
   getReady,
+  getSaveError,
   getState,
   initStore,
   markOpened,
+  setTheme,
 } from "./store";
 import { emptyState } from "../types";
 import type { AppState } from "../types";
@@ -146,5 +149,128 @@ describe("a failed load never overwrites the store on disk", () => {
     expect(canUndo()).toBe(false);
     expect(getState().tasks.some((t) => t.id === "real")).toBe(true);
     await sleep(400);
+  });
+});
+
+// A save that fails (disk full, permissions) used to be an unhandled rejection:
+// the app looked fine while edits lived only in memory. Now the failure is kept
+// for the banner, retried with backoff, and cleared once a save lands.
+describe("failed disk saves", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /** A loaded store whose first `failures` saves fail. Returns every state it was asked to save. */
+  async function storeWithFlakyDisk(failures: number): Promise<AppState[]> {
+    const calls: AppState[] = [];
+    let left = failures;
+    window.execute = {
+      isElectron: true,
+      loadStore: () => Promise.resolve({}),
+      saveStore: (data) => {
+        calls.push(data);
+        if (left > 0) {
+          left -= 1;
+          return Promise.reject(new Error("ENOSPC: no space left on device"));
+        }
+        return Promise.resolve(true);
+      },
+    };
+    await initStore();
+    vi.useFakeTimers();
+    return calls;
+  }
+
+  it("keeps the error up and retries with backoff until a save lands", async () => {
+    const calls = await storeWithFlakyDisk(3);
+    setTheme("carbon");
+    await vi.advanceTimersByTimeAsync(200); // the save debounce
+    expect(calls).toHaveLength(1);
+    expect(getSaveError()).toContain("ENOSPC");
+
+    await vi.advanceTimersByTimeAsync(1000); // first retry after 1 s
+    expect(calls).toHaveLength(2);
+    expect(getSaveError()).not.toBeNull();
+    await vi.advanceTimersByTimeAsync(1999); // then 2 s
+    expect(calls).toHaveLength(2);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(calls).toHaveLength(3);
+    await vi.advanceTimersByTimeAsync(4000); // then 4 s, and this one lands
+    expect(calls).toHaveLength(4);
+    expect(getSaveError()).toBeNull();
+    expect(calls[3]?.theme).toBe("carbon");
+
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(calls).toHaveLength(4); // nothing left to retry
+  });
+
+  it("clears the error as soon as a later edit's save lands", async () => {
+    const calls = await storeWithFlakyDisk(1);
+    setTheme("carbon");
+    await vi.advanceTimersByTimeAsync(200);
+    expect(getSaveError()).not.toBeNull();
+
+    setTheme("ivory");
+    await vi.advanceTimersByTimeAsync(200);
+    expect(getSaveError()).toBeNull();
+    expect(calls.at(-1)?.theme).toBe("ivory");
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(calls).toHaveLength(2); // that save covered the pending retry
+  });
+});
+
+// Quitting (or closing the window) inside the 200 ms debounce used to drop the
+// last edit. The window's pagehide/beforeunload flushes it, synchronously,
+// because a closing window can't wait for an async reply.
+describe("flushPendingSave", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  function bridgeWithSyncSave(load: () => Promise<unknown>) {
+    const sync: AppState[] = [];
+    const async: AppState[] = [];
+    window.execute = {
+      isElectron: true,
+      loadStore: load,
+      saveStore: (data) => {
+        async.push(data);
+        return Promise.resolve(true);
+      },
+      saveStoreSync: (data) => {
+        sync.push(data);
+        return true;
+      },
+    };
+    return { sync, async };
+  }
+
+  it("writes a save still waiting on its debounce before returning", async () => {
+    const saves = bridgeWithSyncSave(() => Promise.resolve({}));
+    await initStore();
+    vi.useFakeTimers();
+    setTheme("bordeaux");
+    flushPendingSave();
+    expect(saves.sync).toHaveLength(1);
+    expect(saves.sync[0]?.theme).toBe("bordeaux");
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(saves.async).toHaveLength(0); // the debounced save was folded into it
+  });
+
+  it("does nothing when no save is pending", async () => {
+    const saves = bridgeWithSyncSave(() => Promise.resolve({}));
+    await initStore();
+    flushPendingSave();
+    expect(saves.sync).toHaveLength(0);
+  });
+
+  it("never writes after a failed load", async () => {
+    const saves = bridgeWithSyncSave(() => Promise.reject(new Error("disk unplugged")));
+    await initStore();
+    markOpened("2026-10-09");
+    flushPendingSave();
+    await sleep(400);
+    expect(saves.sync).toHaveLength(0);
+    expect(saves.async).toHaveLength(0);
   });
 });

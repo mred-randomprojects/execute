@@ -13,6 +13,7 @@ import {
   setHorizonMany,
 } from "./store/store";
 import { addDays, monthKeyOffset, todayISO, weekKey } from "./store/dates";
+import type { AppState } from "./types";
 
 afterEach(() => {
   cleanup();
@@ -3108,5 +3109,51 @@ describe("Shutdown time", () => {
 
     await runCommand(/^Shutdown on weekends at 18:00: turn off$/);
     await waitFor(() => expect(getState().presence.shutdownWeekendOn).toBe(false));
+  });
+});
+
+describe("Saving to disk", () => {
+  afterEach(() => {
+    delete window.execute;
+  });
+
+  it("shows a banner while saves to disk fail, and drops it once one lands", async () => {
+    let failing = true;
+    window.execute = {
+      isElectron: true,
+      loadStore: () => Promise.resolve({}),
+      saveStore: () =>
+        failing ? Promise.reject(new Error("ENOSPC: no space left on device")) : Promise.resolve(true),
+    };
+    await initStore();
+    render(<App />);
+    await addTask("is this on disk?");
+    expect(await screen.findByText("Not saved to disk — retrying")).toBeTruthy();
+    expect(screen.getByText(/ENOSPC/)).toBeTruthy();
+
+    failing = false; // the next retry (1 s later) lands
+    await waitFor(() => expect(screen.queryByText("Not saved to disk — retrying")).toBeNull(), {
+      timeout: 3000,
+    });
+  });
+
+  it("writes the last edit before the window goes away, without waiting for the debounce", async () => {
+    const written: AppState[] = [];
+    window.execute = {
+      isElectron: true,
+      loadStore: () => Promise.resolve({}),
+      saveStore: () => Promise.resolve(true),
+      saveStoreSync: (data) => {
+        written.push(data);
+        return true;
+      },
+    };
+    await initStore();
+    render(<App />);
+    const input = await screen.findByPlaceholderText("Add a task for today…");
+    fireEvent.change(input, { target: { value: "typed just before quitting" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    window.dispatchEvent(new Event("pagehide")); // same tick: the 200 ms save is still pending
+    expect(written.at(-1)?.tasks.some((t) => t.text === "typed just before quitting")).toBe(true);
   });
 });
