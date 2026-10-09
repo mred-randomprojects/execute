@@ -19,6 +19,7 @@
     "build:viewer": "tsc --noEmit && VITE_VIEWER=1 vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
+    "check": "pnpm typecheck && pnpm test",
     "test": "vitest run",
     "test:watch": "vitest",
     "icons": "node scripts/generate-icons.mjs",

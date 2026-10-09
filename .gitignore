@@ -14,3 +14,16 @@ build/
 # the app's userData dir at runtime, never from the repo or the bundle.
 *service-account*.json
 calendar-service-account.json
+
+# Build caches
+.tmp/
+*.tsbuildinfo
+
+# Credentials: never committed
+*firebase-adminsdk*.json
+*serviceAccount*.json
+*.pem
+*.p12
+
+# Claude Code per-machine settings
+.claude/settings.local.json

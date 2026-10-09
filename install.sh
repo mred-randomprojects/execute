@@ -53,6 +53,16 @@ if [[ ! -d node_modules ]]; then
   ok "dependencies installed"
 fi
 
+# --- check (tsc + the vitest suite, the same gate CI runs) -------------------
+# set -e stops here on a type error or a failing test, so a broken build never
+# replaces the installed app.
+echo "  type-checking…"
+pnpm typecheck
+ok "types check"
+echo "  running the tests…"
+pnpm test
+ok "tests pass"
+
 # --- build (icons + renderer + .app, no dmg needed for a local install) ------
 echo "  building the app (icons + renderer + package)…"
 pnpm package
