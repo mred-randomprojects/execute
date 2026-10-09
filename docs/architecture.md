@@ -94,7 +94,9 @@ The format is `sync/docs.ts` (`toDocs` / `fromDocs` / `diffDocs`, pure).
   no "now" or random defaults — or it would look edited and be rewritten
   forever.
 
-**Guards.** The engine never syncs before the local store loads; stops writing
+**Guards.** The engine never syncs before the local store has loaded
+successfully (`getLoaded()`: after a failed load the store is an empty
+placeholder, and nothing saves or syncs it); stops writing
 if `meta/state.schemaVersion` is newer than its own (the web shows "Reload to
 update"); halts if documents don't read back as written (a commit counts as
 echoed only once the listener shows its writes: a stale snapshot can arrive

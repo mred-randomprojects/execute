@@ -13,6 +13,7 @@ const {
   nativeImage,
   shell,
 } = require("electron");
+const { readStoreFile } = require("./storeFile.cjs");
 
 if (require("electron-squirrel-startup")) {
   app.quit();
@@ -28,20 +29,10 @@ const STORE_FILE = path.join(app.getPath("userData"), "execute-store.json");
 
 let mainWindow;
 
+// No file → null (first run); corrupt JSON → a marker the renderer turns into
+// its error screen, never an empty start that would save over the file.
 function readStore() {
-  try {
-    const raw = fs.readFileSync(STORE_FILE, "utf8");
-    return JSON.parse(raw);
-  } catch (error) {
-    if (error != null && error.code === "ENOENT") return null;
-    // Corrupt/unreadable file: keep a backup, start fresh rather than crash.
-    try {
-      fs.copyFileSync(STORE_FILE, `${STORE_FILE}.corrupt-${Date.now()}`);
-    } catch {
-      /* best effort */
-    }
-    return null;
-  }
+  return readStoreFile(STORE_FILE);
 }
 
 // Sync health report (see preload `reportSyncStatus`): overwritten on every

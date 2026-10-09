@@ -4,7 +4,7 @@ import {
   signInWithCredential,
 } from "firebase/auth";
 import { firebaseAuth, firebaseConfigured } from "../firebase";
-import { adoptRemote, getReady, getState, setCloudSync, subscribeReady } from "../store/store";
+import { adoptRemote, getLoaded, getState, setCloudSync, subscribeReady } from "../store/store";
 import type { Task } from "../types";
 import { DocSync, type EngineStatus, type Watermark } from "./v2/engine";
 import { firestoreDocStore } from "./v2/firestoreStore";
@@ -167,7 +167,7 @@ function startEngine(uid: string): void {
   engineUid = uid;
   engine = new DocSync(
     firestoreDocStore(uid),
-    { ready: getReady, getLocal: getState, version: () => localVersion, adopt: adoptRemote },
+    { ready: getLoaded, getLocal: getState, version: () => localVersion, adopt: adoptRemote },
     logWatermark(uid),
     // No migration hooks any more: the move off the v1 single document ran on
     // 2026-09-25 (meta/format records it, and v1 is frozen as a backup). On a
@@ -183,10 +183,13 @@ function stopEngine(): void {
   engineUid = null;
 }
 
-/** Run the engine when signed in AND the store has loaded; stop it otherwise. */
+/** Run the engine when signed in AND the store has loaded; stop it otherwise.
+ * "Loaded" means loaded successfully: after a failed load the store holds the
+ * empty placeholder, and merging the cloud into it would be saved over the
+ * real file. */
 function reconcileEngine(): void {
   const user = firebaseAuth().currentUser;
-  if (user == null || !getReady()) {
+  if (user == null || !getLoaded()) {
     stopEngine();
     return;
   }

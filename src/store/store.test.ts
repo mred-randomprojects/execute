@@ -1,5 +1,17 @@
 import { describe, it, expect, afterEach } from "vitest";
-import { getLoadError, getReady, getState, initStore } from "./store";
+import {
+  adoptRemote,
+  canUndo,
+  createProject,
+  getLoadError,
+  getLoaded,
+  getReady,
+  getState,
+  initStore,
+  markOpened,
+} from "./store";
+import { emptyState } from "../types";
+import type { AppState } from "../types";
 
 // These lock in the fix for the "stuck forever on the loading screen" hang:
 // initStore must ALWAYS reach ready, even when the local load fails, and it must
@@ -9,6 +21,22 @@ afterEach(() => {
   delete window.execute;
   localStorage.clear();
 });
+
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+/** A desktop bridge whose load always fails, recording every save it is asked for. */
+function failingBridge(): AppState[] {
+  const saves: AppState[] = [];
+  window.execute = {
+    isElectron: true,
+    loadStore: () => Promise.reject(new Error("disk unplugged")),
+    saveStore: (data) => {
+      saves.push(data);
+      return Promise.resolve(true);
+    },
+  };
+  return saves;
+}
 
 describe("initStore resilience", () => {
   it("readies the app and surfaces an error when the load keeps failing (never hangs)", async () => {
@@ -20,6 +48,7 @@ describe("initStore resilience", () => {
     await initStore();
     expect(getReady()).toBe(true); // the loading gate always clears
     expect(getLoadError()).toBe("disk unplugged");
+    expect(getLoaded()).toBe(false); // ...but nothing may treat the placeholder as loaded
   });
 
   it("does not hang when the load never resolves — it times out and readies", async () => {
@@ -31,6 +60,7 @@ describe("initStore resilience", () => {
     await initStore(30); // short per-attempt timeout for the test
     expect(getReady()).toBe(true);
     expect(getLoadError()).toBe("Loading your tasks timed out.");
+    expect(getLoaded()).toBe(false);
   });
 
   it("retries a transient failure, loads the data, and clears the error", async () => {
@@ -48,6 +78,73 @@ describe("initStore resilience", () => {
     await initStore();
     expect(getReady()).toBe(true);
     expect(getLoadError()).toBeNull();
+    expect(getLoaded()).toBe(true);
     expect(getState().tasks.some((t) => t.id === "x")).toBe(true);
+  });
+});
+
+// A failed load leaves the empty placeholder in memory. Writing it would replace
+// the real file on disk with an empty store, so after a failed load nothing may
+// reach saveStore — not an edit, not a merge adopted from the cloud.
+describe("a failed load never overwrites the store on disk", () => {
+  it("drops the debounced save of an edit made after the failure", async () => {
+    const saves = failingBridge();
+    await initStore();
+    markOpened("2026-10-09"); // what App's open-day effect does as soon as it renders
+    await sleep(400); // past the 200 ms save debounce
+    expect(saves).toHaveLength(0);
+  });
+
+  it("does not adopt (or save) a cloud merge", async () => {
+    const saves = failingBridge();
+    await initStore();
+    const before = getState();
+    adoptRemote({ ...emptyState(), lastOpenedDate: "2026-10-09" });
+    await sleep(50);
+    expect(saves).toHaveLength(0);
+    expect(getState()).toBe(before);
+  });
+
+  it("shows a corrupt file as a load error naming the kept copy, without retrying or saving", async () => {
+    let loads = 0;
+    const saves: AppState[] = [];
+    window.execute = {
+      isElectron: true,
+      // What electron/main.cjs hands back for a store file that isn't valid JSON.
+      loadStore: () => {
+        loads += 1;
+        return Promise.resolve({ corrupt: true, backup: "/data/execute-store.json.corrupt-1700000000000" });
+      },
+      saveStore: (data) => {
+        saves.push(data);
+        return Promise.resolve(true);
+      },
+    };
+    await initStore();
+    expect(loads).toBe(1); // a corrupt file is not a blip: no retries
+    expect(getLoaded()).toBe(false);
+    expect(getLoadError()).toContain("/data/execute-store.json.corrupt-1700000000000");
+    markOpened("2026-10-09");
+    await sleep(400);
+    expect(saves).toHaveLength(0);
+  });
+
+  it("forgets undo steps recorded against the placeholder once the real store loads", async () => {
+    failingBridge();
+    await initStore();
+    createProject("typed while the error screen was up");
+    expect(canUndo()).toBe(true);
+
+    window.execute = {
+      isElectron: true,
+      loadStore: () => Promise.resolve({ tasks: [{ id: "real", text: "real task" }] }),
+      saveStore: () => Promise.resolve(true),
+    };
+    await initStore();
+    expect(getLoaded()).toBe(true);
+    // Undoing that step would restore the empty placeholder over the loaded store.
+    expect(canUndo()).toBe(false);
+    expect(getState().tasks.some((t) => t.id === "real")).toBe(true);
+    await sleep(400);
   });
 });

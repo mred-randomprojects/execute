@@ -100,6 +100,26 @@ export async function loadRaw(): Promise<unknown> {
   }
 }
 
+/**
+ * electron/main.cjs answers `store:load` with `{ corrupt: true, backup }` when
+ * the store file exists but isn't valid JSON (`backup` is the copy it kept, or
+ * null if copying failed). Returns that marker, or null for anything else.
+ * A real store never has a `corrupt` field: coerceState drops unknown keys.
+ */
+export function corruptStore(raw: unknown): { backup: string | null } | null {
+  if (typeof raw !== "object" || raw === null || !("corrupt" in raw) || raw.corrupt !== true) {
+    return null;
+  }
+  const backup = "backup" in raw && typeof raw.backup === "string" ? raw.backup : null;
+  return { backup };
+}
+
+/** The error screen's message for a store file that isn't valid JSON. */
+export function corruptStoreMessage(backup: string | null): string {
+  const kept = backup != null ? ` A copy of it is at ${backup}.` : "";
+  return `Your saved tasks file isn't valid JSON, so it wasn't loaded, and nothing has been written over it.${kept}`;
+}
+
 export async function saveRaw(state: AppState): Promise<void> {
   if (window.execute?.isElectron) {
     await window.execute.saveStore(state);

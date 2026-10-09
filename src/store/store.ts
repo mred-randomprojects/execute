@@ -73,7 +73,7 @@ import {
 } from "./habits";
 import { horizonWords } from "../selectors";
 import { todayISO } from "./dates";
-import { coerceState, loadRaw, saveRaw } from "./persistence";
+import { coerceState, corruptStore, corruptStoreMessage, loadRaw, saveRaw } from "./persistence";
 
 // ─── Singleton store ────────────────────────────────────────────────
 
@@ -126,9 +126,11 @@ export function setCloudSync(fn: (() => void) | null): void {
   onPersist = fn;
 }
 
-// Fired once the local store has finished loading. Cloud PULL gates on this so
-// it never merges remote data into — or races ahead of — the empty pre-load
-// state (which initStore would then clobber on disk read).
+// Fired each time initStore finishes, whether the load worked or not — so a
+// listener checks getLoaded(). Cloud PULL gates on this so it never merges
+// remote data into — or races ahead of — the empty pre-load state (which
+// initStore would then clobber on disk read), nor into the placeholder a failed
+// load leaves behind.
 const readyListeners = new Set<() => void>();
 export function subscribeReady(cb: () => void): () => void {
   readyListeners.add(cb);
@@ -149,6 +151,9 @@ export function subscribeReady(cb: () => void): () => void {
  * so this can't drop unsynced local work.
  */
 export function adoptRemote(next: AppState): void {
+  // The engine only runs once the store has loaded (see getLoaded), but a merge
+  // landing on a store that failed to load would be written over the real file.
+  if (!getLoaded()) return;
   state = next;
   notify();
   void saveRaw(state);
@@ -157,6 +162,12 @@ export function adoptRemote(next: AppState): void {
 function scheduleSave() {
   if (saveTimer != null) clearTimeout(saveTimer);
   saveTimer = setTimeout(() => {
+    saveTimer = null;
+    // Checked when the timer fires, not when it was set. Until a load succeeds
+    // `state` is the empty placeholder, and writing it would replace the real
+    // file on disk; after a failed load an edit (or App's open-day effect) only
+    // changes memory, which the next successful load replaces anyway.
+    if (!getLoaded()) return;
     void saveRaw(state);
     onPersist?.();
   }, 200);
@@ -169,8 +180,23 @@ function subscribe(listener: () => void): () => void {
   };
 }
 
-function getSnapshot(): AppState {
-  return state;
+/** What {@link useStore} renders from. `ready` and `loadError` are part of it:
+ * a failed load leaves `state` the same object, so a snapshot of `state` alone
+ * looked unchanged and the app stayed on "Loading…" until something else
+ * happened to re-render it. */
+interface StoreSnapshot {
+  state: AppState;
+  ready: boolean;
+  loadError: string | null;
+}
+let snapshot: StoreSnapshot = { state, ready, loadError };
+
+function getSnapshot(): StoreSnapshot {
+  // Same object while nothing changed, as useSyncExternalStore requires.
+  if (snapshot.state !== state || snapshot.ready !== ready || snapshot.loadError !== loadError) {
+    snapshot = { state, ready, loadError };
+  }
+  return snapshot;
 }
 
 // ─── Automatic per-task updatedAt stamping ──────────────────────────
@@ -595,7 +621,19 @@ export async function initStore(loadTimeoutMs = 4000): Promise<void> {
   let lastErr: unknown = null;
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
-      state = coerceState(await withTimeout(loadRaw(), loadTimeoutMs));
+      const raw = await withTimeout(loadRaw(), loadTimeoutMs);
+      const corrupt = corruptStore(raw);
+      if (corrupt != null) {
+        // Not a blip that a retry could ride out: the file itself is unreadable.
+        lastErr = new Error(corruptStoreMessage(corrupt.backup));
+        break;
+      }
+      state = coerceState(raw);
+      // Steps recorded before this load (keys pressed on the loading or error
+      // screen) snapshot the empty placeholder: undoing one would put it back
+      // over everything that just loaded.
+      undoStack = [];
+      redoStack = [];
       lastErr = null;
       break;
     } catch (e) {
@@ -622,10 +660,17 @@ export function getState(): AppState {
   return state;
 }
 
-/** True once the local store has finished loading — cloud sync gates on this so
- * it can never push the empty pre-load state over good cloud data. */
+/** True once the first load attempt has finished, *successfully or not* — it
+ * only means the loading screen can go. Anything that writes or syncs gates on
+ * {@link getLoaded} instead. */
 export function getReady(): boolean {
   return ready;
+}
+
+/** True once the local store has loaded successfully. Until then `state` is the
+ * empty placeholder: nothing may save it to disk, sync it, or build on it. */
+export function getLoaded(): boolean {
+  return ready && loadError == null;
 }
 
 /** Non-null when the initial load failed (after retries) — the UI shows a retry
@@ -634,9 +679,8 @@ export function getLoadError(): string | null {
   return loadError;
 }
 
-export function useStore(): { state: AppState; ready: boolean; loadError: string | null } {
-  const s = useSyncExternalStore(subscribe, getSnapshot);
-  return { state: s, ready, loadError };
+export function useStore(): StoreSnapshot {
+  return useSyncExternalStore(subscribe, getSnapshot);
 }
 
 // ─── App-level settings ─────────────────────────────────────────────

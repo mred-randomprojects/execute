@@ -303,7 +303,9 @@ pnpm make     # → out/make/**/Execute.dmg  (+ .zip)
 - **Shell**: a thin Electron main process — dev loads the Vite server, prod loads
   the built bundle. A `contextBridge` preload is the only path to disk.
 - **Persistence**: one local JSON document in the OS app-data dir, written
-  atomically (temp file + rename), debounced, schema-versioned. Local-first; no
+  atomically (temp file + rename), debounced, schema-versioned. If it can't be
+  loaded (a read error, or a file that isn't valid JSON) the app shows an error
+  screen and writes nothing, so the file stays as it was. Local-first; no
   CDN (fonts are bundled). Optional two-way cloud sync (Firebase, one small
   document per task) keeps it in step with a light-edit **web companion** — see
   [FIREBASE_SETUP.md](./FIREBASE_SETUP.md) and the Sync section of
@@ -319,7 +321,7 @@ pnpm make     # → out/make/**/Execute.dmg  (+ .zip)
 ### Layout
 
 ```
-electron/        main.cjs (window + persistence IPC) · preload.cjs (bridge)
+electron/        main.cjs (window + persistence IPC) · preload.cjs (bridge) · storeFile.cjs (reading the store)
 src/
   types.ts                      core domain types
   store/  tasks.ts (pure tree ops) · dates.ts · capture.ts · persistence.ts · store.ts

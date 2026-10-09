@@ -14,7 +14,7 @@ import "./theme.css";
 import "./index.css";
 import { App } from "./App";
 import { interceptSave } from "cmd-s";
-import { getReady, getState } from "./store/store";
+import { getLoaded, getState } from "./store/store";
 import { saveRaw } from "./store/persistence";
 
 const root = document.getElementById("root");
@@ -24,16 +24,16 @@ const isViewer = import.meta.env.VITE_VIEWER === "1";
 
 // ⌘S / Ctrl+S. The desktop store writes itself 200ms after every edit; ⌘S
 // writes the current state right now, ahead of that timer, and says so — but
-// never before the store has loaded, when "the current state" is still the
-// empty placeholder and writing it would erase the real one. The viewer is
-// read-only and its one edit (ticking a task) goes straight to the cloud, so
-// there it only keeps the browser's "Save page" dialog away.
+// never before the store has loaded successfully, when "the current state" is
+// still the empty placeholder and writing it would erase the real one. The
+// viewer is read-only and its one edit (ticking a task) goes straight to the
+// cloud, so there it only keeps the browser's "Save page" dialog away.
 interceptSave(
   isViewer
     ? {}
     : {
         onSave: async () => {
-          if (!getReady()) return;
+          if (!getLoaded()) return;
           await saveRaw(getState());
           return "Saved";
         },

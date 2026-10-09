@@ -281,6 +281,9 @@ type OutlineRow = OutlineProjectRow | OutlineTaskRow;
 
 export function App() {
   const { state, ready, loadError } = useStore();
+  // Loaded *successfully*. After a failed load `ready` is true too, but the
+  // state is the empty placeholder: nothing below may write it or report it.
+  const loaded = ready && loadError == null;
   const [, setTick] = useState(0);
   useEffect(() => {
     const id = setInterval(() => setTick((t) => t + 1), 60_000);
@@ -425,12 +428,12 @@ export function App() {
   // the pre-mark value exactly once per day change, or it would always see zero.
   const [daysAway, setDaysAway] = useState(0);
   useEffect(() => {
-    if (!ready) return;
+    if (!loaded) return;
     const last = state.lastOpenedDate;
     setDaysAway(last == null || last >= today ? 0 : daysBetween(last, today) - 1);
     markOpened(today);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ready, today]);
+  }, [loaded, today]);
 
   // ── Reckoning (the hard gate) ─────────────────────────────────────
   const leftovers = useMemo(
@@ -773,8 +776,8 @@ export function App() {
   useEffect(() => {
     // recordDay is a no-op when nothing moved — which is what keeps this effect
     // from re-triggering itself forever through the store.
-    if (ready) recordDay(today, tally, dayClosed);
-  }, [ready, today, tally, dayClosed]);
+    if (loaded) recordDay(today, tally, dayClosed);
+  }, [loaded, today, tally, dayClosed]);
   const run = useMemo(() => currentRun(state.days, today), [state.days, today]);
   // What the last two weeks say a day of yours holds — null until the records
   // say enough, and null when they already agree with the current setting.
@@ -1020,11 +1023,11 @@ export function App() {
   // menu-bar count, a dock badge and the two daily nudges. Renderer counts,
   // shell renders — so there is exactly one definition of "left today".
   useEffect(() => {
-    if (!ready) return;
+    if (!loaded) return;
     void window.execute?.updatePresence?.(
       presenceSnapshot(state.presence, todayOpenLeaves, habitsLeftToday)
     );
-  }, [ready, state.presence, todayOpenLeaves, habitsLeftToday]);
+  }, [loaded, state.presence, todayOpenLeaves, habitsLeftToday]);
   // The global capture shortcut lands here: the window is already shown by the
   // main process, all that's left is to put the cursor where a thought can go.
   useEffect(() => window.execute?.onFocusCapture?.(() => captureRef.current?.focus()), []);
@@ -1124,11 +1127,11 @@ export function App() {
 
   const didInitialFocus = useRef(false);
   useEffect(() => {
-    if (ready && !didInitialFocus.current && state.tasks.length === 0) {
+    if (loaded && !didInitialFocus.current && state.tasks.length === 0) {
       didInitialFocus.current = true;
       captureRef.current?.focus();
     }
-  }, [ready, state.tasks.length]);
+  }, [loaded, state.tasks.length]);
 
   // ── Helpers ───────────────────────────────────────────────────────
   // New tasks land in the window being viewed: the Today/Tomorrow tabs give a
