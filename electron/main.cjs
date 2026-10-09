@@ -14,6 +14,7 @@ const {
   shell,
 } = require("electron");
 const { readStoreFile } = require("./storeFile.cjs");
+const { backUpDaily, localDate } = require("./backups.cjs");
 
 if (require("electron-squirrel-startup")) {
   app.quit();
@@ -49,7 +50,26 @@ function writeJsonAtomic(file, data) {
   }
 }
 
+// Daily copies of the store (see backups.cjs): the first save of each local day
+// copies the file as it was before that save into backups/. Best effort: a copy
+// that fails never blocks the save, and isn't retried until tomorrow (or the
+// next launch), so it can't slow every keystroke down.
+const BACKUPS_DIR = path.join(app.getPath("userData"), "backups");
+let backedUpOn = null;
+
+function backUpOncePerDay() {
+  const today = localDate(new Date());
+  if (backedUpOn === today) return;
+  backedUpOn = today;
+  try {
+    backUpDaily(STORE_FILE, BACKUPS_DIR);
+  } catch (error) {
+    console.error("Daily backup of the store failed:", error);
+  }
+}
+
 function writeStore(data) {
+  backUpOncePerDay();
   const json = JSON.stringify(data);
   const tmp = `${STORE_FILE}.${process.pid}.tmp`;
   fs.mkdirSync(path.dirname(STORE_FILE), { recursive: true });

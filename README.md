@@ -305,7 +305,9 @@ pnpm make     # → out/make/**/Execute.dmg  (+ .zip)
 - **Persistence**: one local JSON document in the OS app-data dir, written
   atomically (temp file + rename), debounced, schema-versioned. If it can't be
   loaded (a read error, or a file that isn't valid JSON) the app shows an error
-  screen and writes nothing, so the file stays as it was. Local-first; no
+  screen and writes nothing, so the file stays as it was. The first save of
+  each day copies the file to `backups/execute-store.YYYY-MM-DD.json` beside it
+  (the newest 30 are kept; nothing else in `backups/` is touched). Local-first; no
   CDN (fonts are bundled). Optional two-way cloud sync (Firebase, one small
   document per task) keeps it in step with a light-edit **web companion** — see
   [FIREBASE_SETUP.md](./FIREBASE_SETUP.md) and the Sync section of
@@ -321,7 +323,7 @@ pnpm make     # → out/make/**/Execute.dmg  (+ .zip)
 ### Layout
 
 ```
-electron/        main.cjs (window + persistence IPC) · preload.cjs (bridge) · storeFile.cjs (reading the store)
+electron/        main.cjs (window + persistence IPC) · preload.cjs (bridge) · storeFile.cjs (reading the store) · backups.cjs (daily copies)
 src/
   types.ts                      core domain types
   store/  tasks.ts (pure tree ops) · dates.ts · capture.ts · persistence.ts · store.ts
