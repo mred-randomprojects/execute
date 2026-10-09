@@ -282,6 +282,8 @@ pnpm dev      # renderer in the browser at http://localhost:5173 (fast iteration
 pnpm start    # the real Electron desktop app (Vite + Electron)
 pnpm test     # vitest (tree ops, keyboard engine, capture, full app flows)
 pnpm typecheck
+pnpm lint     # eslint (react-hooks rules)
+pnpm check    # typecheck + lint + tests: what CI and install.sh run first
 ```
 
 In `pnpm dev`/`pnpm start` a **Dev · time travel** panel appears in the sidebar so

@@ -228,7 +228,6 @@ function settleSave(error: string | null): void {
     return;
   }
   if (saveError !== error) {
-    // eslint-disable-next-line no-console
     console.error("Saving to disk failed; retrying:", error);
     saveError = error;
     notify();
@@ -750,7 +749,6 @@ export async function initStore(loadTimeoutMs = 4000): Promise<void> {
         ? lastErr.message
         : "Failed to load your saved tasks.";
   if (lastErr != null) {
-    // eslint-disable-next-line no-console
     console.error("initStore: could not load the local store", lastErr);
   }
   ready = true;

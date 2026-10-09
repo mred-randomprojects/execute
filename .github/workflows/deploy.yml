@@ -35,7 +35,8 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      # tsc + the vitest suite: the same gate install.sh runs before packaging.
+      # Typecheck, lint and tests (the `check` script): the same gate install.sh
+      # runs before packaging.
       - name: Check
         run: pnpm check
 

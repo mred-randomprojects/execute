@@ -165,7 +165,6 @@ function AuthedViewer({ user, onSignOut }: { user: User; onSignOut: () => void }
     sync.apply(edit).then(
       () => setSaveError(null),
       (e: unknown) => {
-        // eslint-disable-next-line no-console
         console.error("cloud sync failed", e);
         setSaveError(e instanceof Error ? e.message : "Couldn't save that change.");
       },

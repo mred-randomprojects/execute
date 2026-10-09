@@ -101,6 +101,7 @@ type DeviceField =
   | "presence";
 
 function ownFields(t: Task): Omit<Task, "children"> {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- pulled out only to leave the rest
   const { children: _children, ...own } = t;
   return own;
 }
