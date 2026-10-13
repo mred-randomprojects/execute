@@ -373,6 +373,8 @@ export function App() {
   // Bumped to ask an open detail panel to dive from preview into its notes editor
   // (Tab from the list). The panel reacts to changes only, so the value is opaque.
   const [editNotesSignal, setEditNotesSignal] = useState(0);
+  // Read by DetailPanel only when it mounts: whether that open was a → dive.
+  const [panelEditOnOpen, setPanelEditOnOpen] = useState(false);
   const [reckCursorId, setReckCursorId] = useState<TaskId | null>(null);
   const [breakingDownId, setBreakingDownId] = useState<TaskId | null>(null);
   const [reckReason, setReckReason] = useState("");
@@ -1299,10 +1301,24 @@ export function App() {
   };
 
   const openPanel = () => {
-    if (focusedTaskId != null) setShowPanel(true);
+    if (focusedTaskId == null) return;
+    setPanelEditOnOpen(false);
+    setShowPanel(true);
+  };
+  // → on a task: open the panel straight into its notes (or, if it's already
+  // open, dive into them — the same as Tab).
+  const openPanelEditing = () => {
+    if (focusedTaskId == null) return;
+    if (showPanel) {
+      setEditNotesSignal((n) => n + 1);
+      return;
+    }
+    setPanelEditOnOpen(true);
+    setShowPanel(true);
   };
   const openDetailFor = (id: TaskId) => {
     setFocus(id);
+    setPanelEditOnOpen(false);
     setShowPanel(true);
   };
 
@@ -1640,7 +1656,7 @@ export function App() {
           return;
         }
       }
-      openPanel();
+      openPanelEditing();
     },
     // ← closes the panel, else collapses an expanded project/task, else climbs
     // to the parent task — or to the owning project header at the top level.
@@ -3654,6 +3670,7 @@ export function App() {
               projects={state.projects}
               handlers={detailHandlers}
               editSignal={editNotesSignal}
+              editOnMount={panelEditOnOpen}
             />
           )}
         </div>

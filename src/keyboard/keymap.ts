@@ -54,7 +54,7 @@ export const keymap: KeyBinding[] = [
   { key: "Meta+a", action: "select.all", context: "normal", displayKey: "⌘ a", description: "select every task in this project — press again for every project", section: "Navigation" },
   { key: "Meta+ArrowUp", action: "cursor.first", context: "normal", displayKey: "⌘ ↑", description: "jump to first item", section: "Navigation" },
   { key: "Meta+ArrowDown", action: "cursor.last", context: "normal", displayKey: "⌘ ↓", description: "jump to last item", section: "Navigation" },
-  { key: "ArrowRight", action: "panel.open", context: "normal", displayKey: "→", description: "expand · descend · details panel", section: "Navigation" },
+  { key: "ArrowRight", action: "panel.open", context: "normal", displayKey: "→", description: "expand · descend · edit details", section: "Navigation" },
   { key: "ArrowLeft", action: "panel.back", context: "normal", displayKey: "←", description: "collapse · out to parent · close panel", section: "Navigation" },
 
   // ── actions (normal) ──────────────────────────────────────────────

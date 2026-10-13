@@ -121,6 +121,7 @@ export function DetailPanel({
   projects,
   handlers,
   editSignal,
+  editOnMount = false,
 }: {
   task: Task;
   scheduleTag: ScheduleTag;
@@ -129,6 +130,8 @@ export function DetailPanel({
   handlers: DetailHandlers;
   /** Bumped by the parent (Tab from the list) to dive into the notes editor. */
   editSignal: number;
+  /** Opened by → on a task: dive straight into the notes instead of previewing. */
+  editOnMount?: boolean;
 }) {
   const [notes, setNotes] = useState(task.notes);
   const [reason, setReason] = useState(task.wontDo?.reason ?? "");
@@ -151,16 +154,33 @@ export function DetailPanel({
 
   // React only to *changes* in editSignal, not to its value on mount — otherwise
   // reopening the panel after a previous Tab would steal focus into the notes.
-  const lastEditSignal = useRef(editSignal);
+  // `editOnMount` seeds the ref with a value no signal equals, so it dives once.
+  const lastEditSignal = useRef(editOnMount ? Number.NaN : editSignal);
+  // A dive (→ / Tab) lands the caret at the end of the notes; a click keeps
+  // the caret where it was clicked.
+  const caretToEnd = useRef(false);
   useEffect(() => {
     if (editSignal !== lastEditSignal.current) {
       lastEditSignal.current = editSignal;
+      caretToEnd.current = true;
       setEditing(true);
+      const el = notesRef.current;
+      if (el != null && document.activeElement === el) {
+        el.setSelectionRange(el.value.length, el.value.length);
+        caretToEnd.current = false;
+      }
     }
   }, [editSignal]);
 
   useEffect(() => {
-    if (editing) notesRef.current?.focus();
+    if (!editing) return;
+    const el = notesRef.current;
+    if (el == null) return;
+    el.focus();
+    if (caretToEnd.current) {
+      caretToEnd.current = false;
+      el.setSelectionRange(el.value.length, el.value.length);
+    }
   }, [editing]);
 
   const commitNotes = () => handlers.onCommitNotes(task.id, notes);
@@ -244,7 +264,7 @@ export function DetailPanel({
         <span className="eyebrow">Content</span>
         {!editing && (
           <span className="text-[11px] text-ink-faint">
-            <span className="kbd">tab</span> to edit
+            <span className="kbd">→</span> / <span className="kbd">tab</span> to edit
           </span>
         )}
       </div>

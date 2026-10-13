@@ -45,7 +45,7 @@ keymap). Highlights:
 | `⇧ ↑` / `⇧ ↓` | extend multi-selection |
 | `⌥ ↑` / `⌥ ↓` | move task(s) up / down, including across project dividers |
 | `⌘ ↑` / `⌘ ↓` | jump to first / last |
-| `↵` | edit the **title inline** · `→` opens the details panel (**content**) |
+| `↵` | edit the **title inline** (caret at the end) · `→` opens the details panel with the caret in the **content** |
 | while editing a title: `↑`/`↓` jump tasks, `↵` new, `tab`/`⇧tab` indent, `⌘↵` done, `esc` save |
 | in the panel: `←`/`esc` back to the list (title is read-only here) |
 | `⌘ ↵` | complete / uncomplete |
