@@ -100,7 +100,8 @@ placeholder, and nothing saves or syncs it); stops writing
 if `meta/state.schemaVersion` is newer than its own (the web shows "Reload to
 update"); halts if documents don't read back as written (a commit counts as
 echoed only once the listener shows its writes: a stale snapshot can arrive
-first), or if it keeps
+first; a commit not echoed within 20 s gets 2 more minutes, since a stream
+reconnecting after sleep can take that long), or if it keeps
 committing with no local edit behind it (quota protection); retries failures
 with backoff and on wake/online/focus. The sidebar shows the state; the desktop
 also writes `sync-status.json` (counts and states, no content) to its app-data

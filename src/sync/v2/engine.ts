@@ -109,6 +109,11 @@ export interface EngineOptions {
   heartbeatMs?: number;
   /** How long to wait for the cloud to echo a commit. Default 20 s. */
   deliveryTimeoutMs?: number;
+  /**
+   * After a commit that wasn't echoed in time, how long the same writes may
+   * keep coming up before the engine halts. Default 2 min.
+   */
+  echoGraceMs?: number;
   /** Retry delays after consecutive failures; the last repeats. */
   backoffMs?: readonly number[];
 }
@@ -187,6 +192,9 @@ export class DocSync {
   private timer: ReturnType<typeof setTimeout> | null = null;
   private timerDue = Infinity;
   private retryTimer: ReturnType<typeof setTimeout> | null = null;
+  private graceTimer: ReturnType<typeof setTimeout> | null = null;
+  /** When the last commit went unechoed past the timeout (see `round`). */
+  private unreflectedAt: number | null = null;
   private running = false;
   private again = false;
   private stopped = true;
@@ -271,9 +279,12 @@ export class DocSync {
     this.raw.clear();
     if (this.timer != null) clearTimeout(this.timer);
     if (this.retryTimer != null) clearTimeout(this.retryTimer);
+    if (this.graceTimer != null) clearTimeout(this.graceTimer);
     this.timer = null;
     this.timerDue = Infinity;
     this.retryTimer = null;
+    this.graceTimer = null;
+    this.unreflectedAt = null;
     for (const w of [...this.waiters]) w();
     this.setStatus({ kind: "stopped" });
   }
@@ -621,6 +632,7 @@ export class DocSync {
       const writes = this.pending(local, view);
       if (writes.length === 0) {
         this.lastCommittedKey = null;
+        this.unreflectedAt = null;
         this.staleInARow = 0;
         if (!migrated) {
           // Everything reads back: now, and only now, the cloud switches over.
@@ -639,6 +651,23 @@ export class DocSync {
       }
 
       const key = JSON.stringify(writes);
+      if (key === this.lastCommittedKey && this.unreflectedAt != null) {
+        // The last commit wasn't echoed in time. Its echo may just be slow (a
+        // stream still reconnecting after sleep), and the snapshots in between
+        // still hold the old documents: give it the grace period before
+        // calling it a cloud that doesn't read back.
+        const left = this.unreflectedAt + (this.opts.echoGraceMs ?? 120_000) - Date.now();
+        if (left > 0) {
+          this.setStatus({ kind: "waiting" });
+          if (this.graceTimer == null) {
+            this.graceTimer = setTimeout(() => {
+              this.graceTimer = null;
+              this.request();
+            }, left);
+          }
+          return;
+        }
+      }
       if (key === this.lastCommittedKey) {
         this.halted = true;
         const w = writes[0];
@@ -682,8 +711,10 @@ export class DocSync {
       }
       // Echoed — or delivered without showing the writes for the whole
       // timeout, which is what a cloud that really doesn't read back looks
-      // like: if the same writes come up again, the check above halts.
+      // like: if the same writes still come up (after the grace period, when
+      // unechoed), the check above halts.
       this.lastCommittedKey = key;
+      this.unreflectedAt = echo === "unreflected" ? Date.now() : null;
     }
   }
 }

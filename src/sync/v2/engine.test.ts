@@ -68,6 +68,7 @@ function device(
           },
     now: opts.now,
     deliveryTimeoutMs: 30,
+    echoGraceMs: 50,
     backoffMs: [60_000],
   });
   d.engine.start();
@@ -221,6 +222,9 @@ describe("migration", () => {
     }
     const store = new Lossy();
     const desk = device(store, await busy(), { v1: null });
+    await desk.engine.syncNow();
+    // Unechoed writes get the grace period (a slow echo) before it halts.
+    await new Promise((r) => setTimeout(r, 60));
     await desk.engine.syncNow();
     expect(desk.engine.getStatus().kind).toBe("halted");
     expect(store.read("meta", FORMAT_DOC_ID)).toBeUndefined(); // never switched over
@@ -511,6 +515,26 @@ describe("guards", () => {
     setTimeout(() => store.release(), 5);
     await run;
     expect(store.read("tombstones", "expired")).toBeUndefined();
+    await d.engine.syncNow();
+    expect(d.engine.getStatus().kind).toBe("inSync");
+  });
+
+  it("an echo slower than the delivery timeout doesn't halt sync", async () => {
+    // A laptop waking from sleep: the commit lands, but the listener's stream
+    // is still reconnecting and only delivers stale snapshots for longer than
+    // the timeout. Retrying straight away on that same view halted sync for
+    // good over a delete that had landed (an expired tombstone, 2026-10-11).
+    const store = new MemoryStore();
+    const d = device(store, await busy(), { v1: null });
+    await d.engine.syncNow();
+    await store.commit([
+      { collection: "tombstones", id: "expired", op: "set", data: { deletedAt: 1, purged: false } },
+    ]);
+    store.staleSnapshotNextGuarded = true;
+    await d.engine.syncNow();
+    expect(store.read("tombstones", "expired")).toBeUndefined();
+    expect(d.engine.getStatus().kind).not.toBe("halted");
+    store.release();
     await d.engine.syncNow();
     expect(d.engine.getStatus().kind).toBe("inSync");
   });
