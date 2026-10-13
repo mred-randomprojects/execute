@@ -92,7 +92,9 @@ export function RowInput({ task }: { task: Task }) {
     const el = ref.current;
     if (el == null) return;
     el.focus();
-    el.select();
+    // Caret at the end, nothing selected: editing usually means adding to the
+    // title, and a stray keystroke shouldn't wipe it.
+    el.setSelectionRange(el.value.length, el.value.length);
   }, []);
 
   return (
