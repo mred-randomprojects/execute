@@ -19,6 +19,8 @@ export function Sidebar({
   onSelect,
   onOpenHelp,
   onCycleTheme,
+  themeName,
+  hideWhenNarrow = false,
   streak,
   children,
 }: {
@@ -33,6 +35,14 @@ export function Sidebar({
   onSelect: (v: ViewKind) => void;
   onOpenHelp: () => void;
   onCycleTheme: () => void;
+  /** The current theme, named on its button so a click isn't a guess. */
+  themeName: string;
+  /**
+   * The detail panel is open: below 1200px give its width back to the list.
+   * Sidebar (230) + panel (360) left a minimum-size window (880) about 200px
+   * for titles; the digits still switch views.
+   */
+  hideWhenNarrow?: boolean;
   /** The closing streak + heatmap, under the nav. Passive — never asked for. */
   streak?: ReactNode;
   children?: ReactNode;
@@ -48,7 +58,12 @@ export function Sidebar({
   ];
 
   return (
-    <aside className="flex w-[230px] shrink-0 flex-col border-r border-line bg-surface px-3 pb-3 pt-8">
+    <aside
+      className={[
+        "flex w-[230px] shrink-0 flex-col border-r border-line bg-surface px-3 pb-3 pt-8",
+        hideWhenNarrow ? "max-[1199px]:hidden" : "",
+      ].join(" ")}
+    >
       <div className="flex items-center gap-2 px-2 pb-5 pt-2">
         <div className="grid h-8 w-8 place-items-center rounded-sm border border-line-strong bg-ink font-serif text-[18px] text-bg">
           e
@@ -66,6 +81,8 @@ export function Sidebar({
             <button
               key={it.key}
               onClick={() => onSelect(it.key)}
+              aria-current={active ? "page" : undefined}
+              title={`${it.label} (${it.hint})`}
               className={[
                 "relative flex items-center gap-2 rounded-sm px-2.5 py-[7px] text-left text-[14px] transition-colors",
                 active
@@ -80,7 +97,17 @@ export function Sidebar({
               {it.badge != null && it.badge > 0 && (
                 <span className="mono text-[11px] text-ink-faint">{it.badge}</span>
               )}
-              <span className="mono text-[10px] text-ink-faint">{it.hint}</span>
+              {/* A keycap, not a bare digit: "All 3" read as three tasks, and
+                  "Today 12 1" as two counts. */}
+              <span
+                aria-hidden="true"
+                className={[
+                  "mono grid h-[16px] min-w-[16px] place-items-center rounded-sm border px-[3px] text-[10px] leading-none",
+                  active ? "border-line-strong text-ink-soft" : "border-line text-ink-faint",
+                ].join(" ")}
+              >
+                {it.hint}
+              </span>
             </button>
           );
         })}
@@ -101,7 +128,10 @@ export function Sidebar({
           className="flex items-center justify-between rounded-sm px-2.5 py-1.5 text-[13px] text-ink-soft hover:bg-surface-2/60 hover:text-ink"
         >
           <span>Theme</span>
-          <span className="h-[14px] w-[14px] rounded-full border border-line-strong bg-accent" />
+          <span className="flex items-center gap-2">
+            <span className="text-[12px] capitalize text-ink-faint">{themeName}</span>
+            <span className="h-[14px] w-[14px] rounded-full border border-line-strong bg-accent" />
+          </span>
         </button>
         {children}
       </div>

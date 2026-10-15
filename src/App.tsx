@@ -3356,6 +3356,8 @@ export function App() {
         onSelect={setView}
         onOpenHelp={() => setShowHelp(true)}
         onCycleTheme={cycleTheme}
+        themeName={state.theme}
+        hideWhenNarrow={panelOpen}
         streak={<DayStreak days={state.days} today={today} onOpenReview={() => setShowReview(true)} />}
       >
         {import.meta.env.DEV && (
