@@ -283,34 +283,22 @@ export function DetailPanel({
           }}
           onKeyDown={onNotesKeyDown}
           placeholder="Add details, links, context… (markdown supported)"
-          className="min-h-[160px] flex-1 resize-none rounded border border-line bg-bg px-3 py-2 text-[14px] leading-relaxed text-ink outline-none placeholder:text-ink-faint focus:border-line-strong"
+          // Roomy while you write in it; a few lines while it only invites you to.
+          className={[
+            "resize-none rounded border border-line bg-bg px-3 py-2 text-[14px] leading-relaxed text-ink outline-none placeholder:text-ink-faint focus:border-line-strong",
+            editing ? "min-h-[160px] flex-1" : "min-h-[72px]",
+          ].join(" ")}
         />
       ) : (
+        // As tall as the notes are: a 160px box around one line pushed the
+        // fields below, and History, out of a small window.
         <div
           onClick={() => setEditing(true)}
-          className="min-h-[160px] flex-1 cursor-text rounded border border-transparent px-3 py-2 text-[14px] leading-relaxed text-ink hover:border-line"
+          className="cursor-text rounded border border-transparent px-3 py-2 text-[14px] leading-relaxed text-ink hover:border-line"
         >
           {renderBlock(notes)}
         </div>
       )}
-
-      <div className="mt-3 text-[11px] text-ink-faint">
-        Created {exactLocal(task.createdAt)}
-        {task.completedAt != null && <> · Completed {exactLocal(task.completedAt)}</>}
-        {task.wontDo != null && <> · Won’t do {exactLocal(task.wontDo.at)}</>}
-        <span className="ml-1">({LOCAL_TZ})</span>
-      </div>
-
-      <div className="mt-1.5 flex items-center gap-1.5 text-[11px] text-ink-faint">
-        <span>ID</span>
-        <button
-          onClick={() => void copyText(task.id)}
-          className={`mono rounded-sm bg-surface-2 px-1.5 py-[1px] text-ink-soft transition-colors hover:text-ink ${FOCUS_RING}`}
-          title="Click to copy the full task ID"
-        >
-          {task.id} ⧉
-        </button>
-      </div>
 
       <div className="mt-4">
         <div className="eyebrow mb-2">Priority</div>
@@ -436,10 +424,8 @@ export function DetailPanel({
 
       {log.length > 0 && (
         <div className="mt-5 border-t border-line pt-4">
-          <div className="eyebrow mb-1">History</div>
-          <div className="mb-2 text-[11px] text-ink-faint">
-            Times in your local timezone ({LOCAL_TZ})
-          </div>
+          {/* Its times are local; the footer below names the timezone. */}
+          <div className="eyebrow mb-2">History</div>
           <ul className="flex flex-col gap-2">
             {log.map((e) => (
               <li key={e.id} className="text-[12px] text-ink-soft">
@@ -453,6 +439,26 @@ export function DetailPanel({
           </ul>
         </div>
       )}
+
+      {/* Facts about the task rather than things to change: at the foot. */}
+      <div className="mt-5 border-t border-line pt-3 text-[11px] text-ink-faint">
+        <div>
+          Created {exactLocal(task.createdAt)}
+          {task.completedAt != null && <> · Completed {exactLocal(task.completedAt)}</>}
+          {task.wontDo != null && <> · Won’t do {exactLocal(task.wontDo.at)}</>}
+          <span className="ml-1">({LOCAL_TZ})</span>
+        </div>
+        <div className="mt-1.5 flex items-center gap-1.5">
+          <span>ID</span>
+          <button
+            onClick={() => void copyText(task.id)}
+            className={`mono rounded-sm bg-surface-2 px-1.5 py-[1px] text-ink-soft transition-colors hover:text-ink ${FOCUS_RING}`}
+            title="Click to copy the full task ID"
+          >
+            {task.id} ⧉
+          </button>
+        </div>
+      </div>
     </aside>
   );
 }
