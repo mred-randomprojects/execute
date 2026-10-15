@@ -24,6 +24,7 @@ export type KeyContext =
   | "shutdown"
   | "plan"
   | "habits"
+  | "trash"
   | "editing"
   | "normal";
 
@@ -49,6 +50,8 @@ export interface ContextState {
   planActive: boolean;
   /** The Habits view is showing (and no ritual is covering it). */
   habitsActive: boolean;
+  /** The Trash view is showing (and no ritual is covering it). */
+  trashActive: boolean;
 }
 
 // ─── Keymap ──────────────────────────────────────────────────────────

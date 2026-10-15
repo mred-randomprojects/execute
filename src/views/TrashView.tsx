@@ -1,13 +1,19 @@
+import { useEffect, useRef } from "react";
 import type { TaskId, TrashedTask } from "../types";
 import { sinceLabel } from "../store/dates";
 
 export function TrashView({
   trash,
+  cursorId,
+  onSelect,
   onRestore,
   onPurge,
   onEmpty,
 }: {
   trash: TrashedTask[];
+  /** The row ↑/↓ walk and ↵ / ⌫ act on. */
+  cursorId: TaskId | null;
+  onSelect: (id: TaskId) => void;
   onRestore: (id: TaskId) => void;
   onPurge: (id: TaskId) => void;
   onEmpty: () => void;
@@ -40,48 +46,100 @@ export function TrashView({
           </div>
         ) : (
           trash.map((e) => (
-            <div
+            <TrashRow
               key={e.task.id}
-              className="group flex items-center gap-3 rounded px-3 py-1.5 hover:bg-surface-2/60"
-            >
-              {e.task.text === "" ? (
-                <span className="flex-1 truncate text-[14px] italic text-ink-faint">Untitled</span>
-              ) : (
-                <span className="flex-1 truncate text-[14px] text-ink-soft line-through">
-                  {e.task.text}
-                </span>
-              )}
-              {e.task.children.length > 0 && (
-                <span className="mono text-[11px] text-ink-faint">
-                  +{e.task.children.length}
-                </span>
-              )}
-              <span
-                className="mono w-[68px] shrink-0 text-right text-[11px] text-ink-faint"
-                title={new Date(e.deletedAt).toLocaleString()}
-              >
-                {sinceLabel(e.deletedAt)}
-              </span>
-              {/* A pair of buttons on all 187 rows made the page a wall of
-                  "Delete". They show on the row you're pointing at. */}
-              <span className="flex shrink-0 items-center gap-2 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
-                <button
-                  onClick={() => onRestore(e.task.id)}
-                  className="rounded-sm border border-line px-2 py-1 text-[12px] text-ink-soft hover:bg-surface-2"
-                >
-                  Restore
-                </button>
-                <button
-                  onClick={() => onPurge(e.task.id)}
-                  className="rounded-sm border border-bad/40 px-2 py-1 text-[12px] text-bad hover:bg-bad-soft"
-                >
-                  Delete
-                </button>
-              </span>
-            </div>
+              entry={e}
+              focused={e.task.id === cursorId}
+              onSelect={() => onSelect(e.task.id)}
+              onRestore={() => onRestore(e.task.id)}
+              onPurge={() => onPurge(e.task.id)}
+            />
           ))
         )}
       </div>
+    </div>
+  );
+}
+
+function TrashRow({
+  entry,
+  focused,
+  onSelect,
+  onRestore,
+  onPurge,
+}: {
+  entry: TrashedTask;
+  focused: boolean;
+  onSelect: () => void;
+  onRestore: () => void;
+  onPurge: () => void;
+}) {
+  const rowRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (focused) rowRef.current?.scrollIntoView?.({ block: "nearest" });
+  }, [focused]);
+  const { task } = entry;
+  return (
+    <div
+      ref={rowRef}
+      onClick={onSelect}
+      aria-current={focused ? "true" : undefined}
+      className={[
+        "group relative flex items-center gap-3 rounded px-3 py-1.5 select-none",
+        focused ? "bg-surface-2" : "hover:bg-surface-2/60",
+      ].join(" ")}
+    >
+      {focused && <span className="absolute left-0 top-1.5 bottom-1.5 w-[2px] bg-accent" />}
+      {task.text === "" ? (
+        <span className="flex-1 truncate text-[14px] italic text-ink-faint">Untitled</span>
+      ) : (
+        <span className="flex-1 truncate text-[14px] text-ink-soft line-through">
+          {task.text}
+        </span>
+      )}
+      {task.children.length > 0 && (
+        <span className="mono text-[11px] text-ink-faint">
+          +{task.children.length}
+        </span>
+      )}
+      <span
+        className="mono w-[68px] shrink-0 text-right text-[11px] text-ink-faint"
+        title={new Date(entry.deletedAt).toLocaleString()}
+      >
+        {sinceLabel(entry.deletedAt)}
+      </span>
+      {/* A pair of buttons on all 187 rows made the page a wall of
+          "Delete". They show on the row you're pointing at, and on the one
+          the cursor is on, where ↵ and ⌫ do the same. */}
+      <span
+        className={[
+          "flex shrink-0 items-center gap-2 transition-opacity focus-within:opacity-100 group-hover:opacity-100",
+          focused ? "opacity-100" : "opacity-0",
+        ].join(" ")}
+      >
+        <button
+          tabIndex={-1}
+          onClick={(e) => {
+            e.stopPropagation();
+            onRestore();
+          }}
+          title="Restore (↵)"
+          className="rounded-sm border border-line px-2 py-1 text-[12px] text-ink-soft hover:bg-surface-2"
+        >
+          Restore
+        </button>
+        <button
+          tabIndex={-1}
+          onClick={(e) => {
+            e.stopPropagation();
+            onPurge();
+          }}
+          title="Delete forever (⌫)"
+          className="rounded-sm border border-bad/40 px-2 py-1 text-[12px] text-bad hover:bg-bad-soft"
+        >
+          Delete
+        </button>
+      </span>
     </div>
   );
 }

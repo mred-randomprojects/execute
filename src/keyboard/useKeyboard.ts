@@ -65,6 +65,9 @@ export function getActiveContext(state: ContextState): KeyContext {
   // Habits has keys of its own (space checks in, ←/→ walk the days), so it gets
   // its own context rather than borrowing the outline's.
   if (state.habitsActive) return "habits";
+  // Trash lists deleted tasks, not the outline: the outline's keys would act on
+  // tasks that aren't on screen, so it gets a small context of its own.
+  if (state.trashActive) return "trash";
   return "normal";
 }
 

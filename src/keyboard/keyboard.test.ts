@@ -95,6 +95,7 @@ describe("getActiveContext", () => {
     shutdownActive: false,
     planActive: false,
     habitsActive: false,
+    trashActive: false,
     showReview: false,
   };
 
@@ -105,6 +106,11 @@ describe("getActiveContext", () => {
     expect(getActiveContext({ ...base, habitsActive: true })).toBe("habits");
     expect(getActiveContext({ ...base, habitsActive: true, reckoningActive: true })).toBe("reckoning");
     expect(getActiveContext({ ...base, habitsActive: true, showPalette: true })).toBe("palette");
+  });
+  it("Trash has its own keys, but rituals and dialogs outrank it", () => {
+    expect(getActiveContext({ ...base, trashActive: true })).toBe("trash");
+    expect(getActiveContext({ ...base, trashActive: true, reckoningActive: true })).toBe("reckoning");
+    expect(getActiveContext({ ...base, trashActive: true, showConfirm: true })).toBe("confirm");
   });
   it("shutdown owns the keyboard when it's open", () => {
     expect(getActiveContext({ ...base, shutdownActive: true })).toBe("shutdown");
@@ -170,6 +176,7 @@ describe("getActiveContext — focus zones", () => {
     shutdownActive: false,
     planActive: false,
     habitsActive: false,
+    trashActive: false,
     showReview: false,
   };
 
@@ -229,6 +236,10 @@ describe("the bare-letter rule", () => {
       (k) => !(k in ALLOWED_IN_NORMAL)
     );
     expect(unexpected).toEqual([]);
+  });
+
+  it("Trash binds no letters — it is browsed like the outline", () => {
+    expect(bareLetters("trash")).toEqual([]);
   });
 
   it("keeps ritual letters out of the outline, so no letter has two meanings", () => {

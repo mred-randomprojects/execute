@@ -54,6 +54,7 @@ keymap). Highlights:
 | `tab` / `⇧ tab` | indent / outdent |
 | `⌫` | won't do · press again to trash |
 | `1` – `7` | Today / Backlog / All / Projects / Recurring / Habits & KPIs / Trash · `[` `]` walk the period tabs |
+| in Trash: `↑`/`↓` move, `↵` restore, `⌫` delete forever (it asks first) |
 | `⌘k` | **command palette — everything else lives here** |
 | `⌘f` | filter this view (esc clears) · `⌘⇧f` find any task |
 | `⌘z` undo · `⌘⇧z` redo · `⌘y` history · `?` help |

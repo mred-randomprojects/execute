@@ -23,11 +23,11 @@ export const keymap: KeyBinding[] = [
   { key: "Escape", action: "dismiss", context: "global", displayKey: "esc", description: "close / cancel", section: "General" },
   { key: "Meta+z", action: "undo", context: "global", displayKey: "⌘ z", description: "undo", section: "General" },
   { key: "Meta+Z", action: "redo", context: "global", displayKey: "⌘ ⇧ z", description: "redo", section: "General" },
-  { key: "Meta+y", action: "history.toggle", context: ["normal", "habits", "reckoning", "board"], displayKey: "⌘ y", description: "history — everything you just did", section: "General" },
-  { key: "?", action: "help.toggle", context: ["normal", "habits", "reckoning", "board"], displayKey: "?", description: "keyboard help", section: "General" },
-  { key: "Meta+k", action: "palette.open", context: ["normal", "habits", "reckoning", "board", "editing"], displayKey: "⌘ k", description: "command palette — everything lives here", section: "General" },
-  { key: "Meta+f", action: "filter.open", context: ["normal", "habits", "editing"], displayKey: "⌘ f", description: "filter this view — only the tasks that match (↵ / ↓ into the list, esc clears)", section: "General" },
-  { key: "Meta+F", action: "search.open", context: ["normal", "habits", "editing"], displayKey: "⌘ ⇧ f", description: "find — search all tasks (subsequence: “byml” → “Buy milk”)", section: "General" },
+  { key: "Meta+y", action: "history.toggle", context: ["normal", "habits", "trash", "reckoning", "board"], displayKey: "⌘ y", description: "history — everything you just did", section: "General" },
+  { key: "?", action: "help.toggle", context: ["normal", "habits", "trash", "reckoning", "board"], displayKey: "?", description: "keyboard help", section: "General" },
+  { key: "Meta+k", action: "palette.open", context: ["normal", "habits", "trash", "reckoning", "board", "editing"], displayKey: "⌘ k", description: "command palette — everything lives here", section: "General" },
+  { key: "Meta+f", action: "filter.open", context: ["normal", "habits", "trash", "editing"], displayKey: "⌘ f", description: "filter this view — only the tasks that match (↵ / ↓ into the list, esc clears)", section: "General" },
+  { key: "Meta+F", action: "search.open", context: ["normal", "habits", "trash", "editing"], displayKey: "⌘ ⇧ f", description: "find — search all tasks (subsequence: “byml” → “Buy milk”)", section: "General" },
 
   // ── history panel ─────────────────────────────────────────────────
   { key: "ArrowDown", action: "history.down", context: "history", displayKey: "↑ / ↓", description: "walk the history", section: "History" },
@@ -36,15 +36,15 @@ export const keymap: KeyBinding[] = [
   { key: "Meta+y", action: "dismiss", context: "history" },
 
   // ── views ─────────────────────────────────────────────────────────
-  { key: "1", action: "view.today", context: ["normal", "habits"], displayKey: "1", description: "go to Today", section: "Views" },
-  { key: "2", action: "view.backlog", context: ["normal", "habits"], displayKey: "2", description: "go to Backlog", section: "Views" },
-  { key: "3", action: "view.all", context: ["normal", "habits"], displayKey: "3", description: "go to All", section: "Views" },
-  { key: "4", action: "view.projects", context: ["normal", "habits"], displayKey: "4", description: "go to Projects", section: "Views" },
-  { key: "5", action: "view.recurring", context: ["normal", "habits"], displayKey: "5", description: "go to Recurring", section: "Views" },
-  { key: "6", action: "view.habits", context: ["normal", "habits"], displayKey: "6", description: "go to Habits & KPIs", section: "Views" },
-  { key: "7", action: "view.trash", context: ["normal", "habits"], displayKey: "7", description: "go to Trash", section: "Views" },
-  { key: "]", action: "period.next", context: ["normal", "habits"], displayKey: "[ / ]", description: "period tab: earlier / later (Today ↔ Tomorrow ↔ …)", section: "Views" },
-  { key: "[", action: "period.prev", context: ["normal", "habits"] },
+  { key: "1", action: "view.today", context: ["normal", "habits", "trash"], displayKey: "1", description: "go to Today", section: "Views" },
+  { key: "2", action: "view.backlog", context: ["normal", "habits", "trash"], displayKey: "2", description: "go to Backlog", section: "Views" },
+  { key: "3", action: "view.all", context: ["normal", "habits", "trash"], displayKey: "3", description: "go to All", section: "Views" },
+  { key: "4", action: "view.projects", context: ["normal", "habits", "trash"], displayKey: "4", description: "go to Projects", section: "Views" },
+  { key: "5", action: "view.recurring", context: ["normal", "habits", "trash"], displayKey: "5", description: "go to Recurring", section: "Views" },
+  { key: "6", action: "view.habits", context: ["normal", "habits", "trash"], displayKey: "6", description: "go to Habits & KPIs", section: "Views" },
+  { key: "7", action: "view.trash", context: ["normal", "habits", "trash"], displayKey: "7", description: "go to Trash", section: "Views" },
+  { key: "]", action: "period.next", context: ["normal", "habits", "trash"], displayKey: "[ / ]", description: "period tab: earlier / later (Today ↔ Tomorrow ↔ …)", section: "Views" },
+  { key: "[", action: "period.prev", context: ["normal", "habits", "trash"] },
 
   // ── navigation (normal) ───────────────────────────────────────────
   { key: "ArrowDown", action: "cursor.down", context: "normal", displayKey: "↓", description: "move down", section: "Navigation" },
@@ -87,6 +87,16 @@ export const keymap: KeyBinding[] = [
   { key: "n", action: "habits.new", context: "habits", displayKey: "n", description: "new habit", section: "Habits" },
   { key: "k", action: "habits.newKpi", context: "habits", displayKey: "k", description: "new KPI — a number to log (“Dizzy spells 0-3+”, “DHI 0-100 monthly”)", section: "Habits" },
   { key: "Backspace", action: "habits.archive", context: "habits", displayKey: "⌫", description: "archive · on an archived habit, delete it", section: "Habits", noRepeat: true },
+
+  // ── trash (deleted tasks, kept until you restore or delete them) ─
+  // No letters: Trash is browsed like the outline. ↵ is the constructive key
+  // (and ⌘z takes it back); ⌫ only asks — deleting forever needs a second ↵.
+  { key: "ArrowDown", action: "trash.down", context: "trash", displayKey: "↑ / ↓", description: "next / previous deleted task", section: "Trash" },
+  { key: "ArrowUp", action: "trash.up", context: "trash" },
+  { key: "Meta+ArrowUp", action: "trash.first", context: "trash", displayKey: "⌘ ↑ / ⌘ ↓", description: "jump to the newest / oldest", section: "Trash" },
+  { key: "Meta+ArrowDown", action: "trash.last", context: "trash" },
+  { key: "Enter", action: "trash.restore", context: "trash", displayKey: "↵", description: "restore it to the outline", section: "Trash" },
+  { key: "Backspace", action: "trash.purge", context: "trash", displayKey: "⌫", description: "delete it forever (asks first)", section: "Trash", noRepeat: true },
 
   // ── plan (the morning ritual; shutdown's other half) ─────────────
   // Modal: it owns the screen and prints these letters on its chips.

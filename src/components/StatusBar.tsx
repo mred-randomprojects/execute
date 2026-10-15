@@ -44,10 +44,12 @@ const PROJECTS_HINTS: Array<[string, string]> = [
   ["?", "help"],
 ];
 
-// Trash is mouse-driven: the outline's edit / details / done / new do nothing here.
+// Trash has keys of its own: the outline's edit / details / done / new do nothing here.
 const TRASH_HINTS: Array<[string, string]> = [
+  ["↑ / ↓", "move"],
+  ["↵", "restore"],
+  ["⌫", "delete forever"],
   ["⌘z", "undo"],
-  ["1 – 7", "views"],
   ["?", "help"],
 ];
 

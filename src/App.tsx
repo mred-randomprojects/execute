@@ -1031,6 +1031,54 @@ export function App() {
     });
   };
 
+  // ── Trash ─────────────────────────────────────────────────────────
+  // A cursor of its own, like Habits: deleted tasks aren't outline rows, so the
+  // outline's selection can't point at them.
+  const trashActive = view === "trash" && !reckoningActive && !shutdownActive && !planActive;
+  const [trashCursorId, setTrashCursorId] = useState<TaskId | null>(null);
+  // Where the cursor last stood, so restoring or deleting a row leaves it on the
+  // row that slid into its place instead of jumping back to the top.
+  const trashIndexRef = useRef(0);
+  useEffect(() => {
+    const i = state.trash.findIndex((e) => e.task.id === trashCursorId);
+    if (i >= 0) {
+      trashIndexRef.current = i;
+      return;
+    }
+    const next = state.trash[Math.min(trashIndexRef.current, state.trash.length - 1)]?.task.id ?? null;
+    if (next !== trashCursorId) setTrashCursorId(next);
+  }, [state.trash, trashCursorId]);
+  // Arriving in Trash starts at the top: the newest deletion, the one you most
+  // likely came for. New deletions are added above, so a cursor kept from the
+  // last visit would sit wherever they have since pushed it.
+  const trashTopId = state.trash[0]?.task.id ?? null;
+  const prevViewRef = useRef(view);
+  useEffect(() => {
+    if (view === "trash" && prevViewRef.current !== "trash") setTrashCursorId(trashTopId);
+    prevViewRef.current = view;
+  }, [view, trashTopId]);
+  const moveTrashCursor = (to: 1 | -1 | "first" | "last") => {
+    const i = state.trash.findIndex((e) => e.task.id === trashCursorId);
+    const last = state.trash.length - 1;
+    const target = to === "first" ? 0 : to === "last" ? last : Math.max(0, Math.min(last, i + to));
+    const next = state.trash[target];
+    if (next != null) setTrashCursorId(next.task.id);
+  };
+  const confirmPurge = (id: TaskId) => {
+    const entry = state.trash.find((e) => e.task.id === id);
+    if (entry == null) return;
+    const text = entry.task.text.trim();
+    const name = text === "" ? "this untitled task" : `“${text.length > 60 ? `${text.slice(0, 59)}…` : text}”`;
+    const kids = entry.task.children.length;
+    setTrashCursorId(id);
+    setConfirm({
+      title: "Delete forever?",
+      body: `This permanently removes ${name}${kids > 0 ? ` and its ${kids === 1 ? "subtask" : `${kids} subtasks`}` : ""} from Trash — it can’t be undone.`,
+      confirmLabel: "Delete forever",
+      onConfirm: () => purgeFromTrash(id),
+    });
+  };
+
   // ── Presence (desktop shell) ──────────────────────────────────────
   // Push what's left today down to the main process, which turns it into a
   // menu-bar count, a dock badge and the two daily nudges. Renderer counts,
@@ -2280,6 +2328,7 @@ export function App() {
     shutdownActive,
     planActive,
     habitsActive,
+    trashActive,
   };
   // Only actions the keymap actually binds. Everything the outline used to fire
   // from a bare letter (schedule, won't-do, blocked, estimate, project, repeat,
@@ -2349,6 +2398,16 @@ export function App() {
     },
     "habits.newKpi": newKpi,
     "habits.archive": archiveOrDeleteHabit,
+    "trash.down": () => moveTrashCursor(1),
+    "trash.up": () => moveTrashCursor(-1),
+    "trash.first": () => moveTrashCursor("first"),
+    "trash.last": () => moveTrashCursor("last"),
+    "trash.restore": () => {
+      if (trashCursorId != null) restoreFromTrash(trashCursorId);
+    },
+    "trash.purge": () => {
+      if (trashCursorId != null) confirmPurge(trashCursorId);
+    },
     "dismiss": cmd.dismiss,
     // Arg-less wrappers: the keyboard engine calls handlers with the dispatch
     // state, so these must ignore it and act on the cursor (not a stray object).
@@ -3544,15 +3603,10 @@ export function App() {
             ) : view === "trash" ? (
               <TrashView
                 trash={state.trash}
+                cursorId={trashCursorId}
+                onSelect={setTrashCursorId}
                 onRestore={restoreFromTrash}
-                onPurge={(id) =>
-                  setConfirm({
-                    title: "Delete forever?",
-                    body: "This permanently removes the task from Trash — it can’t be undone.",
-                    confirmLabel: "Delete forever",
-                    onConfirm: () => purgeFromTrash(id),
-                  })
-                }
+                onPurge={confirmPurge}
                 onEmpty={() =>
                   setConfirm({
                     title: "Empty the trash?",

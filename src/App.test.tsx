@@ -937,6 +937,41 @@ describe("Trash", () => {
     expect(await screen.findByText("disposable")).toBeTruthy();
   });
 
+  it("is driven from the keyboard: ↑/↓ walk it, ↵ restores, ⌫ then ↵ deletes forever", async () => {
+    render(<App />);
+    for (const text of ["one", "two", "three"]) {
+      await addTask(text);
+      blurActive();
+      fireEvent.keyDown(document.body, { key: "Backspace" }); // won't do
+      fireEvent.keyDown(document.body, { key: "Escape" }); // leave the reason field
+      fireEvent.keyDown(document.body, { key: "Backspace" }); // → Trash
+      await waitFor(() => expect(screen.queryByText(text)).toBeNull());
+    }
+    const cursorText = () => document.querySelector("[aria-current='true']")?.textContent ?? "";
+
+    fireEvent.keyDown(document.body, { key: "7" }); // Trash, newest first: three, two, one
+    await screen.findByText("three");
+    expect(cursorText()).toContain("three");
+    fireEvent.keyDown(document.body, { key: "ArrowDown" });
+    expect(cursorText()).toContain("two");
+
+    // ↵ restores it, and the cursor stays where it was, on the row below.
+    fireEvent.keyDown(document.body, { key: "Enter" });
+    await waitFor(() => expect(screen.queryByText("two")).toBeNull());
+    expect(cursorText()).toContain("one");
+
+    // ⌫ only asks; the dialog names the task, and ↵ in it deletes for good.
+    fireEvent.keyDown(document.body, { key: "Backspace" });
+    expect(await screen.findByText(/permanently removes “one”/)).toBeTruthy();
+    fireEvent.keyDown(screen.getByText("Delete forever"), { key: "Enter" });
+    await waitFor(() => expect(screen.queryByText("one")).toBeNull());
+    expect(cursorText()).toContain("three");
+
+    fireEvent.keyDown(document.body, { key: "3" }); // All
+    expect(await screen.findByText("two")).toBeTruthy();
+    expect(screen.queryByText("one")).toBeNull();
+  });
+
   it("confirms before deleting a task that has subtasks", async () => {
     render(<App />);
     await addTask("parent");
