@@ -201,24 +201,24 @@ function Subtitle({
       return <span>Tomorrow's list — capture above lands here. [ and ] switch periods.</span>;
     }
     if (period === "someday") {
-      return <span>Unscheduled intentions. Press s or t to commit one to a real window.</span>;
+      return <span>Unscheduled intentions. ⌘k → “schedule” commits one to a real window.</span>;
     }
     return <span>Committed days first, then "anytime". Capture above joins this window.</span>;
   }
   if (view === "backlog") {
-    return <span>Things for later — by week, month, someday. Press s to schedule.</span>;
+    return <span>Things for later — by week, month, someday. ⌘k → “schedule” moves one.</span>;
   }
   if (view === "projects") {
     return <span>Every project — your stable home. Empty ones stay put.</span>;
   }
-  return <span>Your whole outline. Press t to plan a task for today.</span>;
+  return <span>Your whole outline. ⌘k → “today” plans a task for today.</span>;
 }
 
 function EmptyState({ view, period }: { view: ViewKind; period: Period }) {
   const periodMsg: Record<Period, string> = {
     today: "Nothing planned for today. Add one above, or plan from the backlog.",
-    tomorrow: "Nothing planned for tomorrow yet — add one above, or press t on a task.",
-    thisWeek: "Nothing scheduled this week yet — capture above, or press s on a task.",
+    tomorrow: "Nothing planned for tomorrow yet — add one above, or ⌘k → “tomorrow” on a task.",
+    thisWeek: "Nothing scheduled this week yet — capture above, or ⌘k → “this week” on a task.",
     nextWeek: "Nothing scheduled for next week yet.",
     thisMonth: "Nothing scheduled this month yet.",
     nextMonth: "Nothing scheduled for next month yet.",
@@ -1017,7 +1017,7 @@ export function OutlineView({
                     onClick={() => onAddToProject(group.project.id, null)}
                     className="block w-full px-1 pb-2 pt-1 text-left text-[12px] text-ink-faint hover:text-ink-soft"
                   >
-                    Empty — press + to add the first task.
+                    Empty — click to add the first task.
                   </button>
                 ) : group.sections != null ? (
                   // Multi-day period tabs: second-order day separators.
