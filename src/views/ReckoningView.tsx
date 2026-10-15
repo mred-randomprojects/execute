@@ -2,7 +2,7 @@ import type { RefObject } from "react";
 import type { ISODate, Project, Task, TaskId } from "../types";
 import type { ReckoningCard, ReckoningLeaf } from "../selectors";
 import { countAll } from "../store/tasks";
-import { relativeLabel } from "../store/dates";
+import { formatLong, relativeLabel } from "../store/dates";
 import { ActionChip } from "../components/ActionChip";
 import { BreakdownPanel } from "../components/BreakdownPanel";
 import { CaptureBar } from "../components/CaptureBar";
@@ -195,29 +195,11 @@ export function ReckoningView({
 
   return (
     <div className="mx-auto flex h-full w-full page-width flex-col px-10 py-10">
-      {/* The front door never closes: capture stays available even mid-gate, so a
-          stray thought lands in the system (planned for today) without resolving
-          a single leftover or making the pile any longer. */}
-      <div className="mb-6">
-        <CaptureBar
-          inputRef={captureRef}
-          placeholder="Add a task for today…"
-          onAdd={onCapture}
-          onArrowDown={onCaptureArrowDown}
-        />
-      </div>
-
-      {lapse != null && (
-        <CatchUpBand
-          count={totalLeftovers}
-          daysAway={lapse.daysAway}
-          onCatchUp={lapse.onCatchUp}
-        />
-      )}
-
-      <header className="mb-6 flex items-start justify-between gap-4 border-b border-line pb-5">
+      <header className="mb-5 flex items-start justify-between gap-4 border-b border-line pb-4">
         <div>
-          <div className="eyebrow mb-1.5 text-bad">The Reckoning</div>
+          <div className="eyebrow mb-1.5">
+            <span className="text-bad">The Reckoning</span> · {formatLong(today)}
+          </div>
           <h1 className="font-serif text-[32px] font-medium leading-none tracking-tight text-ink">
             Unfinished from before today
           </h1>
@@ -237,6 +219,27 @@ export function ReckoningView({
           v · board
         </button>
       </header>
+
+      {/* The front door never closes: capture stays available even mid-gate, so a
+          stray thought lands in the system (planned for today) without resolving
+          a single leftover or making the pile any longer. Below the title, as on
+          every other page: the gate is what this screen is about. */}
+      <div className="mb-5">
+        <CaptureBar
+          inputRef={captureRef}
+          placeholder="Add a task for today…"
+          onAdd={onCapture}
+          onArrowDown={onCaptureArrowDown}
+        />
+      </div>
+
+      {lapse != null && (
+        <CatchUpBand
+          count={totalLeftovers}
+          daysAway={lapse.daysAway}
+          onCatchUp={lapse.onCatchUp}
+        />
+      )}
 
       {/* One card at a time: a top-level commitment and its stranded subtasks. */}
       <div className="flex flex-1 flex-col overflow-auto">

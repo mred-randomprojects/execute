@@ -3,7 +3,7 @@ import type { ReactNode, RefObject } from "react";
 import type { ISODate, Project, Task, TaskId } from "../types";
 import { BLOCK_MINUTES } from "../types";
 import type { CapacityLoad } from "../selectors";
-import { relativeLabel } from "../store/dates";
+import { formatLong, relativeLabel } from "../store/dates";
 import { blocksFromMinutes, formatMinutes, MAX_ESTIMATE_BLOCKS } from "../store/estimate";
 import { ActionChip } from "../components/ActionChip";
 import { BlockPips } from "../components/BlockPips";
@@ -260,22 +260,11 @@ export function ReckoningBoard({
 
   return (
     <div className="mx-auto flex h-full w-full max-w-5xl flex-col px-8 py-8">
-      <div className="mb-5">
-        <CaptureBar
-          inputRef={captureRef}
-          placeholder="Add a task for today…"
-          onAdd={onCapture}
-          onArrowDown={onCaptureArrowDown}
-        />
-      </div>
-
-      {lapse != null && (
-        <CatchUpBand count={totalLeft} daysAway={lapse.daysAway} onCatchUp={lapse.onCatchUp} />
-      )}
-
       <header className="mb-5 flex items-end justify-between border-b border-line pb-4">
         <div>
-          <div className="eyebrow mb-1.5 text-bad">The Reckoning · board</div>
+          <div className="eyebrow mb-1.5">
+            <span className="text-bad">The Reckoning · board</span> · {formatLong(today)}
+          </div>
           <h1 className="font-serif text-[28px] font-medium leading-none tracking-tight text-ink">
             Pull what you can into today
           </h1>
@@ -295,6 +284,20 @@ export function ReckoningBoard({
           v · cards
         </button>
       </header>
+
+      {/* Capture stays open mid-gate (see ReckoningView), under the title. */}
+      <div className="mb-5">
+        <CaptureBar
+          inputRef={captureRef}
+          placeholder="Add a task for today…"
+          onAdd={onCapture}
+          onArrowDown={onCaptureArrowDown}
+        />
+      </div>
+
+      {lapse != null && (
+        <CatchUpBand count={totalLeft} daysAway={lapse.daysAway} onCatchUp={lapse.onCatchUp} />
+      )}
 
       <div className="grid min-h-0 flex-1 grid-cols-2 gap-5 overflow-hidden">
         {/* ── Left: leftovers to triage ── */}
