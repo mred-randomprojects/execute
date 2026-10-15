@@ -459,6 +459,15 @@ export function App() {
     [state.tasks, today]
   );
   const reckoningActive = ready && leftovers.length > 0;
+  // The gate stands in front of Today, whatever was on screen when it came up
+  // (a day can turn over with Trash or a zoomed project open). Go there, so the
+  // sidebar says where you are and Today is what you see once it's clear.
+  useEffect(() => {
+    if (!reckoningActive) return;
+    setView("today");
+    setPeriod("today");
+    setZoom(null);
+  }, [reckoningActive]);
   const breakdownTask =
     breakingDownId != null ? findById(state.tasks, breakingDownId) ?? null : null;
   const leftoverKey = leftovers.map((t) => t.id).join(",");

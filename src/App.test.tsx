@@ -573,6 +573,25 @@ describe("The Reckoning (rollover ritual)", () => {
     expect(await screen.findByText("Unfinished from before today")).toBeTruthy();
   }
 
+  it("stands in front of Today even when the day turns over in another view", async () => {
+    render(<App />);
+    await addTask("left on the desk");
+    blurActive();
+    fireEvent.keyDown(document.body, { key: "7" }); // Trash
+    await screen.findByText("Trash is empty.");
+
+    act(() => setDevDateOverride(addDays(todayISO(null), 1)));
+    expect(await screen.findByText("Unfinished from before today")).toBeTruthy();
+    // The sidebar says Today, not the view that happened to be open.
+    expect(screen.getByRole("button", { name: /Today/, current: "page" })).toBeTruthy();
+
+    fireEvent.click(screen.getByLabelText("Done"));
+    await waitFor(() =>
+      expect(screen.queryByText("Unfinished from before today")).toBeNull()
+    );
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Today");
+  });
+
   it("blocks Today with the gate until the leftover is completed", async () => {
     await seedTodayTaskThenRollOver("ship the thing");
     expect(screen.getByText("ship the thing")).toBeTruthy();
