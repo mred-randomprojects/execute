@@ -59,6 +59,15 @@
     max-width: clamp(48rem, 72%, 72rem);
   }
 
+  /* A sideways strip that scrolls without showing a bar (the habit chips);
+     it says there is more with a fade instead. */
+  .scrollbar-none {
+    scrollbar-width: none;
+  }
+  .scrollbar-none::-webkit-scrollbar {
+    display: none;
+  }
+
   /* Native-window drag regions (Electron, macOS hiddenInset title bar). */
   .drag-region {
     -webkit-app-region: drag;

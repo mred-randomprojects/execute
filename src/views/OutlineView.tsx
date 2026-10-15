@@ -62,71 +62,116 @@ function HabitStrip({
   onToggle: (id: HabitId) => void;
   onOpen: () => void;
 }) {
+  // One line, scrolling sideways, instead of wrapping: at six or more habits
+  // the wrapped chips took two or three lines of the header, and that height
+  // came out of the list. The fades say there is more past either edge.
+  const scrollerRef = useRef<HTMLDivElement>(null);
+  const [edges, setEdges] = useState({ left: false, right: false });
+  useEffect(() => {
+    const el = scrollerRef.current;
+    if (el == null) return;
+    const update = () => {
+      const left = el.scrollLeft > 1;
+      const right = el.scrollLeft + el.clientWidth < el.scrollWidth - 1;
+      setEdges((e) => (e.left === left && e.right === right ? e : { left, right }));
+    };
+    update();
+    el.addEventListener("scroll", update, { passive: true });
+    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(update);
+    observer?.observe(el);
+    return () => {
+      el.removeEventListener("scroll", update);
+      observer?.disconnect();
+    };
+  }, [habits]);
+  const mask = edgeMask(edges.left, edges.right);
   return (
-    <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
+    <div className="mt-2.5 flex items-center gap-2">
       <button
         type="button"
         tabIndex={-1}
         onClick={onOpen}
-        className="eyebrow mr-1 hover:text-ink"
+        className="eyebrow shrink-0 hover:text-ink"
         title="Go to Habits & KPIs (6)"
       >
         Habits
       </button>
-      {habits.map((h) => {
-        if (h.measure != null) {
-          const value = valueOn(h, today);
+      <div
+        ref={scrollerRef}
+        // A mouse wheel only scrolls vertically, and the header has nowhere to
+        // go vertically: turn it sideways while the chips overflow.
+        onWheel={(e) => {
+          const el = e.currentTarget;
+          if (Math.abs(e.deltaY) > Math.abs(e.deltaX) && el.scrollWidth > el.clientWidth) {
+            el.scrollLeft += e.deltaY;
+          }
+        }}
+        className="scrollbar-none flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto"
+        style={mask == null ? undefined : { maskImage: mask, WebkitMaskImage: mask }}
+      >
+        {habits.map((h) => {
+          if (h.measure != null) {
+            const value = valueOn(h, today);
+            return (
+              <button
+                key={h.id}
+                type="button"
+                tabIndex={-1}
+                onClick={(e) => {
+                  e.currentTarget.blur();
+                  onToggle(h.id);
+                }}
+                title={value == null ? `Log ${h.name || "KPI"} for today` : "Logged today — click to change"}
+                className={[
+                  "flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-[3px] text-[12px] transition-colors",
+                  value != null
+                    ? "border-accent/50 bg-accent-soft text-accent"
+                    : "border-line-strong text-ink-soft hover:border-accent/60 hover:text-ink",
+                ].join(" ")}
+              >
+                <span aria-hidden="true" className="mono">{value == null ? "#" : formatValue(h.measure, value)}</span>
+                <span className="max-w-[160px] truncate">{h.name || "Untitled KPI"}</span>
+              </button>
+            );
+          }
+          const mark = markOn(h, today);
+          const done = mark === "done";
           return (
             <button
               key={h.id}
               type="button"
               tabIndex={-1}
+              aria-pressed={done}
               onClick={(e) => {
                 e.currentTarget.blur();
                 onToggle(h.id);
               }}
-              title={value == null ? `Log ${h.name || "KPI"} for today` : "Logged today — click to change"}
+              title={done ? "Done today — click to undo" : `Check in ${h.name || "habit"} for today`}
               className={[
-                "flex items-center gap-1.5 rounded-full border px-2.5 py-[3px] text-[12px] transition-colors",
-                value != null
+                "flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-[3px] text-[12px] transition-colors",
+                done
                   ? "border-accent/50 bg-accent-soft text-accent"
-                  : "border-line-strong text-ink-soft hover:border-accent/60 hover:text-ink",
+                  : mark != null
+                    ? "border-line text-ink-faint"
+                    : "border-line-strong text-ink-soft hover:border-accent/60 hover:text-ink",
               ].join(" ")}
             >
-              <span aria-hidden="true" className="mono">{value == null ? "#" : formatValue(h.measure, value)}</span>
-              <span className="max-w-[160px] truncate">{h.name || "Untitled KPI"}</span>
+              <span aria-hidden="true">{done ? "✓" : mark === "skip" ? "–" : mark === "missed" ? "×" : "○"}</span>
+              <span className="max-w-[160px] truncate">{h.name || "Untitled habit"}</span>
             </button>
           );
-        }
-        const mark = markOn(h, today);
-        const done = mark === "done";
-        return (
-          <button
-            key={h.id}
-            type="button"
-            tabIndex={-1}
-            aria-pressed={done}
-            onClick={(e) => {
-              e.currentTarget.blur();
-              onToggle(h.id);
-            }}
-            title={done ? "Done today — click to undo" : `Check in ${h.name || "habit"} for today`}
-            className={[
-              "flex items-center gap-1.5 rounded-full border px-2.5 py-[3px] text-[12px] transition-colors",
-              done
-                ? "border-accent/50 bg-accent-soft text-accent"
-                : mark != null
-                  ? "border-line text-ink-faint"
-                  : "border-line-strong text-ink-soft hover:border-accent/60 hover:text-ink",
-            ].join(" ")}
-          >
-            <span aria-hidden="true">{done ? "✓" : mark === "skip" ? "–" : mark === "missed" ? "×" : "○"}</span>
-            <span className="max-w-[160px] truncate">{h.name || "Untitled habit"}</span>
-          </button>
-        );
-      })}
+        })}
+      </div>
     </div>
   );
+}
+
+/** A fade on whichever edge of a sideways scroller has more past it. */
+function edgeMask(left: boolean, right: boolean): string | null {
+  if (!left && !right) return null;
+  const start = left ? "transparent, black 24px" : "black, black";
+  const end = right ? "black calc(100% - 32px), transparent" : "black";
+  return `linear-gradient(to right, ${start}, ${end})`;
 }
 
 const TITLES = VIEW_TITLES;
@@ -819,6 +864,7 @@ export function OutlineView({
   onCycleProjectColor: (projectId: ProjectId) => void;
 }) {
   const usingBuckets = zoom == null && view === "backlog" && laterLayout === "date";
+  const todayTab = view === "today" && period === "today";
   return (
     <div className="mx-auto flex h-full w-full page-width flex-col px-10 py-8">
       {zoom != null ? (
@@ -843,7 +889,7 @@ export function OutlineView({
           </p>
         </header>
       ) : (
-        <header className="mb-5 border-b border-line pb-4">
+        <header className="mb-4 border-b border-line pb-3">
           {view === "today" && (
             <div className="eyebrow mb-1.5">{periodEyebrow(period, today)}</div>
           )}
@@ -851,7 +897,15 @@ export function OutlineView({
             <h1 className="font-serif text-[32px] font-medium leading-none tracking-tight text-ink">
               {view === "today" ? PERIOD_LABELS[period] : TITLES[view]}
             </h1>
-            <div className="flex shrink-0 items-center gap-2">
+            <div className="flex min-w-0 items-center gap-3">
+              {/* Today's count is short enough to sit beside the title, which
+                  gives its line back to the list. The other views' subtitles
+                  are sentences and keep a line of their own. */}
+              {todayTab && (
+                <p className="truncate text-[13px] text-ink-soft">
+                  <Subtitle view={view} period={period} progress={progress} />
+                </p>
+              )}
               {view === "backlog" && (
                 <LayoutToggle layout={laterLayout} onToggle={onToggleLaterLayout} />
               )}
@@ -859,10 +913,12 @@ export function OutlineView({
             </div>
           </div>
           {view === "today" && <PeriodTabs period={period} onPeriod={onPeriod} />}
-          <p className="mt-2 text-[14px] text-ink-soft">
-            <Subtitle view={view} period={period} progress={progress} />
-          </p>
-          {view === "today" && period === "today" && habitStrip != null && habitStrip.habits.length > 0 && (
+          {!todayTab && (
+            <p className="mt-2 text-[14px] text-ink-soft">
+              <Subtitle view={view} period={period} progress={progress} />
+            </p>
+          )}
+          {todayTab && habitStrip != null && habitStrip.habits.length > 0 && (
             <HabitStrip {...habitStrip} />
           )}
         </header>
@@ -929,8 +985,8 @@ export function OutlineView({
       {zoom == null && view === "today" && period === "today" && habitPrompt != null && (
         // Yesterday's unlogged habits. A band, never a gate: one click (or ⌘k
         // "Log habits") answers them, × puts it away until tomorrow.
-        <div className="mb-4 flex w-full items-center gap-3 rounded border border-line bg-surface px-4 py-2.5">
-          <button onClick={habitPrompt.onOpen} className="min-w-0 flex-1 truncate text-left text-[13px] text-ink">
+        <div className="mb-3 flex w-full items-center gap-3 rounded border border-line bg-surface px-3 py-1.5">
+          <button onClick={habitPrompt.onOpen} className="min-w-0 flex-1 truncate text-left text-[12px] text-ink">
             <span className="font-medium">Yesterday’s habits?</span>{" "}
             <span className="text-ink-soft">
               {habitPrompt.names.length === 1 ? "1 not logged" : `${habitPrompt.names.length} not logged`}:{" "}
