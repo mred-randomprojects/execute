@@ -3717,6 +3717,15 @@ export function App() {
           onUse={recordCommandUse}
           onResetRanking={resetCommandRanking}
           onClose={() => setShowPalette(false)}
+          subject={
+            reckoningActive || shutdownActive || habitsActive
+              ? undefined
+              : selection.selectedIds.length > 1
+                ? `${selection.selectedIds.length} selected`
+                : focusedTask != null
+                  ? focusedTask.text.trim() === "" ? "Untitled" : focusedTask.text
+                  : undefined
+          }
         />
       )}
       {showSearch && (

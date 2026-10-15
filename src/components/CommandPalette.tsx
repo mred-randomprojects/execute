@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { NO_SPELLCHECK } from "../ui/noSpellcheck";
 import type { CommandUsage } from "../types";
 import { frecencyScore } from "../store/frecency";
+import { renderInline } from "../ui/markdown";
 
 export interface Command {
   id: string;
@@ -57,6 +58,7 @@ export function CommandPalette({
   onUse,
   onResetRanking,
   now,
+  subject,
 }: {
   commands: Command[];
   /**
@@ -77,6 +79,12 @@ export function CommandPalette({
   onResetRanking?: (id: string) => void;
   /** Injectable clock for deterministic ranking in tests; defaults to now. */
   now?: number;
+  /**
+   * What the task commands will act on — the focused task's title, or "3
+   * selected tasks". "Schedule: Tomorrow" doesn't say whose tomorrow, and the
+   * list it was opened from is under the backdrop.
+   */
+  subject?: string;
 }) {
   const [query, setQuery] = useState("");
   const [sel, setSel] = useState(0);
@@ -197,6 +205,12 @@ export function CommandPalette({
           placeholder="Type a command…"
           className="w-full border-b border-line bg-transparent px-4 py-3 text-[15px] text-ink outline-none placeholder:text-ink-faint"
         />
+        {subject != null && (
+          <div className="flex items-center gap-2 border-b border-line bg-surface-2 px-4 py-1.5">
+            <span className="eyebrow shrink-0">On</span>
+            <span className="min-w-0 truncate text-[12px] text-ink-soft">{renderInline(subject)}</span>
+          </div>
+        )}
         <div role="listbox" aria-label="Commands" className="max-h-80 overflow-auto py-1">
           {filtered.length === 0 ? (
             <div className="px-4 py-6 text-center text-[13px] text-ink-faint">
