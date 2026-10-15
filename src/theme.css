@@ -19,7 +19,7 @@
   --surface-3: rgba(18, 20, 26, 0.07);
   --ink: #14161c;
   --ink-soft: #565a64;
-  --ink-faint: #989ba3;
+  --ink-faint: #7f828b;
   --line: rgba(18, 20, 26, 0.12);
   --line-strong: rgba(18, 20, 26, 0.26);
   --accent: #2f4b8f;
@@ -34,6 +34,9 @@
   --s-good-soft: rgba(44, 115, 65, 0.11);
   --shadow: 0 1px 1px rgba(18, 20, 26, 0.04), 0 4px 14px rgba(18, 20, 26, 0.05);
   --shadow-lg: 0 2px 4px rgba(18, 20, 26, 0.05), 0 18px 44px rgba(18, 20, 26, 0.09);
+  /* Modal backdrop: always darkens. `bg-ink/30` did on light themes, but
+     on Carbon the ink is near-white, so every dialog washed the app out. */
+  --scrim: rgba(18, 20, 26, 0.28);
 }
 
 [data-theme="ivory"] {
@@ -43,7 +46,7 @@
   --surface-3: rgba(28, 24, 19, 0.085);
   --ink: #1d1813;
   --ink-soft: #645b4f;
-  --ink-faint: #a39a89;
+  --ink-faint: #887f6f;
   --line: rgba(28, 24, 19, 0.14);
   --line-strong: rgba(28, 24, 19, 0.3);
   --accent: #6e3b2a;
@@ -58,6 +61,7 @@
   --s-good-soft: rgba(74, 115, 56, 0.12);
   --shadow: 0 1px 1px rgba(40, 28, 15, 0.04), 0 4px 14px rgba(40, 28, 15, 0.06);
   --shadow-lg: 0 2px 4px rgba(40, 28, 15, 0.06), 0 18px 44px rgba(40, 28, 15, 0.1);
+  --scrim: rgba(40, 28, 15, 0.28);
 }
 
 [data-theme="carbon"] {
@@ -67,7 +71,7 @@
   --surface-3: rgba(255, 255, 255, 0.08);
   --ink: #e9eaee;
   --ink-soft: #989ca6;
-  --ink-faint: #5f636d;
+  --ink-faint: #737783;
   --line: rgba(255, 255, 255, 0.1);
   --line-strong: rgba(255, 255, 255, 0.24);
   --accent: #93a4ff;
@@ -82,6 +86,7 @@
   --s-good-soft: rgba(92, 187, 124, 0.14);
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
   --shadow-lg: 0 18px 50px rgba(0, 0, 0, 0.55);
+  --scrim: rgba(0, 0, 0, 0.6);
 }
 
 [data-theme="bordeaux"] {
@@ -91,7 +96,7 @@
   --surface-3: rgba(40, 20, 24, 0.085);
   --ink: #201417;
   --ink-soft: #6a5258;
-  --ink-faint: #a8939a;
+  --ink-faint: #8c777e;
   --line: rgba(40, 20, 24, 0.14);
   --line-strong: rgba(40, 20, 24, 0.3);
   --accent: #7d2238;
@@ -106,4 +111,5 @@
   --s-good-soft: rgba(63, 115, 64, 0.12);
   --shadow: 0 1px 1px rgba(40, 20, 24, 0.04), 0 4px 14px rgba(40, 20, 24, 0.06);
   --shadow-lg: 0 2px 4px rgba(40, 20, 24, 0.06), 0 18px 44px rgba(40, 20, 24, 0.1);
+  --scrim: rgba(40, 20, 24, 0.28);
 }

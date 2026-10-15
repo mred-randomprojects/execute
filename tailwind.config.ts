@@ -51,6 +51,7 @@ export default {
         "accent-soft": themed("--accent-soft"),
         "btn-bg": themed("--btn-bg"),
         "btn-fg": themed("--btn-fg"),
+        scrim: "var(--scrim)",
         good: themed("--s-good"),
         "good-soft": themed("--s-good-soft"),
         mid: themed("--s-mid"),
