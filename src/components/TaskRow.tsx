@@ -23,6 +23,9 @@ function FocusIcon() {
 }
 
 // Priority is shown as a soft row tint (was a small dot) so it reads at a glance.
+/** Row chips that are nice to have, but not at the cost of the title. */
+const NARROW_HIDDEN = "[@container_(max-width:600px)]:hidden";
+
 // Same colour language as before: 1 = red (most urgent), 2 = amber, 3 = blue.
 const PRIORITY_BG: Record<number, string> = {
   1: "bg-bad-soft",
@@ -361,7 +364,7 @@ export function TaskRow({ task, depth }: { task: Task; depth: number }) {
           aria-label="Peek details"
         >
           <span aria-hidden="true">¶</span>
-          {isFocused && !peeking && <span className="kbd">p</span>}
+          {isFocused && !peeking && <span className={`kbd ${NARROW_HIDDEN}`}>p</span>}
         </button>
       )}
 
@@ -397,7 +400,11 @@ export function TaskRow({ task, depth }: { task: Task; depth: number }) {
         </span>
       )}
 
-      {!editing && !ed.touch && (
+      {/* The id chip and the zoom button live on the focused row only. They
+          used to sit invisible on every row until hovered, which held ~68px
+          of each title back on every row of the list. (⌘k has both too.) On a
+          narrow row the id gives way to the title. */}
+      {!editing && !ed.touch && isFocused && (
         <button
           tabIndex={-1}
           onClick={(e) => {
@@ -405,10 +412,7 @@ export function TaskRow({ task, depth }: { task: Task; depth: number }) {
             e.currentTarget.blur();
             void copyText(task.id);
           }}
-          className={[
-            "mono shrink-0 rounded-sm bg-surface-2 px-1 py-[1px] text-[10px] text-ink-faint transition hover:text-ink",
-            isFocused ? "opacity-100" : "opacity-0 group-hover:opacity-100",
-          ].join(" ")}
+          className={`mono shrink-0 rounded-sm bg-surface-2 px-1 py-[1px] text-[10px] text-ink-faint transition hover:text-ink ${NARROW_HIDDEN}`}
           aria-label={`Task id ${task.id} — click to copy`}
           title={`${task.id} · click to copy`}
         >
@@ -416,7 +420,7 @@ export function TaskRow({ task, depth }: { task: Task; depth: number }) {
         </button>
       )}
 
-      {!ed.touch && (
+      {!ed.touch && isFocused && (
         <button
           tabIndex={-1}
           onClick={(e) => {
@@ -424,7 +428,7 @@ export function TaskRow({ task, depth }: { task: Task; depth: number }) {
             e.currentTarget.blur();
             ed.zoomInto(task.id);
           }}
-          className="grid h-5 w-5 shrink-0 place-items-center rounded-sm text-ink-faint opacity-0 transition hover:text-ink group-hover:opacity-100"
+          className="grid h-5 w-5 shrink-0 place-items-center rounded-sm text-ink-faint transition hover:text-ink"
           aria-label="Zoom into task"
           title="Zoom in (⌥↵)"
         >
@@ -499,7 +503,9 @@ export function TaskRow({ task, depth }: { task: Task; depth: number }) {
           setDropPos(null);
         }}
         className={[
-          "group relative flex gap-2 rounded-sm pr-2 cursor-default select-none",
+          // A size container, so a chip can step aside when the row is narrow
+          // (a small window, the details panel open, a deep subtask).
+          "group relative flex gap-2 rounded-sm pr-2 cursor-default select-none [container-type:inline-size]",
           ed.touch ? "py-2" : "py-[5px]",
           peeking || ed.touch ? "items-start" : "items-center",
           isCurrent
