@@ -76,12 +76,12 @@ const SHUTDOWN_HABIT_HINTS: Array<[string, string]> = [
 const HABITS_HINTS: Array<[string, string]> = [
   ["↑ / ↓", "move"],
   ["← / →", "pick a day"],
-  ["space", "check in · log"],
-  ["↵", "rename · tab cue"],
+  ["space", "check in"],
+  ["↵", "rename"],
   ["n / k", "new habit / KPI"],
-  ["⌥↑↓", "reorder"],
   ["⌫", "archive"],
-  ["⌘k", "target · rest day · more"],
+  ["⌘k", "rest day · more"],
+  ["⌥↑↓", "reorder"],
   ["?", "help"],
 ];
 
@@ -118,14 +118,30 @@ export function StatusBar({
           : view === "trash"
             ? TRASH_HINTS
             : NORMAL_HINTS;
+  // One line, always. On a narrow window the hints that don't fit wrap onto a
+  // second line that is clipped away, instead of growing the bar into the list
+  // (Habits' nine took two lines at the default window size). The last hint is
+  // the way out or the way to the rest (? help, esc, v), so it is pinned right
+  // and never the one that goes.
+  const rest = hints.slice(0, -1);
+  const last = hints[hints.length - 1];
   return (
-    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-line bg-surface px-5 py-2">
-      {hints.map(([keys, label]) => (
-        <span key={label} className="flex items-center gap-1.5 text-[11px] text-ink-faint">
-          <span className="kbd">{keys}</span>
-          {label}
-        </span>
-      ))}
+    <div className="flex items-start gap-4 border-t border-line bg-surface px-5 py-2">
+      <div className="flex h-5 min-w-0 flex-1 flex-wrap content-start items-center gap-x-4 gap-y-2 overflow-hidden">
+        {rest.map((hint) => (
+          <Hint key={hint[1]} hint={hint} />
+        ))}
+      </div>
+      {last != null && <Hint hint={last} />}
     </div>
+  );
+}
+
+function Hint({ hint: [keys, label] }: { hint: [string, string] }) {
+  return (
+    <span className="flex h-5 shrink-0 items-center gap-1.5 whitespace-nowrap text-[11px] text-ink-faint">
+      <span className="kbd">{keys}</span>
+      {label}
+    </span>
   );
 }
