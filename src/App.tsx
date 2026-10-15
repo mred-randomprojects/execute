@@ -3676,7 +3676,14 @@ export function App() {
             />
           )}
         </div>
-        <StatusBar reckoning={reckoningActive} shutdown={shutdownActive} habits={habitsActive} shutdownHabits={shutRow?.kind === "habit"} />
+        <StatusBar
+          reckoning={reckoningActive}
+          board={boardMode && breakdownTask == null}
+          shutdown={shutdownActive}
+          habits={habitsActive}
+          view={view === "trash" ? "trash" : view === "projects" && zoomFocus == null ? "projects" : null}
+          shutdownHabits={shutRow?.kind === "habit"}
+        />
       </main>
 
       {showHelp && <HelpOverlay onClose={() => setShowHelp(false)} />}

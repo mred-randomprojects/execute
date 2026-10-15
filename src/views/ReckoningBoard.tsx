@@ -383,24 +383,6 @@ export function ReckoningBoard({
           </div>
         </section>
       </div>
-
-      <footer className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-line pt-3 text-[11px] text-ink-faint">
-        {[
-          ["→", "to today"],
-          ["←", "back to leftovers"],
-          ["tab", "switch column"],
-          ["s", "postpone"],
-          ["e", "done"],
-          ["d", "drop"],
-          ["1 – 8", "estimate"],
-          ["v", "cards"],
-        ].map(([keys, label]) => (
-          <span key={label} className="flex items-center gap-1.5">
-            <span className="kbd">{keys}</span>
-            {label}
-          </span>
-        ))}
-      </footer>
     </div>
   );
 }
