@@ -366,9 +366,10 @@ export function streak(h: Habit, today: ISODate): Streak {
   return { count, unit: "week" };
 }
 
+/** "12d" / "3w" — it sits under a "streak" column head, which says the rest. */
 export function streakLabel(s: Streak): string {
   if (s.count === 0) return "";
-  return s.unit === "day" ? `${s.count}d streak` : `${s.count}w streak`;
+  return s.unit === "day" ? `${s.count}d` : `${s.count}w`;
 }
 
 // ─── The one line of coaching ────────────────────────────────────────

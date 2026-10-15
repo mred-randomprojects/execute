@@ -312,14 +312,13 @@ function HabitRow({
       </div>
 
       <span
-        className="mono w-[52px] shrink-0 text-right text-[11px] text-ink-soft"
+        className="mono w-[36px] shrink-0 text-right text-[11px] text-ink-soft"
         title="Done this week, of this week's target"
       >
         {week.done}/{week.target}
-        <span className="text-ink-faint"> wk</span>
       </span>
       <StrengthMeter value={strength(habit, today)} />
-      <span className="mono w-[64px] shrink-0 text-right text-[11px] text-ink-soft" title={run.unit === "day" ? "Done days in a row — one miss is forgiven, two in a row end it" : "Weeks in a row that met the target"}>
+      <span className="mono w-[40px] shrink-0 whitespace-nowrap text-right text-[11px] text-ink-soft" title={run.unit === "day" ? "Done days in a row — one miss is forgiven, two in a row end it" : "Weeks in a row that met the target"}>
         {streakLabel(run)}
       </span>
     </div>
@@ -672,12 +671,12 @@ export function HabitsView({
               </span>
             ))}
           </div>
-          <span className="w-[52px] shrink-0 text-right">week</span>
+          <span className="w-[36px] shrink-0 text-right">week</span>
           <span className="w-[32px] shrink-0 text-right lg:w-[84px]">
             <span className="hidden lg:inline">strength</span>
             <span className="lg:hidden" title="strength">str</span>
           </span>
-          <span className="w-[64px] shrink-0 text-right">streak</span>
+          <span className="w-[40px] shrink-0 text-right">streak</span>
         </div>
       )}
 
