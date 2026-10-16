@@ -3,80 +3,22 @@ import { nanoid } from "nanoid";
 import type {
   ActionLogEntry,
   AppState,
-  DayRecord,
-  Habit,
   HabitId,
   HabitMark,
   HabitMeasure,
   Horizon,
   ISODate,
-  LogAction,
-  LogEntry,
   Presence,
   ProjectId,
-  Recurrence,
   RecurrenceId,
   RecurrenceRule,
-  Task,
   TaskId,
   TaskPriority,
   ThemeName,
-  Tombstone,
-  TrashedTask,
-  WontDo,
 } from "../types";
-import {
-  ACTION_LOG_LIMIT,
-  DEFAULT_PROJECT_ID,
-  MAX_DAY_RECORDS,
-  PROJECT_COLORS,
-  emptyState,
-  pruneTombstones,
-} from "../types";
-import { placeTasks } from "./placement";
-import { widenStaleParents } from "./bounds";
-import { jsonEqual } from "../sync/merge";
-import {
-  assignProjectDeep,
-  cloneWithNewIds,
-  findById,
-  findParentId,
-  getAncestorPath,
-  indentTask,
-  isOpen,
-  indentUnder,
-  makeTask,
-  mapById,
-  moveSibling,
-  normalizeChildProjects,
-  outdentTask,
-  relocateAfter,
-  relocateAsChild,
-  relocateTask,
-  removeById,
-  reorderSelected,
-  reorderSelectedAcrossProjects,
-  setProjectForIds,
-} from "./tasks";
-import { normalizeRule } from "./recurrence";
+import { ACTION_LOG_LIMIT, DEFAULT_PROJECT_ID, emptyState } from "../types";
+import { findById } from "./tasks";
 import { rebaseStep } from "./rebase";
-import { stampTask } from "./clocks";
-import { noteProgress, pauseWork, settleWork, startWork, stopAll, stopWork, workingOn } from "./work";
-import {
-  everyLabel,
-  formatValue,
-  moveHabitRank,
-  normalizePerWeek,
-  rangeLabel,
-  sameMeasure,
-  habitLastTouched,
-  sortHabits,
-  stampHabit,
-  withMark,
-  withValue,
-} from "./habits";
-import { horizonWords } from "../selectors";
-import { todayISO } from "./dates";
 import {
   coerceState,
   corruptStore,
@@ -85,6 +27,23 @@ import {
   saveRaw,
   saveRawSync,
 } from "./persistence";
+import { commit, commitRebased, todayFor } from "../core/commit";
+import {
+  applyCommand,
+  describeCommand,
+  toggleWorkCommand,
+  type Command,
+  type CommandContext,
+  type DayTally,
+  type PostponeTarget,
+} from "../core/commands";
+
+export type { PostponeTarget } from "../core/commands";
+
+// The desktop's shell around the core (src/core): the one in-memory state, its
+// file on disk, undo/redo, and React's subscription. What a change *does*
+// lives in core/commands, and what every change goes through in core/commit;
+// this file only runs them against the state it holds.
 
 // ─── Singleton store ────────────────────────────────────────────────
 
@@ -135,7 +94,7 @@ function notify() {
 
 // Optional hook fired right after each local persist. Cloud sync registers here
 // (see src/sync/desktopSync) so it mirrors EVERY change without any per-mutation
-// wiring — because it rides the single save choke point that update()/undo() all
+// wiring — because it rides the single save choke point that dispatch()/undo() all
 // funnel through, no mutation can silently skip a sync.
 let onPersist: (() => void) | null = null;
 export function setCloudSync(fn: (() => void) | null): void {
@@ -158,7 +117,7 @@ export function subscribeReady(cb: () => void): () => void {
 
 /**
  * Adopt whole state pulled from the cloud (the PULL half of two-way sync).
- * Deliberately does NOT go through update()/scheduleSave's `onPersist` hook, so
+ * Deliberately does NOT go through dispatch()/scheduleSave's `onPersist` hook, so
  * adopting a remote snapshot never schedules a push back — that would echo
  * forever. We still persist to local disk (durability) and notify subscribers.
  * Undo history is left intact: it holds the user's own edit steps, which a
@@ -308,252 +267,6 @@ function getSnapshot(): StoreSnapshot {
   return snapshot;
 }
 
-// ─── Automatic per-task stamping ────────────────────────────────────
-//
-// Cloud sync merges each task field group by field group, every group by its
-// own clock (see store/clocks, src/sync/merge). Rather than bump the stamps at
-// each of the dozens of mutation sites (easy to forget), we diff the whole tree
-// once at the single update() choke point: every group of a task's *own*
-// fields that changed gets its clock moved to `now`, and so does `updatedAt`.
-// Structural sharing is preserved, so untouched subtrees keep their identity
-// (and don't re-render).
-
-function indexById(tasks: Task[], into: Map<TaskId, Task>): void {
-  for (const t of tasks) {
-    into.set(t.id, t);
-    indexById(t.children, into);
-  }
-}
-
-function stampNode(node: Task, prevById: Map<TaskId, Task>, now: number): Task {
-  let children = node.children;
-  if (children.length > 0) {
-    const mapped = children.map((c) => stampNode(c, prevById, now));
-    if (mapped.some((c, i) => c !== children[i])) children = mapped;
-  }
-  // Each changed field group gets its clock, and updatedAt moves — never
-  // behind the version being edited: that version may carry another device's
-  // clock, and if it runs ahead, `now` would lose the merge to it.
-  return stampTask(prevById.get(node.id), children === node.children ? node : { ...node, children }, now);
-}
-
-// ─── Automatic tombstone bookkeeping ────────────────────────────────
-//
-// Cloud sync cannot tell "the cloud has X and I've never seen it" (the other
-// device added it → graft it back) from "the cloud has X and I deleted it"
-// (→ drop it) unless something says X was deleted. That record is a Tombstone,
-// and — exactly like the updatedAt stamping above — it is written once at the
-// choke point rather than at each delete site, because the deletes that were
-// getting lost were the ones nobody thought of as deletes: undoing a *create*,
-// and emptying the Trash (which threw away the only record there was).
-
-/** Every id that currently exists: task nodes at any depth, plus recurrence and habit ids. */
-function liveIds(s: AppState): Set<string> {
-  const ids = new Set<string>();
-  const walk = (list: Task[]) => {
-    for (const t of list) {
-      ids.add(t.id);
-      walk(t.children);
-    }
-  };
-  walk(s.tasks);
-  // Template *nodes* are deliberately not counted: they can't be deleted on
-  // their own, only edited, and the recurrence is what the merge unions by id.
-  for (const r of s.recurrences) ids.add(r.id);
-  for (const h of s.habits) ids.add(h.id);
-  return ids;
-}
-
-/**
- * Record what just disappeared, and un-record what just came back.
- *
- * Both sets are carried forward — the current one *and* whatever `next`
- * brings. The current one, because undo restores a whole snapshot: a deletion
- * recorded *after* the step being undone must not be forgotten just because
- * that step predates it. (Same reasoning as the action log, which undo also
- * carries forward rather than rewinding.) And `next`'s, because a transform
- * may record deletions of its own — emptying the Trash marks its entries
- * purged, and dropping that would let the other device's copy refill it.
- *
- * An id that reappears — a restore from the Trash, an undone delete — drops
- * its tombstone, since it plainly isn't deleted any more. An id back *in the
- * Trash* (an undone "Empty the trash") keeps its deletion but loses `purged`
- * locally, so this device doesn't show a Trash its own merge would then empty.
- */
-function withTombstones(prev: AppState, next: AppState): AppState {
-  const now = Date.now();
-  const carried =
-    next.tombstones === prev.tombstones
-      ? prev.tombstones
-      : pruneTombstones([...next.tombstones, ...prev.tombstones], now);
-  const inTrash = new Set<string>(next.trash.map((e) => e.task.id));
-  const treeMoved =
-    next.tasks !== prev.tasks || next.recurrences !== prev.recurrences || next.habits !== prev.habits;
-  const after = treeMoved ? liveIds(next) : null;
-  const gone: Tombstone[] = [];
-  if (after != null) {
-    // Leaving the tree is a deletion, not a purge — a trashed task keeps its
-    // restorable copy, and an undone create never had one to keep.
-    for (const id of liveIds(prev)) if (!after.has(id)) gone.push({ id, deletedAt: now, purged: false });
-  }
-  let changed = gone.length > 0 || carried !== next.tombstones;
-  const kept: Tombstone[] = [];
-  for (const t of carried) {
-    if (after?.has(t.id) === true) {
-      changed = true;
-      continue;
-    }
-    if (t.purged && inTrash.has(t.id)) {
-      changed = true;
-      kept.push({ ...t, purged: false });
-      continue;
-    }
-    kept.push(t);
-  }
-  if (!changed) return next;
-  return { ...next, tombstones: gone.length > 0 ? pruneTombstones([...gone, ...kept], now) : kept };
-}
-
-/**
- * Keep the deletion on record when the restorable copy is thrown away, so
- * "Delete for good" and "Empty the trash" actually stick. Without this the
- * merge read the other device's Trash back and refilled it.
- *
- * Stamped `now` rather than with the original deletion time: the record's job is
- * to out-vote a stale copy elsewhere, and a Trash entry old enough to have aged
- * out of {@link pruneTombstones} would otherwise be buried with no record at all.
- * The cost is that emptying the Trash also beats an edit another device made to
- * that task in the meantime — which is the right way round for a deliberate
- * "delete this for good".
- */
-function buryTrashed(s: AppState, entries: readonly TrashedTask[]): Tombstone[] {
-  const now = Date.now();
-  return pruneTombstones(
-    [
-      ...entries.map((e) => ({ id: e.task.id as string, deletedAt: now, purged: true })),
-      ...s.tombstones,
-    ],
-    now,
-  );
-}
-
-// ─── Placement + project/recurrence clocks ──────────────────────────
-//
-// The rest of what the merge needs, written at the same choke point: every
-// task's rank/movedAt (store/placement), and `updatedAt` on any project or
-// recurrence whose content changed. Deliberately generic — compare, don't
-// enumerate — so a new project or recurrence field can't be forgotten.
-
-function stampChanged<T extends { id: string; updatedAt: number }>(
-  prev: readonly T[],
-  next: T[],
-  now: number,
-): T[] {
-  if (next === prev) return next;
-  const before = new Map(prev.map((x) => [x.id, x]));
-  let changed = false;
-  const out = next.map((x) => {
-    const was = before.get(x.id);
-    if (was === x) return x;
-    if (was != null && jsonEqual({ ...was, updatedAt: 0 }, { ...x, updatedAt: 0 })) return x;
-    // Never behind the version being replaced (see stampNode).
-    const stamp = Math.max(now, (was?.updatedAt ?? -Infinity) + 1);
-    if (x.updatedAt >= stamp) return x;
-    changed = true;
-    return { ...x, updatedAt: stamp };
-  });
-  return changed ? out : next;
-}
-
-/** Habits carry two clocks — own fields and per-day check-ins (store/habits). */
-function stampHabits(prev: readonly Habit[], next: Habit[], now: number): Habit[] {
-  if (next === prev) return next;
-  const before = new Map(prev.map((h) => [h.id, h]));
-  let changed = false;
-  const out = next.map((h) => {
-    const stamped = stampHabit(before.get(h.id), h, now);
-    if (stamped !== h) changed = true;
-    return stamped;
-  });
-  return changed ? out : next;
-}
-
-function withSyncStamps(prev: AppState, next: AppState): AppState {
-  const now = Date.now();
-  const tasks = placeTasks(prev.tasks, next.tasks, now);
-  const projects = stampChanged(prev.projects, next.projects, now);
-  const recurrences = stampChanged(prev.recurrences, next.recurrences, now);
-  const habits = stampHabits(prev.habits, next.habits, now);
-  if (
-    tasks === next.tasks &&
-    projects === next.projects &&
-    recurrences === next.recurrences &&
-    habits === next.habits
-  ) {
-    return next;
-  }
-  return { ...next, tasks, projects, recurrences, habits };
-}
-
-/**
- * Every task whose own fields differ from `prev`, stamped (store/clocks): the
- * clocks of the field groups that changed, and `updatedAt` — each past the
- * version it replaces, which may carry another device's clock that runs ahead.
- */
-function stampTasks(prev: AppState, next: AppState): AppState {
-  if (next.tasks === prev.tasks) return next;
-  const now = Date.now();
-  const prevById = new Map<TaskId, Task>();
-  indexById(prev.tasks, prevById);
-  const tasks = next.tasks.map((t) => stampNode(t, prevById, now));
-  return { ...next, tasks };
-}
-
-/**
- * What undo or redo brings back (a task out of the Trash, a deleted habit or
- * recurrence) has to out-stamp its own deletion record, or the merge reads the
- * record as the newer word and deletes it again. Stamping `now` does that
- * unless the record landed in the same millisecond, or came from a clock that
- * runs ahead — so the stamp goes past the record, whatever it says.
- */
-function pastDeletions(next: AppState, current: AppState): AppState {
-  const deletedAt = new Map<string, number>();
-  const note = (id: string, at: number) => deletedAt.set(id, Math.max(deletedAt.get(id) ?? -Infinity, at));
-  for (const t of current.tombstones) note(t.id, t.deletedAt);
-  for (const e of current.trash) note(e.task.id, e.deletedAt);
-  if (deletedAt.size === 0) return next;
-  const wasLive = liveIds(current);
-  const floor = (id: string): number | null => (wasLive.has(id) ? null : (deletedAt.get(id) ?? null));
-  let changed = false;
-  const walk = (nodes: Task[]): Task[] => {
-    let any = false;
-    const out = nodes.map((t) => {
-      const children = t.children.length > 0 ? walk(t.children) : t.children;
-      const d = floor(t.id);
-      const updatedAt = d != null && d >= Math.max(t.updatedAt, t.movedAt) ? d + 1 : t.updatedAt;
-      if (children === t.children && updatedAt === t.updatedAt) return t;
-      any = true;
-      return { ...t, children, updatedAt };
-    });
-    return any ? out : nodes;
-  };
-  const tasks = walk(next.tasks);
-  const habits = next.habits.map((h) => {
-    const d = floor(h.id);
-    if (d == null || d < habitLastTouched(h)) return h;
-    return { ...h, updatedAt: d + 1 };
-  });
-  const recurrences = next.recurrences.map((r) => {
-    const d = floor(r.id);
-    if (d == null || d < r.updatedAt) return r;
-    return { ...r, updatedAt: d + 1 };
-  });
-  changed =
-    tasks !== next.tasks ||
-    habits.some((h, i) => h !== next.habits[i]) ||
-    recurrences.some((r, i) => r !== next.recurrences[i]);
-  return changed ? { ...next, tasks, habits, recurrences } : next;
-}
 
 /** Prepend one line to the action history, capped. `log` is the trail to extend
  *  — passed explicitly because undo restores an old snapshot but must carry the
@@ -566,103 +279,36 @@ function withHistory(
   return { ...s, actionLog: [entry, ...log].slice(0, ACTION_LOG_LIMIT) };
 }
 
-/** No settled task left in progress, and only one in progress (see store/work). */
-function withSettledWork(prev: AppState, s: AppState): AppState {
-  if (s.tasks === prev.tasks) return s;
-  const tasks = settleWork(s.tasks, Date.now());
-  return tasks === s.tasks ? s : { ...s, tasks };
-}
-
-/** The state with no parent left stranded behind its open children (see bounds). */
-function withBoundedParents(s: AppState): AppState {
-  const tasks = widenStaleParents(s.tasks, todayISO(s.devDateOverride));
-  return tasks === s.tasks ? s : { ...s, tasks };
+function context(): CommandContext {
+  return { now: Date.now(), newId: () => nanoid() };
 }
 
 /**
- * Apply a transform. `label` is the sentence this change goes down as in the
- * history (`Complete “Buy milk”`) — and passing it is what makes the change
- * undoable. `null` means an incidental change that is neither undoable nor
- * worth a history line: preferences, dev-date, rollover bookkeeping.
- *
- * The label is required rather than defaulted so that every new mutation has to
- * answer "what do I call this, and should undo reach it?" at the call site.
+ * Run a command against the state (core/commands), commit it (core/commit),
+ * and — when its history line isn't `null` — record it as an undo step. The
+ * line is what makes a change undoable: `null` means an incidental change
+ * (preferences, dev date, rollover bookkeeping), neither undoable nor worth a
+ * history line.
  */
-function update(fn: (s: AppState) => AppState, label: string | null): void {
+export function dispatch(command: Command): void {
   const prev = state;
-  // Every write passes through the parent-date bound (see store/bounds): each
-  // scheduling surface in the app writes dates onto leaves, so without this a
-  // carried-forward subtask strands its parent on a day that has gone, with
-  // nothing left in the app able to move it. Applied here rather than at the
-  // dozen schedule sites for the same reason updatedAt is — one choke point
-  // can't be forgotten by the next one — and it is idempotent and
-  // structure-sharing, so a write that doesn't break the bound pays nothing.
-  // (The day's own rollover bookkeeping is a write too, which is what repairs a
-  // parent that went stale overnight without the user touching anything.)
-  // Undo deliberately doesn't run it (applyStep puts back exactly what the
-  // step changed): an undo that "helpfully" kept part of the change isn't one.
-  const raw = fn(prev);
-  // Work settles here for the same reason: completing, declining or blocking a
-  // task has a dozen doors (the outline, the Reckoning, Shutdown, the board,
-  // the palette), and every one of them has to stop its timer.
-  const produced = raw === prev ? raw : withSettledWork(prev, withBoundedParents(raw));
+  const ctx = context();
+  const next = commit(prev, applyCommand(prev, command, ctx), ctx.now);
   // A guard that bailed (`markWontDo` on an already-skipped task, and friends)
-  // returns `s` untouched. Stop here: an undo step that does nothing, and a
-  // history line for a change that never happened, are both worse than silence.
-  if (produced === prev) return;
-
-  const next = withTombstones(prev, withSyncStamps(prev, stampTasks(prev, produced)));
+  // changes nothing. Stop here: an undo step that does nothing, and a history
+  // line for a change that never happened, are both worse than silence.
+  if (next === prev) return;
+  const label = describeCommand(prev, command, ctx.now);
   if (label == null) {
     state = next;
   } else {
     const id = nanoid();
-    const at = Date.now();
-    state = withHistory(next, next.actionLog, { id, label, kind: "do", at });
-    undoStack = [{ id, label, at, before: prev, after: state }, ...undoStack].slice(0, MAX_UNDO);
+    state = withHistory(next, next.actionLog, { id, label, kind: "do", at: ctx.now });
+    undoStack = [{ id, label, at: ctx.now, before: prev, after: state }, ...undoStack].slice(0, MAX_UNDO);
     redoStack = []; // a new action forks the timeline — nothing left to redo
   }
   notify();
   scheduleSave();
-}
-
-function updateTasks(fn: (tasks: Task[]) => Task[], label: string | null): void {
-  update((s) => ({ ...s, tasks: fn(s.tasks) }), label);
-}
-
-// ─── History labels ─────────────────────────────────────────────────
-//
-// Every undoable mutation names itself. Kept here (at the effect, not at the
-// keybinding) so a change made with the mouse, the palette, or a keystroke all
-// land the same line — there is no path into the store that skips this.
-
-const LABEL_TITLE_MAX = 40;
-
-/** A task title, trimmed and quoted for a history line. */
-function quoteText(text: string): string {
-  const clean = text.trim();
-  if (clean === "") return "an untitled task";
-  const short =
-    clean.length > LABEL_TITLE_MAX ? `${clean.slice(0, LABEL_TITLE_MAX - 1)}…` : clean;
-  return `“${short}”`;
-}
-
-function quote(task: Task | null | undefined): string {
-  return quoteText(task?.text ?? "");
-}
-
-/** `New task “Buy milk”` — or just `New task`, for something not yet named. */
-function titled(prefix: string, text: string): string {
-  return text.trim() === "" ? prefix : `${prefix} ${quoteText(text)}`;
-}
-
-/** `“Buy milk”` for a single id, `3 tasks` for several — a line's subject. */
-function subject(ids: TaskId[], tasks: Task[] = state.tasks): string {
-  if (ids.length === 1) return quote(findById(tasks, ids[0]));
-  return `${ids.length} tasks`;
-}
-
-function topLevelIdFor(tasks: Task[], id: TaskId): TaskId {
-  return getAncestorPath(tasks, id)[0]?.id ?? id;
 }
 
 // ─── Lifecycle ──────────────────────────────────────────────────────
@@ -773,22 +419,22 @@ export function useStore(): StoreSnapshot {
 // ─── App-level settings ─────────────────────────────────────────────
 
 export function setTheme(theme: ThemeName): void {
-  update((s) => ({ ...s, theme }), null);
+  dispatch({ type: "setTheme", theme });
 }
 
 export function setDevDateOverride(date: ISODate | null): void {
-  update((s) => ({ ...s, devDateOverride: date }), null);
+  dispatch({ type: "setDevDateOverride", date });
 }
 
 export function markOpened(date: ISODate): void {
-  update((s) => ({ ...s, lastOpenedDate: date }), null);
+  dispatch({ type: "markOpened", date });
 }
 
 /**
  * Upsert today's {@link DayRecord} — the streak's raw material. Called from a
- * render effect on every change, so it MUST return the state untouched when
- * nothing actually moved: `update()` bails on an identical object, and that bail
- * is the only thing standing between this and an infinite render loop.
+ * render effect on every change, so it MUST change nothing when nothing
+ * actually moved: dispatch bails on an unchanged state, and that bail is the
+ * only thing standing between this and an infinite render loop.
  *
  * Every field is a HIGH-WATER MARK, which is the whole reason this is stored
  * rather than counted from the tree on demand. The live tally shrinks as tasks
@@ -801,58 +447,28 @@ export function markOpened(date: ISODate): void {
  * it first reached zero, and taking on something new at 6pm is new work rather
  * than a retraction.
  */
-export function recordDay(
-  date: ISODate,
-  tally: { committed: number; done: number; doneMinutes: number; skipped: number },
-  closed: boolean
-): void {
-  update((s) => {
-    const prev = s.days.find((d) => d.date === date);
-    const next: DayRecord = {
-      date,
-      committed: Math.max(prev?.committed ?? 0, tally.committed),
-      done: Math.max(prev?.done ?? 0, tally.done),
-      doneMinutes: Math.max(prev?.doneMinutes ?? 0, tally.doneMinutes),
-      skipped: Math.max(prev?.skipped ?? 0, tally.skipped),
-      closedAt: prev?.closedAt ?? (closed ? Date.now() : null),
-    };
-    if (
-      prev != null &&
-      prev.committed === next.committed &&
-      prev.done === next.done &&
-      prev.doneMinutes === next.doneMinutes &&
-      prev.skipped === next.skipped &&
-      prev.closedAt === next.closedAt
-    ) {
-      return s;
-    }
-    const others = s.days.filter((d) => d.date !== date);
-    const days = [...others, next]
-      .sort((a, b) => a.date.localeCompare(b.date))
-      .slice(-MAX_DAY_RECORDS);
-    return { ...s, days };
-  }, null);
+export function recordDay(date: ISODate, tally: DayTally, closed: boolean): void {
+  dispatch({ type: "recordDay", date, tally, closed });
 }
 
 /** Set the daily capacity budget, in blocks (clamped to ≥ 1). Not undoable. */
 export function setDailyCapacityBlocks(blocks: number): void {
-  const clamped = Math.max(1, Math.round(blocks));
-  update((s) => ({ ...s, dailyCapacityBlocks: clamped }), null);
+  dispatch({ type: "setDailyCapacityBlocks", blocks });
 }
 
 /** Choose how the reckoning renders (board vs. card review). Not undoable. */
 export function setBoardPreferred(preferred: boolean): void {
-  update((s) => ({ ...s, boardPreferred: preferred }), null);
+  dispatch({ type: "setBoardPreferred", preferred });
 }
 
 /** Render every task row peeked (title unwrapped + notes inline). Not undoable. */
 export function setWrapAll(on: boolean): void {
-  update((s) => ({ ...s, wrapAll: on }), null);
+  dispatch({ type: "setWrapAll", on });
 }
 
 /** Hide (or show) completed and won't-do tasks. A view preference, not undoable. */
 export function setHideCompleted(on: boolean): void {
-  update((s) => (s.hideCompleted === on ? s : { ...s, hideCompleted: on }), null);
+  dispatch({ type: "setHideCompleted", on });
 }
 
 /**
@@ -861,24 +477,19 @@ export function setHideCompleted(on: boolean): void {
  * on cloud merge.
  */
 export function setPresence(patch: Partial<Presence>): void {
-  update((s) => ({ ...s, presence: { ...s.presence, ...patch } }), null);
+  dispatch({ type: "setPresence", patch });
 }
 
 // ─── In progress (store/work) ───────────────────────────────────────
 
 /** Start or resume work on a task; whatever else was in progress stops. */
 export function startWorking(id: TaskId): void {
-  const t = findById(state.tasks, id);
-  const verb = t?.inProgress != null ? "Resume" : "Start";
-  update((s) => ({ ...s, tasks: startWork(s.tasks, id, Date.now()) }), `${verb} work on ${quote(t)}`);
+  dispatch({ type: "startWork", id });
 }
 
 /** Stop working on a task. The time so far stays on it. */
 export function stopWorking(id: TaskId): void {
-  update(
-    (s) => ({ ...s, tasks: stopWork(s.tasks, id, Date.now()) }),
-    `Stop work on ${quote(findById(state.tasks, id))}`,
-  );
+  dispatch({ type: "stopWork", id });
 }
 
 /**
@@ -886,20 +497,10 @@ export function stopWorking(id: TaskId): void {
  * Returns what it did, for the status line.
  */
 export function toggleWorking(id: TaskId): "started" | "resumed" | "stopped" | null {
-  const t = findById(state.tasks, id);
-  if (t == null || !isOpen(t) || t.waitingOn != null) return null;
-  const current = workingOn(state.tasks);
-  if (current?.id === id && t.inProgress != null) {
-    const last = t.sessions[t.sessions.length - 1];
-    if (last != null && last.end == null) {
-      stopWorking(id);
-      return "stopped";
-    }
-    startWorking(id);
-    return "resumed";
-  }
-  startWorking(id);
-  return "started";
+  const toggle = toggleWorkCommand(state, id);
+  if (toggle == null) return null;
+  dispatch(toggle.command);
+  return toggle.result;
 }
 
 /**
@@ -909,19 +510,12 @@ export function toggleWorking(id: TaskId): "started" | "resumed" | "stopped" | n
  * the wrong number.
  */
 export function pauseWorkAt(at: number): void {
-  update((s) => {
-    const tasks = pauseWork(s.tasks, at);
-    return tasks === s.tasks ? s : { ...s, tasks };
-  }, null);
+  dispatch({ type: "pauseWorkAt", at });
 }
 
 /** "Currently: …" on the task in progress — one dated line on its trail. */
 export function setProgressNote(id: TaskId, text: string): void {
-  const clean = text.trim();
-  update(
-    (s) => ({ ...s, tasks: noteProgress(s.tasks, id, clean, Date.now()) }),
-    clean === "" ? `Clear what you’re on in ${quote(findById(state.tasks, id))}` : `Currently ${quoteText(clean)}`,
-  );
+  dispatch({ type: "setProgressNote", id, text });
 }
 
 /**
@@ -929,16 +523,7 @@ export function setProgressNote(id: TaskId, text: string): void {
  * count and stamps "now"). A usage stat, like theme — not undoable.
  */
 export function recordCommandUse(id: string): void {
-  update((s) => {
-    const prev = s.commandUsage[id];
-    return {
-      ...s,
-      commandUsage: {
-        ...s.commandUsage,
-        [id]: { count: (prev?.count ?? 0) + 1, lastUsedAt: Date.now() },
-      },
-    };
-  }, null);
+  dispatch({ type: "recordCommandUse", commandId: id });
 }
 
 /**
@@ -946,57 +531,10 @@ export function recordCommandUse(id: string): void {
  * so it falls back to its default position in the palette. No-op if unused.
  */
 export function resetCommandRanking(id: string): void {
-  update((s) => {
-    if (s.commandUsage[id] == null) return s;
-    const next = { ...s.commandUsage };
-    delete next[id];
-    return { ...s, commandUsage: next };
-  }, null);
+  dispatch({ type: "resetCommandRanking", commandId: id });
 }
 
 // ─── Insert ─────────────────────────────────────────────────────────
-
-function insertAfterSibling(tasks: Task[], afterId: TaskId | null, newTask: Task): Task[] {
-  if (afterId == null) return [...tasks, newTask];
-  const parentId = findParentId(tasks, afterId);
-  if (parentId == null) {
-    const idx = tasks.findIndex((t) => t.id === afterId);
-    const r = [...tasks];
-    r.splice(idx + 1, 0, newTask);
-    return r;
-  }
-  return mapById(tasks, parentId, (p) => {
-    const idx = p.children.findIndex((c) => c.id === afterId);
-    const ch = [...p.children];
-    ch.splice(idx + 1, 0, newTask);
-    return { ...p, children: ch };
-  });
-}
-
-function insertAtProjectStart(
-  tasks: Task[],
-  projects: AppState["projects"],
-  projectId: ProjectId,
-  newTask: Task
-): Task[] {
-  const existingProjectTaskIndex = tasks.findIndex((task) => task.projectId === projectId);
-  if (existingProjectTaskIndex !== -1) {
-    const next = [...tasks];
-    next.splice(existingProjectTaskIndex, 0, newTask);
-    return next;
-  }
-
-  const order = new Map(projects.map((project, index) => [project.id, index]));
-  const targetIndex = order.get(projectId) ?? 0;
-  const laterProjectTaskIndex = tasks.findIndex(
-    (task) => (order.get(task.projectId) ?? Number.MAX_SAFE_INTEGER) > targetIndex
-  );
-  if (laterProjectTaskIndex === -1) return [...tasks, newTask];
-
-  const next = [...tasks];
-  next.splice(laterProjectTaskIndex, 0, newTask);
-  return next;
-}
 
 /** Create a sibling after `afterId` (or append to root when null). */
 export function addTaskAfter(
@@ -1005,13 +543,9 @@ export function addTaskAfter(
   plannedFor: ISODate | null = null,
   projectId?: ProjectId
 ): TaskId {
-  const after = afterId == null ? null : findById(state.tasks, afterId);
-  const t = {
-    ...makeTask(text, projectId ?? after?.projectId ?? DEFAULT_PROJECT_ID),
-    plannedFor,
-  };
-  updateTasks((tasks) => insertAfterSibling(tasks, afterId, t), titled("New task", text));
-  return t.id;
+  const id = nanoid() as TaskId;
+  dispatch({ type: "addTaskAfter", id, afterId, text, plannedFor, projectId });
+  return id;
 }
 
 export function addTaskAtProjectStart(
@@ -1019,12 +553,9 @@ export function addTaskAtProjectStart(
   text: string,
   plannedFor: ISODate | null = null
 ): TaskId {
-  const t = { ...makeTask(text, projectId), plannedFor };
-  update(
-    (s) => ({ ...s, tasks: insertAtProjectStart(s.tasks, s.projects, projectId, t) }),
-    titled("New task", text),
-  );
-  return t.id;
+  const id = nanoid() as TaskId;
+  dispatch({ type: "addTaskAtProjectStart", id, projectId, text, plannedFor });
+  return id;
 }
 
 /** Append a child to `parentId`. Used by the breakdown flow. */
@@ -1033,123 +564,39 @@ export function addChild(
   text: string,
   plannedFor: ISODate | null = null
 ): TaskId {
-  const parent = findById(state.tasks, parentId);
-  const child = {
-    ...makeTask(text, parent?.projectId ?? DEFAULT_PROJECT_ID),
-    plannedFor,
-  };
-  updateTasks(
-    (tasks) => mapById(tasks, parentId, (p) => ({ ...p, children: [...p.children, child] })),
-    `New subtask of ${quote(parent)}`,
-  );
-  return child.id;
+  const id = nanoid() as TaskId;
+  dispatch({ type: "addChild", id, parentId, text, plannedFor });
+  return id;
 }
 
 // ─── Projects ───────────────────────────────────────────────────────
 
-function nextProjectColor(projectCount: number): string {
-  return PROJECT_COLORS[projectCount % PROJECT_COLORS.length];
-}
-
 export function createProject(name: string): ProjectId {
   const id = nanoid() as ProjectId;
-  const cleanName = name.trim() || "New project";
-  update((s) => ({
-    ...s,
-    projects: [
-      ...s.projects,
-      {
-        id,
-        name: cleanName,
-        color: nextProjectColor(s.projects.length),
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-      },
-    ],
-  }), titled("New project", cleanName));
+  dispatch({ type: "createProject", id, name });
   return id;
 }
 
 export function renameProject(id: ProjectId, name: string): void {
-  const cleanName = name.trim();
-  if (cleanName === "") return;
-  update((s) => ({
-    ...s,
-    projects: s.projects.map((project) =>
-      project.id === id ? { ...project, name: cleanName } : project
-    ),
-  }), titled("Rename project to", cleanName));
+  dispatch({ type: "renameProject", id, name });
 }
 
 export function cycleProjectColor(id: ProjectId): void {
-  update((s) => ({
-    ...s,
-    projects: s.projects.map((project) => {
-      if (project.id !== id) return project;
-      const i = PROJECT_COLORS.indexOf(project.color as (typeof PROJECT_COLORS)[number]);
-      return { ...project, color: PROJECT_COLORS[(i + 1) % PROJECT_COLORS.length] };
-    }),
-  }), "Change a project’s colour");
+  dispatch({ type: "cycleProjectColor", id });
 }
 
 // ─── Mutate ─────────────────────────────────────────────────────────
 
 export function setText(id: TaskId, text: string): void {
-  const before = findById(state.tasks, id);
-  // A brand-new row starts empty, so its first commit is a naming, not a rename.
-  const named = (before?.text ?? "").trim() !== "";
-  const label =
-    text.trim() === ""
-      ? `Clear the title of ${quote(before)}`
-      : `${named ? "Rename" : "Name"} ${quoteText(text)}`;
-  updateTasks((tasks) => mapById(tasks, id, (t) => ({ ...t, text })), label);
+  dispatch({ type: "setText", id, text });
 }
 
 export function setNotes(id: TaskId, notes: string): void {
-  updateTasks(
-    (tasks) => mapById(tasks, id, (t) => ({ ...t, notes })),
-    `Edit the notes on ${quote(findById(state.tasks, id))}`,
-  );
-}
-
-function makeLog(
-  s: AppState,
-  task: Task,
-  action: LogAction,
-  reason: string | null
-): LogEntry {
-  return {
-    id: nanoid(),
-    taskId: task.id,
-    taskText: task.text,
-    action,
-    reason,
-    at: Date.now(),
-    date: todayISO(s.devDateOverride),
-  };
+  dispatch({ type: "setNotes", id, notes });
 }
 
 export function toggleComplete(id: TaskId): void {
-  const before = findById(state.tasks, id);
-  const willComplete = before != null && !before.completed;
-  update((s) => {
-    const t = findById(s.tasks, id);
-    if (t == null) return s;
-    const completed = !t.completed;
-    return {
-      ...s,
-      tasks: mapById(s.tasks, id, (x) => ({
-        ...x,
-        completed,
-        completedAt: completed ? Date.now() : null,
-        // Completing resolves the task positively — clear any "won't do", and
-        // any wait: a finished task isn't blocked on anyone.
-        wontDo: completed ? null : x.wontDo,
-        waitingOn: completed ? null : x.waitingOn,
-      })),
-      log: [makeLog(s, t, completed ? "completed" : "uncompleted", null), ...s.log],
-    };
-  }, `${willComplete ? "Complete" : "Uncomplete"} ${quote(before)}`);
+  dispatch({ type: "toggleComplete", id });
 }
 
 export function setCompleted(
@@ -1157,21 +604,7 @@ export function setCompleted(
   completed: boolean,
   reason: string | null = null
 ): void {
-  update((s) => {
-    const t = findById(s.tasks, id);
-    if (t == null) return s;
-    return {
-      ...s,
-      tasks: mapById(s.tasks, id, (x) => ({
-        ...x,
-        completed,
-        completedAt: completed ? Date.now() : null,
-        wontDo: completed ? null : x.wontDo,
-        waitingOn: completed ? null : x.waitingOn,
-      })),
-      log: completed ? [makeLog(s, t, "completed", reason), ...s.log] : s.log,
-    };
-  }, `${completed ? "Complete" : "Uncomplete"} ${quote(findById(state.tasks, id))}`);
+  dispatch({ type: "setCompleted", id, completed, reason });
 }
 
 // ─── Won't do (intentionally skipped) ───────────────────────────────
@@ -1181,60 +614,19 @@ export function setCompleted(
 // (inline or in the detail panel), so `markWontDo` records the "skipped" log with
 // a null reason and `setWontDoReason` back-fills both the task and that log entry.
 
-/** The newest "skipped" log entry for `taskId`, patched with a reason. */
-function patchLatestSkip(log: LogEntry[], taskId: TaskId, reason: string | null): LogEntry[] {
-  const idx = log.findIndex((e) => e.taskId === taskId && e.action === "skipped");
-  if (idx === -1) return log;
-  const next = [...log];
-  next[idx] = { ...next[idx], reason };
-  return next;
-}
-
-function applyWontDo(task: Task, reason: string | null): Task {
-  const wontDo: WontDo = { reason, at: Date.now() };
-  // Declining settles it too, so the wait ends here.
-  return { ...task, completed: false, completedAt: null, wontDo, waitingOn: null };
-}
-
 /** Mark one task "won't do" (clears completion). No-op if already skipped. */
 export function markWontDo(id: TaskId, reason: string | null = null): void {
-  update((s) => {
-    const t = findById(s.tasks, id);
-    if (t == null || t.wontDo != null) return s;
-    return {
-      ...s,
-      tasks: mapById(s.tasks, id, (x) => applyWontDo(x, reason)),
-      log: [makeLog(s, t, "skipped", reason), ...s.log],
-    };
-  }, `Won’t do ${quote(findById(state.tasks, id))}`);
+  dispatch({ type: "markWontDo", id, reason });
 }
 
 /** Mark a batch "won't do" — each a "skipped" log entry, one undo step. */
 export function markWontDoMany(ids: TaskId[], reason: string | null = null): void {
-  update((s) => {
-    let tasks = s.tasks;
-    const logs: LogEntry[] = [];
-    for (const id of ids) {
-      const t = findById(tasks, id);
-      if (t == null || t.wontDo != null) continue;
-      tasks = mapById(tasks, id, (x) => applyWontDo(x, reason));
-      logs.push(makeLog(s, t, "skipped", reason));
-    }
-    return { ...s, tasks, log: [...logs, ...s.log] };
-  }, `Won’t do ${subject(ids)}`);
+  dispatch({ type: "markWontDoMany", ids, reason });
 }
 
 /** Reopen a skipped task (or clear a skip). Logs a reopen for the record. */
 export function clearWontDo(id: TaskId): void {
-  update((s) => {
-    const t = findById(s.tasks, id);
-    if (t == null || t.wontDo == null) return s;
-    return {
-      ...s,
-      tasks: mapById(s.tasks, id, (x) => ({ ...x, wontDo: null })),
-      log: [makeLog(s, t, "uncompleted", null), ...s.log],
-    };
-  }, `Reopen ${quote(findById(state.tasks, id))}`);
+  dispatch({ type: "clearWontDo", id });
 }
 
 /** Toggle the won't-do state (detail-panel / mouse affordance). */
@@ -1254,62 +646,17 @@ export function toggleWontDo(id: TaskId, reason: string | null = null): void {
 
 /** Mark a task blocked (optionally on whom). No-op on a resolved task. */
 export function markWaiting(id: TaskId, who: string | null = null): void {
-  update((s) => {
-    const t = findById(s.tasks, id);
-    if (t == null || !isOpen(t)) return s;
-    return {
-      ...s,
-      tasks: mapById(s.tasks, id, (x) => ({
-        ...x,
-        // Re-marking keeps the original `since`: the wait started when it
-        // started, and naming who you're waiting on shouldn't reset the clock.
-        waitingOn: { who, since: x.waitingOn?.since ?? Date.now() },
-      })),
-    };
-  }, `Waiting on ${who == null || who.trim() === "" ? "someone" : quoteText(who)} for ${quote(findById(state.tasks, id))}`);
+  dispatch({ type: "markWaiting", id, who });
 }
 
 /** Unblock a task — the ball is back in your court. */
 export function clearWaiting(id: TaskId): void {
-  update((s) => {
-    const t = findById(s.tasks, id);
-    if (t == null || t.waitingOn == null) return s;
-    return { ...s, tasks: mapById(s.tasks, id, (x) => ({ ...x, waitingOn: null })) };
-  }, `No longer waiting on ${quote(findById(state.tasks, id))}`);
+  dispatch({ type: "clearWaiting", id });
 }
 
 /** Set the reason on an already-skipped task, back-filling its log entry. */
 export function setWontDoReason(id: TaskId, reason: string): void {
-  const clean = reason.trim();
-  const value = clean === "" ? null : clean;
-  update((s) => {
-    const t = findById(s.tasks, id);
-    if (t == null || t.wontDo == null) return s;
-    return {
-      ...s,
-      tasks: mapById(s.tasks, id, (x) =>
-        x.wontDo == null ? x : { ...x, wontDo: { ...x.wontDo, reason: value } }
-      ),
-      log: patchLatestSkip(s.log, id, value),
-    };
-  }, `Give a reason for not doing ${quote(findById(state.tasks, id))}`);
-}
-
-/**
- * Where a postponement sends a task. Exactly one of the two is meaningful at a
- * time (a concrete date and a fuzzy horizon are mutually exclusive); both null
- * is the undated backlog.
- */
-export interface PostponeTarget {
-  plannedFor: ISODate | null;
-  horizon: Horizon | null;
-}
-
-/** "to tomorrow" / "to next week" / "to the backlog" — for the history line. */
-function postponeWords(target: PostponeTarget, today: ISODate): string {
-  if (target.plannedFor != null) return `to ${target.plannedFor}`;
-  if (target.horizon != null) return `to ${horizonWords(target.horizon, today)}`;
-  return "to the backlog";
+  dispatch({ type: "setWontDoReason", id, reason });
 }
 
 /**
@@ -1327,25 +674,8 @@ export function postponeManyTo(
   target: PostponeTarget,
   reason: string | null = null
 ): void {
-  update((s) => {
-    let tasks = s.tasks;
-    const logs: LogEntry[] = [];
-    for (const id of ids) {
-      const t = findById(tasks, id);
-      if (t == null) continue;
-      tasks = mapById(tasks, id, (x) => ({
-        ...x,
-        plannedFor: target.plannedFor,
-        horizon: target.plannedFor != null ? null : target.horizon,
-        postponedCount: x.postponedCount + 1,
-      }));
-      logs.push(makeLog(s, t, "postponed", reason));
-    }
-    if (logs.length === 0) return s;
-    return { ...s, tasks, log: [...logs, ...s.log] };
-  }, `Postpone ${subject(ids)} ${postponeWords(target, todayISO(state.devDateOverride))}`);
+  dispatch({ type: "postponeMany", ids, target, reason });
 }
-
 
 /**
  * Re-commit unfinished tasks to a day, unchanged — the Reckoning's "Keep for
@@ -1364,37 +694,16 @@ export function carryManyTo(
   date: ISODate,
   reason: string | null = null
 ): void {
-  update((s) => {
-    let tasks = s.tasks;
-    const logs: LogEntry[] = [];
-    for (const id of ids) {
-      const t = findById(tasks, id);
-      if (t == null) continue;
-      tasks = mapById(tasks, id, (x) => ({
-        ...x,
-        plannedFor: date,
-        horizon: null,
-        carriedCount: x.carriedCount + 1,
-      }));
-      logs.push(makeLog(s, t, "kept", reason));
-    }
-    if (logs.length === 0) return s;
-    return { ...s, tasks, log: [...logs, ...s.log] };
-  }, `Carry ${subject(ids)} to ${date}`);
+  dispatch({ type: "carryMany", ids, date, reason });
 }
 
 /** {@link carryManyTo}, aimed at today — the Reckoning's "Keep for today". */
 export function keepManyForToday(ids: TaskId[], reason: string | null = null): void {
-  carryManyTo(ids, todayISO(state.devDateOverride), reason);
+  carryManyTo(ids, todayFor(state, Date.now()), reason);
 }
 
-
 export function logBreakdown(id: TaskId): void {
-  update((s) => {
-    const t = findById(s.tasks, id);
-    if (t == null) return s;
-    return { ...s, log: [makeLog(s, t, "brokeDown", null), ...s.log] };
-  }, `Break down ${quote(findById(state.tasks, id))}`);
+  dispatch({ type: "logBreakdown", id });
 }
 
 /** Soft delete: move the subtree to the Trash. Optionally log it as a drop. */
@@ -1402,51 +711,19 @@ export function trashTask(
   id: TaskId,
   opts?: { reason?: string | null; log?: boolean }
 ): void {
-  update((s) => {
-    const t = findById(s.tasks, id);
-    if (t == null) return s;
-    return {
-      ...s,
-      tasks: removeById(s.tasks, id),
-      trash: [{ task: t, deletedAt: Date.now() }, ...s.trash],
-      log: opts?.log
-        ? [makeLog(s, t, "dropped", opts.reason ?? null), ...s.log]
-        : s.log,
-    };
-  }, `Trash ${quote(findById(state.tasks, id))}`);
+  dispatch({ type: "trashTask", id, reason: opts?.reason ?? null, log: opts?.log ?? false });
 }
 
 export function restoreFromTrash(taskId: TaskId): void {
-  update((s) => {
-    const entry = s.trash.find((e) => e.task.id === taskId);
-    if (entry == null) return s;
-    return {
-      ...s,
-      // In progress when it was trashed: its timer stopped then, not now.
-      tasks: [...s.tasks, stopAll([entry.task], entry.deletedAt)[0]],
-      trash: s.trash.filter((e) => e.task.id !== taskId),
-    };
-  }, `Restore ${quote(state.trash.find((e) => e.task.id === taskId)?.task)} from the trash`);
+  dispatch({ type: "restoreFromTrash", id: taskId });
 }
 
 export function purgeFromTrash(taskId: TaskId): void {
-  const gone = quote(state.trash.find((e) => e.task.id === taskId)?.task);
-  update((s) => {
-    const purged = s.trash.filter((e) => e.task.id === taskId);
-    if (purged.length === 0) return s;
-    return {
-      ...s,
-      trash: s.trash.filter((e) => e.task.id !== taskId),
-      tombstones: buryTrashed(s, purged),
-    };
-  }, `Delete ${gone} for good`);
+  dispatch({ type: "purgeFromTrash", id: taskId });
 }
 
 export function emptyTrash(): void {
-  update((s) => {
-    if (s.trash.length === 0) return s;
-    return { ...s, trash: [], tombstones: buryTrashed(s, s.trash) };
-  }, `Empty the trash (${state.trash.length})`);
+  dispatch({ type: "emptyTrash" });
 }
 
 // Both reorders take `visible`: the task ids rendered in the *same section* as
@@ -1460,10 +737,7 @@ export function reorder(
   dir: "up" | "down",
   visible?: Set<TaskId>
 ): void {
-  updateTasks(
-    (tasks) => reorderSelected(tasks, new Set(selectedIds), dir, visible),
-    `Move ${subject(selectedIds)} ${dir}`,
-  );
+  dispatch({ type: "reorder", ids: selectedIds, dir, visible: visible == null ? null : [...visible] });
 }
 
 // …and this one lets a root task at a group's edge cross the divider into the
@@ -1473,111 +747,49 @@ export function reorderAcrossProjects(
   dir: "up" | "down",
   visible?: Set<TaskId>
 ): void {
-  update((s) => ({
-    ...s,
-    tasks: reorderSelectedAcrossProjects(s.tasks, new Set(selectedIds), dir, s.projects, visible),
-  }), `Move ${subject(selectedIds)} ${dir}`);
+  dispatch({
+    type: "reorderAcrossProjects",
+    ids: selectedIds,
+    dir,
+    visible: visible == null ? null : [...visible],
+  });
 }
 
 // ─── Bulk operations (multi-select) — each a single undo step ────────
 
 export function trashMany(ids: TaskId[]): void {
-  update((s) => {
-    let tasks = s.tasks;
-    const trashed: AppState["trash"] = [];
-    for (const id of ids) {
-      const t = findById(tasks, id);
-      if (t == null) continue; // already removed via a selected ancestor
-      tasks = removeById(tasks, id);
-      trashed.push({ task: t, deletedAt: Date.now() });
-    }
-    return { ...s, tasks, trash: [...trashed, ...s.trash] };
-  }, `Trash ${subject(ids)}`);
+  dispatch({ type: "trashMany", ids });
 }
 
 /** Reckoning "Drop all": trash a batch of leftovers, each logged as dropped. */
 export function dropManyWithLog(ids: TaskId[], reason: string | null = null): void {
-  update((s) => {
-    let tasks = s.tasks;
-    const trashed: AppState["trash"] = [];
-    const logs: LogEntry[] = [];
-    for (const id of ids) {
-      const t = findById(tasks, id);
-      if (t == null) continue;
-      tasks = removeById(tasks, id);
-      trashed.push({ task: t, deletedAt: Date.now() });
-      logs.push(makeLog(s, t, "dropped", reason));
-    }
-    return { ...s, tasks, trash: [...trashed, ...s.trash], log: [...logs, ...s.log] };
-  }, `Drop ${subject(ids)}`);
+  dispatch({ type: "dropManyWithLog", ids, reason });
 }
 
 export function setCompletedMany(ids: TaskId[], completed: boolean): void {
-  update((s) => {
-    let tasks = s.tasks;
-    const logs: LogEntry[] = [];
-    for (const id of ids) {
-      const t = findById(tasks, id);
-      if (t == null) continue;
-      tasks = mapById(tasks, id, (x) => ({
-        ...x,
-        completed,
-        completedAt: completed ? Date.now() : null,
-        wontDo: completed ? null : x.wontDo,
-        waitingOn: completed ? null : x.waitingOn,
-      }));
-      if (completed) logs.push(makeLog(s, t, "completed", null));
-    }
-    return { ...s, tasks, log: [...logs, ...s.log] };
-  }, `${completed ? "Complete" : "Uncomplete"} ${subject(ids)}`);
+  dispatch({ type: "setCompletedMany", ids, completed });
 }
 
 export function setPlannedForMany(ids: TaskId[], date: ISODate | null): void {
-  update((s) => {
-    let tasks = s.tasks;
-    // A concrete date and a fuzzy horizon are mutually exclusive.
-    for (const id of ids) tasks = mapById(tasks, id, (x) => ({ ...x, plannedFor: date, horizon: null }));
-    return { ...s, tasks };
-  }, date == null ? `Unschedule ${subject(ids)}` : `Schedule ${subject(ids)} for ${date}`);
+  dispatch({ type: "setPlannedForMany", ids, date });
 }
 
 /** Set a fuzzy horizon (this/next week·month, someday) — clears any concrete date. */
 export function setHorizonMany(ids: TaskId[], horizon: Horizon | null): void {
-  update((s) => {
-    let tasks = s.tasks;
-    for (const id of ids) tasks = mapById(tasks, id, (x) => ({ ...x, plannedFor: null, horizon }));
-    return { ...s, tasks };
-  }, horizon == null ? `Unschedule ${subject(ids)}` : `Schedule ${subject(ids)} for ${horizonWords(horizon, todayISO(state.devDateOverride))}`);
+  dispatch({ type: "setHorizonMany", ids, horizon });
 }
 
 export function setPriority(id: TaskId, priority: TaskPriority): void {
-  updateTasks(
-    (tasks) => mapById(tasks, id, (t) => ({ ...t, priority })),
-    `Set ${quote(findById(state.tasks, id))} to priority ${priority}`,
-  );
+  dispatch({ type: "setPriority", id, priority });
 }
 
 /** Set (or clear, with null) the effort estimate on a batch — one undo step. */
 export function setEstimatedMinutesMany(ids: TaskId[], minutes: number | null): void {
-  const value = minutes == null || minutes <= 0 ? null : Math.round(minutes);
-  updateTasks(
-    (tasks) => {
-      let next = tasks;
-      for (const id of ids) next = mapById(next, id, (t) => ({ ...t, estimatedMinutes: value }));
-      return next;
-    },
-    value == null
-      ? `Clear the estimate on ${subject(ids)}`
-      : `Estimate ${subject(ids)} at ${value} min`,
-  );
+  dispatch({ type: "setEstimatedMinutesMany", ids, minutes });
 }
 
 export function setPlannedFor(id: TaskId, plannedFor: ISODate | null): void {
-  const what = quote(findById(state.tasks, id));
-  updateTasks(
-    (tasks) => mapById(tasks, id, (t) => ({ ...t, plannedFor, horizon: null })),
-    plannedFor == null ? `Unschedule ${what}` : `Schedule ${what} for ${plannedFor}`,
-  );
+  dispatch({ type: "setPlannedFor", id, plannedFor });
 }
 
 /**
@@ -1587,18 +799,11 @@ export function setPlannedFor(id: TaskId, plannedFor: ISODate | null): void {
  * calendar, so undo here would only desync the badge from reality.
  */
 export function setScheduledAt(id: TaskId, at: number | null): void {
-  updateTasks((tasks) => mapById(tasks, id, (t) => ({ ...t, scheduledAt: at })), null);
+  dispatch({ type: "setScheduledAt", id, at });
 }
 
 export function setProjectForMany(ids: TaskId[], projectId: ProjectId): void {
-  const project = state.projects.find((p) => p.id === projectId);
-  updateTasks(
-    (tasks) => {
-      const topLevelIds = new Set(ids.map((id) => topLevelIdFor(tasks, id)));
-      return normalizeChildProjects(setProjectForIds(tasks, topLevelIds, projectId));
-    },
-    `Move ${subject(ids)} to ${quoteText(project?.name ?? "another project")}`,
-  );
+  dispatch({ type: "setProjectForMany", ids, projectId });
 }
 
 // ─── Outline structure ──────────────────────────────────────────────
@@ -1607,82 +812,34 @@ export function setProjectForMany(ids: TaskId[], projectId: ProjectId): void {
 // under the row above, not under a filtered-out sibling). When omitted, falls
 // back to the raw previous sibling.
 export function indent(id: TaskId, underId?: TaskId | null): void {
-  updateTasks(
-    (tasks) =>
-      normalizeChildProjects(
-        underId == null ? indentTask(tasks, id) : indentUnder(tasks, id, underId)
-      ),
-    `Indent ${quote(findById(state.tasks, id))}`,
-  );
+  dispatch({ type: "indent", id, underId: underId ?? null });
 }
 
 export function outdent(id: TaskId): void {
-  updateTasks(
-    (tasks) => normalizeChildProjects(outdentTask(tasks, id)),
-    `Outdent ${quote(findById(state.tasks, id))}`,
-  );
+  dispatch({ type: "outdent", id });
 }
 
 export function reorderSibling(activeId: TaskId, overId: TaskId): void {
-  updateTasks(
-    (tasks) => moveSibling(tasks, activeId, overId),
-    `Move ${quote(findById(state.tasks, activeId))}`,
-  );
+  dispatch({ type: "reorderSibling", activeId, overId });
 }
 
 export function moveBefore(taskId: TaskId, beforeId: TaskId): void {
-  const targetProjectId = findById(state.tasks, beforeId)?.projectId ?? DEFAULT_PROJECT_ID;
-  updateTasks(
-    (tasks) =>
-      normalizeChildProjects(
-        setProjectForIds(relocateTask(tasks, taskId, beforeId), new Set([taskId]), targetProjectId)
-      ),
-    `Move ${quote(findById(state.tasks, taskId))}`,
-  );
+  dispatch({ type: "moveBefore", id: taskId, beforeId });
 }
 
 export function moveAfter(taskId: TaskId, afterId: TaskId): void {
-  const targetProjectId = findById(state.tasks, afterId)?.projectId ?? DEFAULT_PROJECT_ID;
-  updateTasks(
-    (tasks) =>
-      normalizeChildProjects(
-        setProjectForIds(relocateAfter(tasks, taskId, afterId), new Set([taskId]), targetProjectId)
-      ),
-    `Move ${quote(findById(state.tasks, taskId))}`,
-  );
+  dispatch({ type: "moveAfter", id: taskId, afterId });
 }
 
 export function moveAsChild(taskId: TaskId, newParentId: TaskId): void {
-  const targetProjectId = findById(state.tasks, newParentId)?.projectId ?? DEFAULT_PROJECT_ID;
-  updateTasks(
-    (tasks) =>
-      normalizeChildProjects(
-        setProjectForIds(
-          relocateAsChild(tasks, taskId, newParentId),
-          new Set([taskId]),
-          targetProjectId
-        )
-      ),
-    `Move ${quote(findById(state.tasks, taskId))} under ${quote(findById(state.tasks, newParentId))}`,
-  );
+  dispatch({ type: "moveAsChild", id: taskId, parentId: newParentId });
 }
 
 // ─── Recurrences (repeating-task definitions) ───────────────────────
 //
-// Templates live only here, never in `tasks`, so they can't reckon or be
+// Templates live only there, never in `tasks`, so they can't reckon or be
 // counted. Node-level edits address a template by any of its task ids and find
 // the owning recurrence; whole-recurrence edits take the recurrence id.
-
-/** Update whichever recurrence's template contains `taskId`. */
-function mapRecurrenceOfNode(
-  recurrences: Recurrence[],
-  taskId: TaskId,
-  fn: (template: Task) => Task
-): Recurrence[] {
-  return recurrences.map((r) =>
-    findById([r.template], taskId) != null ? { ...r, template: fn(r.template) } : r
-  );
-}
 
 /** Create a recurrence with a one-line template. Returns both ids for focus/edit. */
 export function createRecurrence(
@@ -1691,128 +848,50 @@ export function createRecurrence(
   projectId: ProjectId = DEFAULT_PROJECT_ID
 ): { id: RecurrenceId; taskId: TaskId } {
   const id = nanoid() as RecurrenceId;
-  const template = makeTask(text, projectId);
-  update((s) => ({
-    ...s,
-    recurrences: [
-      ...s.recurrences,
-      { id, template, rule: normalizeRule(rule), createdAt: Date.now(), updatedAt: Date.now() },
-    ],
-  }), titled("New recurring task", text));
-  return { id, taskId: template.id };
+  const taskId = nanoid() as TaskId;
+  dispatch({ type: "createRecurrence", id, taskId, text, rule, projectId });
+  return { id, taskId };
 }
 
 export function setRecurrenceRule(id: RecurrenceId, rule: RecurrenceRule): void {
-  update((s) => ({
-    ...s,
-    recurrences: s.recurrences.map((r) => (r.id === id ? { ...r, rule: normalizeRule(rule) } : r)),
-  }), "Change a repeat schedule");
+  dispatch({ type: "setRecurrenceRule", id, rule });
 }
 
 /**
  * File a recurrence under a project. The whole template moves together (root and
- * steps), because that's what {@link materialize} clones into a real task — an
- * accepted occurrence lands in this project, at the top of it.
+ * steps), because that's what accepting clones into a real task — an accepted
+ * occurrence lands in this project, at the top of it.
  */
 export function setRecurrenceProject(id: RecurrenceId, projectId: ProjectId): void {
-  const rec = state.recurrences.find((r) => r.id === id);
-  const project = state.projects.find((p) => p.id === projectId);
-  update(
-    (s) => ({
-      ...s,
-      recurrences: s.recurrences.map((r) =>
-        r.id === id ? { ...r, template: assignProjectDeep(r.template, projectId) } : r
-      ),
-    }),
-    `Move the recurring task ${quote(rec?.template)} to ${quoteText(project?.name ?? "another project")}`
-  );
+  dispatch({ type: "setRecurrenceProject", id, projectId });
 }
 
 export function deleteRecurrence(id: RecurrenceId): void {
-  const gone = state.recurrences.find((r) => r.id === id);
-  update(
-    (s) => ({ ...s, recurrences: s.recurrences.filter((r) => r.id !== id) }),
-    `Delete the recurring task ${quote(gone?.template)}`,
-  );
+  dispatch({ type: "deleteRecurrence", id });
 }
 
 export function setRecurrenceText(taskId: TaskId, text: string): void {
-  update((s) => ({
-    ...s,
-    recurrences: mapRecurrenceOfNode(s.recurrences, taskId, (tpl) =>
-      mapById([tpl], taskId, (t) => ({ ...t, text }))[0]
-    ),
-  }), titled("Rename a recurring step", text));
+  dispatch({ type: "setRecurrenceText", taskId, text });
 }
 
 /** Add an empty step: a child of `taskId`, or a sibling after it. Returns its id. */
 export function addRecurrenceStep(taskId: TaskId, mode: "child" | "sibling"): TaskId {
-  const step = makeTask("");
-  update((s) => ({
-    ...s,
-    recurrences: mapRecurrenceOfNode(s.recurrences, taskId, (tpl) => {
-      const child = { ...step, projectId: tpl.projectId };
-      if (mode === "child") {
-        return mapById([tpl], taskId, (t) => ({ ...t, children: [...t.children, child] }))[0];
-      }
-      return insertAfterSibling([tpl], taskId, child)[0];
-    }),
-  }), "New recurring step");
-  return step.id;
+  const stepId = nanoid() as TaskId;
+  dispatch({ type: "addRecurrenceStep", taskId, stepId, mode });
+  return stepId;
 }
 
 export function indentRecurrenceNode(taskId: TaskId, underId?: TaskId | null): void {
-  update((s) => ({
-    ...s,
-    recurrences: mapRecurrenceOfNode(s.recurrences, taskId, (tpl) => {
-      const forest = underId == null ? indentTask([tpl], taskId) : indentUnder([tpl], taskId, underId);
-      return forest[0] ?? tpl;
-    }),
-  }), "Indent a recurring step");
+  dispatch({ type: "indentRecurrenceNode", taskId, underId: underId ?? null });
 }
 
 export function outdentRecurrenceNode(taskId: TaskId): void {
-  update((s) => ({
-    ...s,
-    recurrences: mapRecurrenceOfNode(s.recurrences, taskId, (tpl) => {
-      const parentId = findParentId([tpl], taskId);
-      // Never lift a node to become a second root of the template.
-      if (parentId == null || parentId === tpl.id) return tpl;
-      return outdentTask([tpl], taskId)[0] ?? tpl;
-    }),
-  }), "Outdent a recurring step");
+  dispatch({ type: "outdentRecurrenceNode", taskId });
 }
 
 /** Remove a step; removing the template root deletes the whole recurrence. */
 export function removeRecurrenceNode(taskId: TaskId): void {
-  update((s) => {
-    const rec = s.recurrences.find((r) => findById([r.template], taskId) != null);
-    if (rec == null) return s;
-    if (rec.template.id === taskId) {
-      return { ...s, recurrences: s.recurrences.filter((r) => r.id !== rec.id) };
-    }
-    return {
-      ...s,
-      recurrences: s.recurrences.map((r) =>
-        r.id === rec.id ? { ...r, template: removeById([r.template], taskId)[0] } : r
-      ),
-    };
-  }, "Delete a recurring step");
-}
-
-/** Clone a recurrence's template into a concrete, dated-for-today commitment. */
-function materialize(rec: Recurrence, today: ISODate): Task {
-  const planAll = (t: Task): Task => ({
-    ...t,
-    plannedFor: today,
-    horizon: null,
-    completed: false,
-    completedAt: null,
-    wontDo: null,
-    children: t.children.map(planAll),
-  });
-  const planned = planAll(cloneWithNewIds(rec.template));
-  return { ...planned, recurrenceId: rec.id, occurrenceDate: today };
+  dispatch({ type: "removeRecurrenceNode", taskId });
 }
 
 /**
@@ -1821,91 +900,39 @@ function materialize(rec: Recurrence, today: ISODate): Task {
  * instance's root id for focusing, or null if the recurrence is gone.
  */
 export function acceptRecurrence(recId: RecurrenceId, today: ISODate): TaskId | null {
-  const rec = state.recurrences.find((r) => r.id === recId);
-  if (rec == null) return null;
-  const instance = materialize(rec, today);
-  update((s) => ({
-    ...s,
-    tasks: insertAtProjectStart(s.tasks, s.projects, instance.projectId, instance),
-  }), `Take on today’s ${quote(rec.template)}`);
-  return instance.id;
+  if (!state.recurrences.some((r) => r.id === recId)) return null;
+  const id = nanoid() as TaskId;
+  dispatch({ type: "acceptRecurrence", recurrenceId: recId, id, today });
+  return id;
 }
 
 // ─── Habits ─────────────────────────────────────────────────────────
 //
-// Their own array, like recurrences: nothing here reaches `tasks`, so a habit
+// Their own array, like recurrences: nothing there reaches `tasks`, so a habit
 // can never reckon or move the day's counts. Every change is undoable and named.
-
-function mapHabit(id: HabitId, fn: (h: Habit) => Habit): (s: AppState) => AppState {
-  return (s) => {
-    let hit = false;
-    const habits = s.habits.map((h) => {
-      if (h.id !== id) return h;
-      const next = fn(h);
-      if (next !== h) hit = true;
-      return next;
-    });
-    return hit ? { ...s, habits } : s;
-  };
-}
-
-function habitName(id: HabitId): string {
-  return quoteText(state.habits.find((h) => h.id === id)?.name ?? "");
-}
 
 /** Create a daily habit with this name — or, given a measure, a KPI. Returns its id. */
 export function createHabit(name: string, perWeek = 7, measure: HabitMeasure | null = null): HabitId {
   const id = nanoid() as HabitId;
-  const now = Date.now();
-  const habit: Habit = {
-    id,
-    name: name.trim(),
-    cue: "",
-    perWeek: normalizePerWeek(perWeek),
-    checks: {},
-    measure,
-    values: {},
-    checkedAt: {},
-    archivedAt: null,
-    rank: now,
-    createdAt: now,
-    updatedAt: now,
-  };
-  const noun = measure == null ? "habit" : "KPI";
-  // Kept in the canonical order the cloud and the merge produce, or a same-ms
-  // pair would read back swapped and look like a change.
-  update(
-    (s) => ({ ...s, habits: sortHabits([...s.habits, habit]) }),
-    name.trim() === "" ? `New ${noun}` : `New ${noun} ${quoteText(name)}`,
-  );
+  dispatch({ type: "createHabit", id, name, perWeek, measure });
   return id;
 }
 
 export function renameHabit(id: HabitId, name: string): void {
-  const clean = name.trim();
-  update(mapHabit(id, (h) => (h.name === clean ? h : { ...h, name: clean })), `Rename a habit to ${quoteText(clean)}`);
+  dispatch({ type: "renameHabit", id, name });
 }
 
 export function setHabitCue(id: HabitId, cue: string): void {
-  const clean = cue.trim();
-  update(
-    mapHabit(id, (h) => (h.cue === clean ? h : { ...h, cue: clean })),
-    clean === "" ? `Clear the cue of ${habitName(id)}` : `Cue ${habitName(id)}: ${quoteText(clean)}`,
-  );
+  dispatch({ type: "setHabitCue", id, cue });
 }
 
 export function setHabitPerWeek(id: HabitId, perWeek: number): void {
-  const n = normalizePerWeek(perWeek);
-  update(
-    mapHabit(id, (h) => (h.perWeek === n ? h : { ...h, perWeek: n })),
-    `Set ${habitName(id)} to ${n === 7 ? "every day" : `${n}× a week`}`,
-  );
+  dispatch({ type: "setHabitPerWeek", id, perWeek });
 }
 
 /** Set (or clear, with null) one day's mark. */
 export function markHabit(id: HabitId, date: ISODate, mark: HabitMark | null): void {
-  const verb = mark === "done" ? "Check in" : mark === "skip" ? "Rest day for" : "Clear";
-  update(mapHabit(id, (h) => withMark(h, date, mark)), `${verb} ${habitName(id)} · ${date}`);
+  dispatch({ type: "markHabit", id, date, mark });
 }
 
 /** Done ↔ not done for that day (a rest day becomes done). */
@@ -1924,53 +951,33 @@ export function toggleHabitSkip(id: HabitId, date: ISODate): void {
 
 /** A KPI's range or cadence. */
 export function setHabitMeasure(id: HabitId, measure: HabitMeasure): void {
-  const h = state.habits.find((x) => x.id === id);
-  if (h == null || h.measure == null || sameMeasure(h.measure, measure)) return;
-  update(
-    mapHabit(id, (x) => ({ ...x, measure })),
-    `Set ${habitName(id)} to ${rangeLabel(measure)}, ${everyLabel(measure.every).toLowerCase()}`,
-  );
+  dispatch({ type: "setHabitMeasure", id, measure });
 }
 
 /** Log a KPI's number for a day (or clear it, with null). */
 export function setKpiValue(id: HabitId, date: ISODate, value: number | null): void {
-  const h = state.habits.find((x) => x.id === id);
-  if (h == null || h.measure == null) return;
-  const label = value == null ? `Clear ${habitName(id)} · ${date}` : `${habitName(id)} = ${formatValue(h.measure, value)} · ${date}`;
-  update(mapHabit(id, (x) => withValue(x, date, value)), label);
+  dispatch({ type: "setKpiValue", id, date, value });
 }
 
 /** One place up or down within its list (habits, KPIs, or the archive). */
 export function moveHabit(id: HabitId, dir: 1 | -1): void {
-  update(
-    (s) => {
-      const habits = moveHabitRank(s.habits, id, dir);
-      return habits === s.habits ? s : { ...s, habits: sortHabits(habits) };
-    },
-    `Move ${habitName(id)} ${dir === 1 ? "down" : "up"}`,
-  );
+  dispatch({ type: "moveHabit", id, dir });
 }
 
 /** Retire a habit from the active list, keeping its history; or bring it back. */
 export function setHabitArchived(id: HabitId, archived: boolean): void {
-  update(
-    mapHabit(id, (h) =>
-      (h.archivedAt != null) === archived ? h : { ...h, archivedAt: archived ? Date.now() : null },
-    ),
-    `${archived ? "Archive" : "Restore"} the habit ${habitName(id)}`,
-  );
+  dispatch({ type: "setHabitArchived", id, archived });
 }
 
 /** Delete a habit and its whole history. Undoable; tombstoned for the merge. */
 export function deleteHabit(id: HabitId): void {
-  const label = `Delete the habit ${habitName(id)}`;
-  update((s) => ({ ...s, habits: s.habits.filter((h) => h.id !== id) }), label);
+  dispatch({ type: "deleteHabit", id });
 }
 
 // ─── Undo / redo / history ──────────────────────────────────────────
 //
 // Undo is a stack of steps, each the pair of whole states around one action —
-// coarse to record, but it means every change that goes through update() is
+// coarse to record, but it means every change that goes through dispatch() is
 // reversible without any per-mutation inverse to write (or forget). Applying a
 // step takes only its footprint (store/rebase), never a snapshot whole. Redo is
 // its mirror: undoing moves a step across to the redo stack, and any *new*
@@ -1996,13 +1003,12 @@ function applyStep(step: HistoryStep, kind: "undo" | "redo"): void {
   const current = state;
   const rebased =
     kind === "undo" ? rebaseStep(step.after, step.before, current) : rebaseStep(step.before, step.after, current);
-  const stamped = withSyncStamps(current, stampTasks(current, rebased));
-  const restored = withTombstones(current, pastDeletions(stamped, current));
-  state = withHistory(restored, current.actionLog, {
+  const now = Date.now();
+  state = withHistory(commitRebased(current, rebased, now), current.actionLog, {
     id: nanoid(),
     label: step.label,
     kind,
-    at: Date.now(),
+    at: now,
   });
   notify();
   scheduleSave();

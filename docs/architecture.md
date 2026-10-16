@@ -12,6 +12,17 @@ longer-term option is **full parity** (edit anything, anywhere). We build the
 companion now, *architected toward* parity, so getting there is a **convergence,
 not a rewrite**. The rules that make that possible:
 
+- **Every change is a command.** `core/commands.ts` lists every change to the
+  state as a plain, serializable `Command`; `applyCommand` does it (pure: the
+  caller passes the time and fresh ids in a `CommandContext`), `describeCommand`
+  names it for the history, and `core/commit.ts` is the one choke point every
+  change passes through — parent-date bounds, settling work, field-group
+  clocks, placement, tombstones. `runCommand` is both together. The desktop's
+  `store/store.ts` is only a shell around it (the in-memory state, the file on
+  disk, undo/redo, React's subscription): each of its mutations is one
+  `dispatch(command)`. Any other client — a script, a server, an MCP — runs
+  the same commands with no React, DOM or Electron (`core/commands.test.ts`
+  runs them under plain Node).
 - **Shared, platform-agnostic core.** All domain logic — tree ops
   (`store/tasks.ts`), `selectors.ts`, `store/dates.ts`, capture parsing
   (`store/capture.ts`), recurrence, the sync **merge** (`sync/merge.ts`),
