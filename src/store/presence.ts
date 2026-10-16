@@ -1,4 +1,5 @@
 import type { Habit, Presence, Task } from "../types";
+import { runningSince } from "./work";
 
 // What the desktop shell needs to know to be a presence: how much is left today,
 // what it is, and which of the four surfaces the user has turned on. The renderer
@@ -23,6 +24,20 @@ export interface PresenceSnapshot extends Presence {
    */
   habitsLeft: number;
   habitNames: string[];
+  /**
+   * The task in progress, so the menu bar can run its clock while the window
+   * is closed: when the running session began (null = paused) and the time
+   * already on it before that. The shell does the ticking.
+   */
+  working: { title: string; runningSince: number | null; workedBefore: number } | null;
+}
+
+function working(t: Task | null): PresenceSnapshot["working"] {
+  if (t == null) return null;
+  const since = runningSince(t);
+  let before = 0;
+  for (const s of t.sessions) if (s.end != null) before += Math.max(0, s.end - s.start);
+  return { title: t.text.trim() || "Untitled", runningSince: since, workedBefore: before };
 }
 
 /**
@@ -33,9 +48,11 @@ export function presenceSnapshot(
   presence: Presence,
   openToday: Task[],
   habitsLeftToday: Habit[] = [],
+  inProgress: Task | null = null,
 ): PresenceSnapshot {
   return {
     ...presence,
+    working: working(inProgress),
     remaining: openToday.length,
     titles: openToday
       .map((t) => t.text.trim())

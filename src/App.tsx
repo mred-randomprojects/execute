@@ -59,7 +59,10 @@ import {
   setHideCompleted,
   setCompleted,
   setCompletedMany,
-  setCurrentTask,
+  setProgressNote,
+  stopWorking,
+  toggleWorking,
+  pauseWorkAt,
   setDailyCapacityBlocks,
   setDevDateOverride,
   setEstimatedMinutesMany,
@@ -179,6 +182,9 @@ import {
 import { minutesFromBlocks } from "./store/estimate";
 import { willPromptOnKeep, willPromptOnPostpone } from "./store/deferral";
 import { presenceSnapshot } from "./store/presence";
+import { isRunning, workingOn } from "./store/work";
+import { useWorkAwake } from "./ui/useWorkAwake";
+import { SidebarWork } from "./components/WorkClock";
 import { isShutdownTime, parseClock, shutdownScheduleLabel, shutdownTimeOn } from "./store/shutdownTime";
 import { currentRun } from "./store/streak";
 import { suggestedCapacityBlocks } from "./store/capacity";
@@ -373,6 +379,8 @@ export function App() {
   // Bumped to ask an open detail panel to dive from preview into its notes editor
   // (Tab from the list). The panel reacts to changes only, so the value is opaque.
   const [editNotesSignal, setEditNotesSignal] = useState(0);
+  // Bumped by ⌘k → "Currently…" to open the in-progress banner's note.
+  const [workNoteSignal, setWorkNoteSignal] = useState(0);
   // Read by DetailPanel only when it mounts: whether that open was a → dive.
   const [panelEditOnOpen, setPanelEditOnOpen] = useState(false);
   const [reckCursorId, setReckCursorId] = useState<TaskId | null>(null);
@@ -1088,6 +1096,9 @@ export function App() {
     });
   };
 
+  // The task in progress (store/work): at most one, synced, and retired by the
+  // store itself when it's finished, declined, blocked or trashed.
+  const activeCurrentTask = useMemo(() => workingOn(state.tasks), [state.tasks]);
   // ── Presence (desktop shell) ──────────────────────────────────────
   // Push what's left today down to the main process, which turns it into a
   // menu-bar count, a dock badge and the two daily nudges. Renderer counts,
@@ -1095,19 +1106,14 @@ export function App() {
   useEffect(() => {
     if (!loaded) return;
     void window.execute?.updatePresence?.(
-      presenceSnapshot(state.presence, todayOpenLeaves, habitsLeftToday)
+      presenceSnapshot(state.presence, todayOpenLeaves, habitsLeftToday, activeCurrentTask)
     );
-  }, [loaded, state.presence, todayOpenLeaves, habitsLeftToday]);
+  }, [loaded, state.presence, todayOpenLeaves, habitsLeftToday, activeCurrentTask]);
   // The global capture shortcut lands here: the window is already shown by the
   // main process, all that's left is to put the cursor where a thought can go.
   useEffect(() => window.execute?.onFocusCapture?.(() => captureRef.current?.focus()), []);
   const focusedTask =
     focusedTaskId != null ? findById(state.tasks, focusedTaskId) ?? null : null;
-  // The "right now" task, resolved from its id. Shown only while it exists and is
-  // incomplete — finishing or deleting it retires the banner.
-  const currentTask =
-    state.currentTaskId != null ? findById(state.tasks, state.currentTaskId) ?? null : null;
-  const activeCurrentTask = currentTask != null && isOpen(currentTask) ? currentTask : null;
   const focusedProjectId =
     focusedId != null && isProjectRowId(focusedId)
       ? projectIdFromRowId(focusedId)
@@ -1188,12 +1194,15 @@ export function App() {
   useEffect(() => {
     if (zoom != null && zoomFocus == null) setZoom(null);
   }, [zoom, zoomFocus]);
-  // Clear a dangling "current" pointer if its task was deleted / trashed.
+  // Closing the day closes the clock: the timer pauses when Shutdown opens,
+  // and the task stays in progress for tomorrow (s picks it back up).
+  const workRunning = activeCurrentTask != null && isRunning(activeCurrentTask);
   useEffect(() => {
-    if (state.currentTaskId != null && findById(state.tasks, state.currentTaskId) == null) {
-      setCurrentTask(null);
-    }
-  }, [state.currentTaskId, state.tasks]);
+    if (shutdownActive && workRunning) pauseWorkAt(Date.now());
+  }, [shutdownActive, workRunning]);
+  // Time nobody was there for — the Mac asleep or locked, the app quit — comes
+  // off the clock: the running session closes where that began, paused.
+  useWorkAwake(loaded, activeCurrentTask, pauseWorkAt);
 
   const didInitialFocus = useRef(false);
   useEffect(() => {
@@ -1905,11 +1914,20 @@ export function App() {
       const t = findById(filtered, focusedTaskId);
       if (t != null && t.children.length > 0) toggleCollapsedFor(focusedTaskId);
     },
-    taskCurrent: () => {
-      // Definitions and Today suggestions aren't real tasks — they can't be "current".
+    // `s`: start work on the focused task, resume it when paused, stop it when
+    // running. Starting one stops whatever else was in progress.
+    taskWork: () => {
+      // Definitions and Today suggestions aren't real tasks — nothing to time.
       if (view === "recurring" || focusedRecurringToday != null) return;
       if (focusedTaskId == null) return;
-      setCurrentTask(state.currentTaskId === focusedTaskId ? null : focusedTaskId);
+      toggleWorking(focusedTaskId);
+    },
+    workStop: () => {
+      if (activeCurrentTask != null) stopWorking(activeCurrentTask.id);
+    },
+    workNote: () => {
+      if (activeCurrentTask == null) return;
+      setWorkNoteSignal((n) => n + 1);
     },
     // `w` = "won't do · why": edit the skip reason inline. On an open task it
     // first marks it won't-do (a reason presupposes the state); on a completed or
@@ -2359,6 +2377,7 @@ export function App() {
     "task.new": cmd.taskNew,
     "task.toggle": cmd.taskToggle,
     "task.peek": cmd.taskPeek,
+    "task.work": cmd.taskWork,
     "period.next": cmd.periodNext,
     "period.prev": cmd.periodPrev,
     "task.indent": cmd.taskIndent,
@@ -2494,7 +2513,7 @@ export function App() {
     today,
     bucketed: usingBuckets,
     cursorId: focusedTaskId,
-    currentId: state.currentTaskId,
+    currentId: activeCurrentTask?.id ?? null,
     selectedIds: selectedTaskIds,
     editingId,
     reasonEditId,
@@ -2695,6 +2714,7 @@ export function App() {
     onPriority: (id, p: TaskPriority) => setPriority(id, p),
     onProject: (id, projectId) => setProjectForMany([id], projectId),
     onSchedule: (id, choice) => applyScheduleTo([id], choice),
+    onToggleWork: (id) => toggleWorking(id),
     onBack: () => {
       setShowPanel(false);
       (document.activeElement as HTMLElement | null)?.blur();
@@ -3148,13 +3168,34 @@ export function App() {
     { id: "sched-later", label: "Schedule: one step later", aliases: ["defer", "postpone"], run: cmd.scheduleLater },
     { id: "sched-earlier", label: "Schedule: one step sooner", aliases: ["advance"], run: cmd.scheduleEarlier },
     {
+      // Keeps the old "current" id so its learned ranking carries over.
       id: "current",
       label:
-        focusedTaskId != null && state.currentTaskId === focusedTaskId
-          ? "Clear current (focus) task"
-          : "Set as current (focus) task",
-      run: cmd.taskCurrent,
+        focusedTask != null && activeCurrentTask?.id === focusedTask.id
+          ? isRunning(focusedTask)
+            ? "Stop working on it (the time stays)"
+            : "Resume working on it"
+          : "Start working on it — in progress, timer on",
+      aliases: ["in progress", "start", "work", "timer", "doing", "now", "current", "focus", "track time"],
+      hint: "s",
+      run: cmd.taskWork,
     },
+    ...(activeCurrentTask != null
+      ? [
+          {
+            id: "work-note",
+            label: "Currently… — say where you are in the task in progress",
+            aliases: ["currently", "progress note", "where am i", "status"],
+            run: cmd.workNote,
+          },
+          {
+            id: "work-stop",
+            label: `No longer in progress: ${activeCurrentTask.text.trim() === "" ? "Untitled" : activeCurrentTask.text}`,
+            aliases: ["stop", "stop working", "stop timer", "pause"],
+            run: cmd.workStop,
+          },
+        ]
+      : []),
     // Scheduling. All act on the focused/selected task(s); no-op when nothing
     // is targeted.
     { id: "sched-open", label: "Schedule… (type a day or a date)", aliases: ["schedule", "reschedule", "when", "defer", "postpone", "snooze", "delay", "move", "push", "due", "plan"], run: cmd.scheduleOpen },
@@ -3428,6 +3469,16 @@ export function App() {
         hideWhenNarrow={panelOpen}
         streak={<DayStreak days={state.days} today={today} onOpenReview={() => setShowReview(true)} />}
       >
+        {activeCurrentTask != null && (
+          <SidebarWork
+            task={activeCurrentTask}
+            onFocus={() => {
+              const id = activeCurrentTask.id;
+              if (view === "habits" || view === "trash" || view === "recurring") setView("all");
+              setFocus(id);
+            }}
+          />
+        )}
         {import.meta.env.DEV && (
           <DevControls today={today} override={state.devDateOverride} onSet={setDevDateOverride} />
         )}
@@ -3676,7 +3727,16 @@ export function App() {
                   onFocusCurrent={() => {
                     if (activeCurrentTask != null) setFocus(activeCurrentTask.id);
                   }}
-                  onClearCurrent={() => setCurrentTask(null)}
+                  onToggleCurrent={() => {
+                    if (activeCurrentTask != null) toggleWorking(activeCurrentTask.id);
+                  }}
+                  onStopCurrent={() => {
+                    if (activeCurrentTask != null) stopWorking(activeCurrentTask.id);
+                  }}
+                  onCurrentNote={(text) => {
+                    if (activeCurrentTask != null) setProgressNote(activeCurrentTask.id, text);
+                  }}
+                  currentNoteSignal={workNoteSignal}
                   zoom={zoomFocus}
                   collapsedProjectIds={collapsedProjects}
                   hideCompleted={hideCompleted}

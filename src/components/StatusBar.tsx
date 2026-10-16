@@ -3,6 +3,7 @@ const NORMAL_HINTS: Array<[string, string]> = [
   ["↵", "edit"],
   ["→", "details"],
   ["⌘↵", "done"],
+  ["s", "start / stop"],
   ["n", "new"],
   ["⌘k", "everything else"],
   ["?", "help"],

@@ -6,6 +6,7 @@ import { countAll } from "../store/tasks";
 import { copyText } from "../ui/clipboard";
 import { NO_SPELLCHECK } from "../ui/noSpellcheck";
 import type { ScheduleChoice } from "./SchedulePicker";
+import { WorkSection } from "./WorkClock";
 
 const PRIORITIES: Array<{ value: TaskPriority; label: string }> = [
   { value: 1, label: "Urgent" },
@@ -111,6 +112,8 @@ export interface DetailHandlers {
   onProject: (id: Task["id"], projectId: ProjectId) => void;
   /** Apply a schedule (the Schedule chips + exact-date field). */
   onSchedule: (id: Task["id"], choice: ScheduleChoice) => void;
+  /** `s`: start, resume or stop work on it (store/work). */
+  onToggleWork: (id: Task["id"]) => void;
   onBack: () => void;
 }
 
@@ -421,6 +424,11 @@ export function DetailPanel({
           />
         )}
       </div>
+
+      {/* Time: only where it can run (an open task) or has run (any time on it). */}
+      {((!task.completed && !wontDo && task.waitingOn == null) || task.sessions.length > 0) && (
+        <WorkSection task={task} onToggle={() => handlers.onToggleWork(task.id)} />
+      )}
 
       {log.length > 0 && (
         <div className="mt-5 border-t border-line pt-4">

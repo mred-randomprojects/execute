@@ -37,7 +37,7 @@ import {
   weekStart,
 } from "../store/dates";
 import { CaptureBar } from "../components/CaptureBar";
-import { CurrentBanner } from "../components/CurrentBanner";
+import { WorkBanner } from "../components/WorkClock";
 import { TaskRow } from "../components/TaskRow";
 import { InboxZero } from "../components/InboxZero";
 import type { Run } from "../store/streak";
@@ -773,7 +773,10 @@ export function OutlineView({
   onAcceptRecurring,
   current,
   onFocusCurrent,
-  onClearCurrent,
+  onToggleCurrent,
+  onStopCurrent,
+  onCurrentNote,
+  currentNoteSignal,
   buckets,
   laterLayout,
   onToggleLaterLayout,
@@ -820,9 +823,15 @@ export function OutlineView({
   waiting: Task[];
   recurring: Recurrence[];
   onAcceptRecurring: (recId: RecurrenceId) => void;
+  /** The task in progress (store/work), bannered at the top. */
   current: Task | null;
   onFocusCurrent: () => void;
-  onClearCurrent: () => void;
+  /** Running → stop; paused → resume. */
+  onToggleCurrent: () => void;
+  /** Out of "in progress" (the paused banner's ×). */
+  onStopCurrent: () => void;
+  onCurrentNote: (text: string) => void;
+  currentNoteSignal: number;
   buckets: LaterGroup[];
   laterLayout: "date" | "project";
   onToggleLaterLayout: () => void;
@@ -925,7 +934,14 @@ export function OutlineView({
       )}
 
       {current != null && (
-        <CurrentBanner task={current} onFocus={onFocusCurrent} onClear={onClearCurrent} />
+        <WorkBanner
+          task={current}
+          onFocus={onFocusCurrent}
+          onToggle={onToggleCurrent}
+          onStop={onStopCurrent}
+          onNote={onCurrentNote}
+          noteSignal={currentNoteSignal}
+        />
       )}
 
       <div className="mb-4">

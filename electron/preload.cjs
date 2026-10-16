@@ -31,6 +31,14 @@ contextBridge.exposeInMainWorld("execute", {
     ipcRenderer.on("capture:focus", handler);
     return () => ipcRenderer.removeListener("capture:focus", handler);
   },
+  // The task-in-progress timer: when the Mac slept, the screen locked or the app
+  // wasn't running, after `since` (null = never) — and a ping on wake/unlock.
+  workOffSince: (since) => ipcRenderer.invoke("work:offSince", since),
+  onAwake: (fn) => {
+    const handler = () => fn();
+    ipcRenderer.on("power:awake", handler);
+    return () => ipcRenderer.removeListener("power:awake", handler);
+  },
   // Clicking the evening nudge opens the shutdown ritual itself, not just the app.
   onOpenShutdown: (fn) => {
     const handler = () => fn();

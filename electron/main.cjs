@@ -12,11 +12,13 @@ const {
   globalShortcut,
   ipcMain,
   nativeImage,
+  powerMonitor,
   shell,
 } = require("electron");
 const { readStoreFile } = require("./storeFile.cjs");
 const { backUpDaily, localDate } = require("./backups.cjs");
 const { isAppNavigation, isExternalUrlAllowed } = require("./navigation.cjs");
+const { createAwake } = require("./awake.cjs");
 
 if (require("electron-squirrel-startup")) {
   app.quit();
@@ -284,6 +286,8 @@ let presence = {
   /** Habits unanswered today — folded into the shutdown nudge, never the count. */
   habitsLeft: 0,
   habitNames: [],
+  /** The task in progress: { title, runningSince (null = paused), workedBefore }. */
+  working: null,
   tray: true,
   openAtLogin: false,
   nudges: true,
@@ -346,8 +350,33 @@ function trayImage() {
   return nativeImage.createEmpty();
 }
 
+/** "25m", "1h 05m" — the menu bar's minute-grained clock. */
+function workedLabel(ms) {
+  const min = Math.max(0, Math.floor(ms / 60_000));
+  const h = Math.floor(min / 60);
+  return h > 0 ? `${h}h ${String(min % 60).padStart(2, "0")}m` : `${min}m`;
+}
+
+/** Time on the task in progress, or null when nothing is running. */
+function workingNow() {
+  const w = presence.working;
+  if (w == null || typeof w.runningSince !== "number") return null;
+  return (Number(w.workedBefore) || 0) + Date.now() - w.runningSince;
+}
+
 function trayTitle() {
-  return presence.remaining > 0 ? ` ${presence.remaining}` : " ✓";
+  const count = presence.remaining > 0 ? ` ${presence.remaining}` : " ✓";
+  const worked = workingNow();
+  return worked == null ? count : ` ▶ ${workedLabel(worked)} ·${count}`;
+}
+
+/** The menu's first line about the task in progress, or null. */
+function workingLine() {
+  const w = presence.working;
+  if (w == null) return null;
+  const title = String(w.title ?? "").slice(0, 60);
+  const worked = workingNow();
+  return worked == null ? `Paused: ${title}` : `Working on: ${title} — ${workedLabel(worked)}`;
 }
 
 function updateTray() {
@@ -367,8 +396,10 @@ function updateTray() {
       ? `Execute — ${presence.remaining} left today`
       : "Execute — inbox zero") + (habitLine ? ` · ${habitLine}` : ""),
   );
+  const work = workingLine();
   tray.setContextMenu(
     Menu.buildFromTemplate([
+      ...(work ? [{ label: work, enabled: false }] : []),
       {
         label: presence.remaining > 0 ? `${presence.remaining} left today` : "Inbox zero",
         enabled: false,
@@ -551,8 +582,12 @@ function startPresence() {
   updateBadge();
   if (nudgeTimer != null) clearInterval(nudgeTimer);
   // Once a minute: cheap, and fine-grained enough that the nudge lands inside
-  // its hour no matter when the app started.
-  nudgeTimer = setInterval(checkNudges, 60_000);
+  // its hour no matter when the app started. The menu bar's work clock ticks
+  // on the same beat.
+  nudgeTimer = setInterval(() => {
+    checkNudges();
+    if (presence.working?.runningSince != null) updateTray();
+  }, 60_000);
   checkNudges();
 
   if (!globalShortcut.register(CAPTURE_SHORTCUT, focusCapture)) {
@@ -596,6 +631,26 @@ function registerIpc() {
     return { connected: key != null, clientEmail: key != null ? key.client_email : null };
   });
   ipcMain.handle("calendar:createEvent", (_event, input) => createCalendarEvent(input));
+  ipcMain.handle("work:offSince", (_event, since) => awake?.firstOffSince(since) ?? null);
+}
+
+// ── The timer's off switch (electron/awake.cjs) ──────────────────────
+// Sleep and a locked screen are moments nobody is working; so is the app not
+// running. The renderer asks for the first one after its session started —
+// on load, and whenever the Mac wakes or unlocks.
+let awake = null;
+let awakeTimer = null;
+
+function startAwake() {
+  awake = createAwake({ file: path.join(app.getPath("userData"), "awake.json") });
+  awake.beat();
+  awakeTimer = setInterval(() => awake?.beat(), 60_000);
+  const off = () => awake?.off();
+  const back = () => mainWindow?.webContents.send("power:awake");
+  powerMonitor.on("suspend", off);
+  powerMonitor.on("lock-screen", off);
+  powerMonitor.on("resume", back);
+  powerMonitor.on("unlock-screen", back);
 }
 
 function createWindow() {
@@ -668,6 +723,7 @@ if (!gotLock) {
         /* non-fatal */
       }
     }
+    startAwake();
     registerIpc();
     createWindow();
     startPresence();
@@ -677,6 +733,8 @@ if (!gotLock) {
   });
 
   app.on("will-quit", () => {
+    awake?.beat(); // the moment it stopped watching, for the next launch
+    if (awakeTimer != null) clearInterval(awakeTimer);
     globalShortcut.unregisterAll();
     if (nudgeTimer != null) clearInterval(nudgeTimer);
   });

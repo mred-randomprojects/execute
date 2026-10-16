@@ -84,13 +84,13 @@ export type RawDocs = Record<Collection, ReadonlyMap<string, unknown>> & { meta:
 /**
  * Fields that are per device and never leave it. Everything else in AppState
  * is synced. (Decided 2026-09-24: undo history, palette ranking, theme and the
- * tray/login settings stay local; so do the focus task, the dev date override,
+ * tray/login settings stay local; so did the focus task until v23 made it the
+ * synced in-progress state; so do the dev date override,
  * the capacity setting and the board preference, which the merge already kept
  * writer-local. The wrap-all preference joined them later.)
  */
 type DeviceField =
   | "theme"
-  | "currentTaskId"
   | "devDateOverride"
   | "dailyCapacityBlocks"
   | "boardPreferred"
@@ -298,7 +298,6 @@ export function fromDocs(raw: RawDocs, base: AppState): AppState {
 
   const device: Pick<AppState, DeviceField> = {
     theme: base.theme,
-    currentTaskId: base.currentTaskId,
     devDateOverride: base.devDateOverride,
     dailyCapacityBlocks: base.dailyCapacityBlocks,
     boardPreferred: base.boardPreferred,

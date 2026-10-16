@@ -29,6 +29,9 @@ import type {
   ThemeName,
   TrashedTask,
   WaitingOn,
+  InProgress,
+  WorkSession,
+  ProgressNote,
   WontDo,
 } from "../types";
 import { normalizeRule } from "./recurrence";
@@ -80,6 +83,10 @@ interface ExecuteBridge {
   reportSyncStatus?: (report: object) => Promise<boolean>;
   /** Subscribe to the global capture shortcut. Returns an unsubscribe. */
   onFocusCapture?: (fn: () => void) => () => void;
+  /** First moment after `since` the Mac slept, locked, or the app wasn't running (desktop only). */
+  workOffSince?: (since: number) => Promise<number | null>;
+  /** Subscribe to the Mac waking or unlocking. Returns an unsubscribe. */
+  onAwake?: (fn: () => void) => () => void;
   /** Subscribe to "open the shutdown ritual" (the evening nudge was clicked). */
   onOpenShutdown?: (fn: () => void) => () => void;
 }
@@ -238,6 +245,37 @@ function coerceWaitingOn(raw: unknown): WaitingOn | null {
   return { who: strOrNull(raw.who), since: num(raw.since, Date.now()) };
 }
 
+// v23: in progress, its sessions and its "currently" notes. Read strictly —
+// a malformed entry is dropped, never defaulted to "now" — because cloud
+// documents go through here on every sync round and must read the same each
+// time (sync/docs). Pre-v23 tasks have none of it: not in progress, no time.
+const finite = (x: unknown): x is number => typeof x === "number" && Number.isFinite(x);
+
+function coerceInProgress(raw: unknown): InProgress | null {
+  return isObject(raw) && finite(raw.since) ? { since: raw.since } : null;
+}
+
+function coerceSessions(raw: unknown): WorkSession[] {
+  if (!Array.isArray(raw)) return [];
+  const out: WorkSession[] = [];
+  for (const s of raw) {
+    if (!isObject(s) || !finite(s.start)) continue;
+    const end = finite(s.end) && s.end >= s.start ? s.end : null;
+    out.push({ start: s.start, end });
+  }
+  out.sort((a, b) => a.start - b.start);
+  // Only the last session can still be running.
+  return out.map((s, i) => (s.end == null && i < out.length - 1 ? { start: s.start, end: s.start } : s));
+}
+
+function coerceProgress(raw: unknown): ProgressNote[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .filter((n): n is { at: number; text: string } => isObject(n) && finite(n.at) && typeof n.text === "string")
+    .map((n) => ({ at: n.at, text: n.text }))
+    .sort((a, b) => a.at - b.at);
+}
+
 export function coerceTask(raw: unknown): Task {
   const o = isObject(raw) ? raw : {};
   const children = Array.isArray(o.children) ? o.children.map(coerceTask) : [];
@@ -262,6 +300,10 @@ export function coerceTask(raw: unknown): Task {
     completedAt: numOrNull(o.completedAt),
     wontDo,
     waitingOn,
+    // A settled task isn't being worked on (store/work keeps it that way).
+    inProgress: completed || wontDo != null || waitingOn != null ? null : coerceInProgress(o.inProgress),
+    sessions: coerceSessions(o.sessions),
+    progress: coerceProgress(o.progress),
     children,
     createdAt: num(o.createdAt, Date.now()),
     // Pre-sync data has no updatedAt → baseline from createdAt so LWW has a sane
@@ -544,6 +586,34 @@ function coerceActionLog(raw: unknown): ActionLogEntry[] {
     .slice(0, ACTION_LOG_LIMIT);
 }
 
+/**
+ * v23: the old per-device "right now" pointer (`currentTaskId`) becomes that
+ * task's in-progress state, paused — it was the task you were on, but nothing
+ * was timing it, so it starts with no time rather than an invented session.
+ * Only a local file can carry the field (cloud documents never had it), and
+ * the stamp moves forward so the merge takes this over the cloud's copy.
+ */
+function adoptCurrentTask(tasks: Task[], currentTaskId: unknown): Task[] {
+  if (typeof currentTaskId !== "string" || currentTaskId === "") return tasks;
+  let found = false;
+  const anyInProgress = (list: Task[]): boolean =>
+    list.some((t) => t.inProgress != null || anyInProgress(t.children));
+  if (anyInProgress(tasks)) return tasks;
+  const now = Date.now();
+  const adopt = (list: Task[]): Task[] =>
+    list.map((t) => {
+      if (found) return t;
+      if (t.id === currentTaskId) {
+        found = true;
+        if (t.completed || t.wontDo != null || t.waitingOn != null) return t;
+        return { ...t, inProgress: { since: now }, updatedAt: Math.max(now, t.updatedAt + 1) };
+      }
+      const children = adopt(t.children);
+      return children === t.children ? t : { ...t, children };
+    });
+  return adopt(tasks);
+}
+
 export function coerceState(raw: unknown): AppState {
   if (!isObject(raw)) return emptyState();
   const projects = coerceProjects(raw.projects);
@@ -574,7 +644,10 @@ export function coerceState(raw: unknown): AppState {
     schemaVersion: SCHEMA_VERSION,
     projects,
     // v18: rank every sibling list (pre-v18 lists have none; see store/placement).
-    tasks: repairRanks(normalizeChildProjects(tasks.map(normalizeProject))),
+    tasks: adoptCurrentTask(
+      repairRanks(normalizeChildProjects(tasks.map(normalizeProject))),
+      raw.currentTaskId,
+    ),
     recurrences,
     // v19: pre-v19 data has no habits.
     habits: Array.isArray(raw.habits) ? sortHabits(raw.habits.map(coerceHabit)) : [],
@@ -591,7 +664,6 @@ export function coerceState(raw: unknown): AppState {
     tombstones: coerceTombstones(raw.tombstones),
     log: Array.isArray(raw.log) ? raw.log.map(coerceLogEntry) : [],
     theme: coerceTheme(raw.theme),
-    currentTaskId: strOrNull(raw.currentTaskId) as TaskId | null,
     lastOpenedDate: strOrNull(raw.lastOpenedDate),
     devDateOverride: strOrNull(raw.devDateOverride),
     // v8: soft daily-capacity budget. Pre-v8 data has none → the default.

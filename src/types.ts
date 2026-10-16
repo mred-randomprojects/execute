@@ -63,6 +63,32 @@ export interface WaitingOn {
 /** Past this many days, a "waiting" badge stops being neutral and starts nagging. */
 export const WAITING_STALE_DAYS = 14;
 
+/**
+ * v23: the task you're working on — at most one at a time (see store/work).
+ *
+ * In progress is a state, the timer is its sessions: while the task is in
+ * progress and its last session is open, time runs. The Mac sleeping, or the
+ * app being closed, closes the session but leaves the task in progress
+ * ("paused"), so what you were on survives the night and `s` picks it back up.
+ * Completing, declining, blocking or trashing the task stops it for good.
+ */
+export interface InProgress {
+  /** When this stretch of being in progress began (resuming keeps it). */
+  since: number;
+}
+
+/** One stretch of time on a task. `end: null` = running now. */
+export interface WorkSession {
+  start: number;
+  end: number | null;
+}
+
+/** "Currently: …" — where you are in the task, kept as a dated trail. */
+export interface ProgressNote {
+  at: number;
+  text: string;
+}
+
 // ─── Recurrence (repeating tasks) ───────────────────────────────────
 //
 // A recurrence is a *definition*, not a spawned task: a task template plus a
@@ -223,6 +249,12 @@ export interface Task {
    * declining the task, since both settle it.
    */
   waitingOn: WaitingOn | null;
+  /** v23: being worked on — see {@link InProgress}. Cleared when the task settles. */
+  inProgress: InProgress | null;
+  /** v23: the time spent on it, oldest first. Never counted for its children. */
+  sessions: WorkSession[];
+  /** v23: the "currently: …" notes, oldest first; the last one is where you are. */
+  progress: ProgressNote[];
   children: Task[];
   createdAt: number;
   /**
@@ -569,8 +601,6 @@ export interface AppState {
   tombstones: Tombstone[];
   log: LogEntry[];
   theme: ThemeName;
-  /** The one task the user is focusing on "right now" — surfaced in a banner. */
-  currentTaskId: TaskId | null;
   /** Last calendar date the app was opened — drives rollover detection. */
   lastOpenedDate: ISODate | null;
   /** Dev-only: pretend "today" is this date, to exercise the rollover ritual. */
@@ -623,7 +653,7 @@ export interface AppState {
   days: DayRecord[];
 }
 
-export const SCHEMA_VERSION = 22;
+export const SCHEMA_VERSION = 23;
 export const DEFAULT_PROJECT_ID = "project-inbox" as ProjectId;
 export const PROJECT_ROW_PREFIX = "project:";
 
@@ -671,7 +701,6 @@ export function emptyState(): AppState {
     tombstones: [],
     log: [],
     theme: "slate",
-    currentTaskId: null,
     lastOpenedDate: null,
     devDateOverride: null,
     dailyCapacityBlocks: DEFAULT_CAPACITY_BLOCKS,

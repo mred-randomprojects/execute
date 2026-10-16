@@ -59,6 +59,7 @@ import {
   setProjectForIds,
 } from "./tasks";
 import { normalizeRule } from "./recurrence";
+import { noteProgress, pauseWork, settleWork, startWork, stopAll, stopWork, workingOn } from "./work";
 import {
   everyLabel,
   formatValue,
@@ -320,6 +321,13 @@ function waitingEq(a: Task["waitingOn"], b: Task["waitingOn"]): boolean {
   if (a == null || b == null) return a === b;
   return a.who === b.who && a.since === b.since;
 }
+function workEq(a: Task, b: Task): boolean {
+  return (
+    (a.inProgress === b.inProgress || jsonEqual(a.inProgress, b.inProgress)) &&
+    (a.sessions === b.sessions || jsonEqual(a.sessions, b.sessions)) &&
+    (a.progress === b.progress || jsonEqual(a.progress, b.progress))
+  );
+}
 function labelsEq(a: string[], b: string[]): boolean {
   return a.length === b.length && a.every((x, i) => x === b[i]);
 }
@@ -341,6 +349,7 @@ function sameOwnFields(a: Task, b: Task): boolean {
     horizonEq(a.horizon, b.horizon) &&
     wontDoEq(a.wontDo, b.wontDo) &&
     waitingEq(a.waitingOn, b.waitingOn) &&
+    workEq(a, b) &&
     labelsEq(a.labels, b.labels)
   );
 }
@@ -593,6 +602,13 @@ function withHistory(
   return { ...s, actionLog: [entry, ...log].slice(0, ACTION_LOG_LIMIT) };
 }
 
+/** No settled task left in progress, and only one in progress (see store/work). */
+function withSettledWork(prev: AppState, s: AppState): AppState {
+  if (s.tasks === prev.tasks) return s;
+  const tasks = settleWork(s.tasks, Date.now());
+  return tasks === s.tasks ? s : { ...s, tasks };
+}
+
 /** The state with no parent left stranded behind its open children (see bounds). */
 function withBoundedParents(s: AppState): AppState {
   const tasks = widenStaleParents(s.tasks, todayISO(s.devDateOverride));
@@ -622,7 +638,10 @@ function update(fn: (s: AppState) => AppState, label: string | null): void {
   // Undo deliberately doesn't run it (applyStep restores the snapshot as it
   // was): an undo that "helpfully" kept part of the change isn't one.
   const raw = fn(prev);
-  const produced = raw === prev ? raw : withBoundedParents(raw);
+  // Work settles here for the same reason: completing, declining or blocking a
+  // task has a dozen doors (the outline, the Reckoning, Shutdown, the board,
+  // the palette), and every one of them has to stop its timer.
+  const produced = raw === prev ? raw : withSettledWork(prev, withBoundedParents(raw));
   // A guard that bailed (`markWontDo` on an already-skipped task, and friends)
   // returns `s` untouched. Stop here: an undo step that does nothing, and a
   // history line for a change that never happened, are both worse than silence.
@@ -883,9 +902,61 @@ export function setPresence(patch: Partial<Presence>): void {
   update((s) => ({ ...s, presence: { ...s.presence, ...patch } }), null);
 }
 
-/** Set (or clear, with null) the "right now" task. A focus pointer, not undoable. */
-export function setCurrentTask(id: TaskId | null): void {
-  update((s) => ({ ...s, currentTaskId: id }), null);
+// ─── In progress (store/work) ───────────────────────────────────────
+
+/** Start or resume work on a task; whatever else was in progress stops. */
+export function startWorking(id: TaskId): void {
+  const t = findById(state.tasks, id);
+  const verb = t?.inProgress != null ? "Resume" : "Start";
+  update((s) => ({ ...s, tasks: startWork(s.tasks, id, Date.now()) }), `${verb} work on ${quote(t)}`);
+}
+
+/** Stop working on a task. The time so far stays on it. */
+export function stopWorking(id: TaskId): void {
+  update(
+    (s) => ({ ...s, tasks: stopWork(s.tasks, id, Date.now()) }),
+    `Stop work on ${quote(findById(state.tasks, id))}`,
+  );
+}
+
+/**
+ * `s`: start what isn't in progress, resume what's paused, stop what's running.
+ * Returns what it did, for the status line.
+ */
+export function toggleWorking(id: TaskId): "started" | "resumed" | "stopped" | null {
+  const t = findById(state.tasks, id);
+  if (t == null || !isOpen(t) || t.waitingOn != null) return null;
+  const current = workingOn(state.tasks);
+  if (current?.id === id && t.inProgress != null) {
+    const last = t.sessions[t.sessions.length - 1];
+    if (last != null && last.end == null) {
+      stopWorking(id);
+      return "stopped";
+    }
+    startWorking(id);
+    return "resumed";
+  }
+  startWorking(id);
+  return "started";
+}
+
+/**
+ * Close the running session at `at` and leave the task in progress, paused —
+ * the Mac slept or the app was closed, and that time wasn't anyone's work.
+ * Not undoable: nothing the user did, and undo putting the time back would be
+ * the wrong number.
+ */
+export function pauseWorkAt(at: number): void {
+  update((s) => ({ ...s, tasks: pauseWork(s.tasks, at) }), null);
+}
+
+/** "Currently: …" on the task in progress — one dated line on its trail. */
+export function setProgressNote(id: TaskId, text: string): void {
+  const clean = text.trim();
+  update(
+    (s) => ({ ...s, tasks: noteProgress(s.tasks, id, clean, Date.now()) }),
+    clean === "" ? `Clear what you’re on in ${quote(findById(state.tasks, id))}` : `Currently ${quoteText(clean)}`,
+  );
 }
 
 /**
@@ -1386,7 +1457,8 @@ export function restoreFromTrash(taskId: TaskId): void {
     if (entry == null) return s;
     return {
       ...s,
-      tasks: [...s.tasks, entry.task],
+      // In progress when it was trashed: its timer stopped then, not now.
+      tasks: [...s.tasks, stopAll([entry.task], entry.deletedAt)[0]],
       trash: s.trash.filter((e) => e.task.id !== taskId),
     };
   }, `Restore ${quote(state.trash.find((e) => e.task.id === taskId)?.task)} from the trash`);

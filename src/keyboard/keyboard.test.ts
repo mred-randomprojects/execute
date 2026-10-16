@@ -220,6 +220,15 @@ describe("the bare-letter rule", () => {
   const ALLOWED_IN_NORMAL: Record<string, string> = {
     n: "new task — creates an empty row you're immediately editing; esc discards it",
     p: "peek — a pure view toggle, presses again to close",
+    s: "start / stop work — shows at once (banner, ▶ on the row, sidebar clock), a second s stops it, ⌘z undoes it, and it changes no date or state you'd have to find again",
+  };
+
+  /**
+   * Letters that knowingly mean one thing in the outline and another in the
+   * rituals. Each needs its argument, like the allowlist above.
+   */
+  const SHARED_WITH_RITUALS: Record<string, string> = {
+    s: "postpone in the rituals, start work in the outline — chosen by name (2026-10-15); a stray s in the outline only starts a timer, visibly and undoably",
   };
 
   const bareLetters = (context: string) =>
@@ -252,8 +261,8 @@ describe("the bare-letter rule", () => {
         .flatMap(bareLetters)
         .map((k) => k.toLowerCase())
     );
-    const clashes = bareLetters("normal").filter((k) =>
-      ritual.has(k.toLowerCase())
+    const clashes = bareLetters("normal").filter(
+      (k) => ritual.has(k.toLowerCase()) && !(k.toLowerCase() in SHARED_WITH_RITUALS)
     );
     expect(clashes).toEqual([]);
   });

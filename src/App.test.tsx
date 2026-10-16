@@ -875,7 +875,7 @@ const CMD = {
   schedOpen: /^Schedule… \(type a day or a date\)$/,
   wontDo: /^Won.t do/,
   waiting: /^(Blocked: waiting on someone else…|Unblock — no longer waiting on anyone)$/,
-  current: /^(Set as current \(focus\) task|Clear current \(focus\) task)$/,
+  work: /^(Start working on it — in progress, timer on|Stop working on it \(the time stays\)|Resume working on it)$/,
   hideCompleted: /^(Hide|Show) completed & won.t-do tasks$/,
   estimate: /^Estimate effort/,
   project: /^File under a project…$/,
@@ -2746,41 +2746,64 @@ describe("Recurring tasks", () => {
   });
 });
 
-describe("Current (focus) task", () => {
-  it("c sets a banner + row marker, and c again clears it", async () => {
+describe("In progress (s) and its timer", () => {
+  it("s starts it — banner, row chip, sidebar — and s again stops it", async () => {
     render(<App />);
     await addTask("focus me");
     blurActive();
-    expect(screen.queryByText("Right now")).toBeNull();
+    expect(screen.queryByText("Working on")).toBeNull();
 
-    await runCommand(CMD.current);
-    expect(await screen.findByText("Right now")).toBeTruthy(); // banner
-    expect(screen.getByText("Now")).toBeTruthy(); // row marker pill
+    fireEvent.keyDown(document.body, { key: "s" });
+    expect(await screen.findByText("Working on")).toBeTruthy(); // banner
+    expect(screen.getByTitle("In progress — s stops")).toBeTruthy(); // row chip
+    expect(screen.getByTitle("Working on this — click to jump to it")).toBeTruthy(); // sidebar
 
-    await runCommand(CMD.current);
-    await waitFor(() => expect(screen.queryByText("Right now")).toBeNull());
+    fireEvent.keyDown(document.body, { key: "s" });
+    await waitFor(() => expect(screen.queryByText("Working on")).toBeNull());
   });
 
-  it("retires the banner once the current task is completed", async () => {
+  it("the palette starts it too, and ⌘z takes the start back", async () => {
+    render(<App />);
+    await addTask("palette me");
+    blurActive();
+    await runCommand(CMD.work);
+    await screen.findByText("Working on");
+    fireEvent.keyDown(document.body, { key: "z", metaKey: true });
+    await waitFor(() => expect(screen.queryByText("Working on")).toBeNull());
+  });
+
+  it("says where you are: Currently… is saved from the banner", async () => {
+    render(<App />);
+    await addTask("long task");
+    blurActive();
+    fireEvent.keyDown(document.body, { key: "s" });
+    fireEvent.click(await screen.findByText(/^Currently… \(click/));
+    const input = await screen.findByPlaceholderText(/^Currently…/);
+    fireEvent.change(input, { target: { value: "section 2" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(await screen.findByText("section 2")).toBeTruthy();
+  });
+
+  it("retires the banner once the task is completed", async () => {
     render(<App />);
     await addTask("do this");
     blurActive();
-    await runCommand(CMD.current);
-    await screen.findByText("Right now");
+    fireEvent.keyDown(document.body, { key: "s" });
+    await screen.findByText("Working on");
 
     fireEvent.keyDown(document.body, { key: "Enter", metaKey: true }); // complete the focused task
-    await waitFor(() => expect(screen.queryByText("Right now")).toBeNull());
+    await waitFor(() => expect(screen.queryByText("Working on")).toBeNull());
   });
 
-  it("clears the pointer when the current task is deleted", async () => {
+  it("retires the banner when the task is deleted", async () => {
     render(<App />);
     await addTask("temp focus");
     blurActive();
-    await runCommand(CMD.current);
-    await screen.findByText("Right now");
+    fireEvent.keyDown(document.body, { key: "s" });
+    await screen.findByText("Working on");
 
-    fireEvent.keyDown(document.body, { key: "Backspace" }); // trash the leaf
-    await waitFor(() => expect(screen.queryByText("Right now")).toBeNull());
+    fireEvent.keyDown(document.body, { key: "Backspace" }); // won't do the leaf
+    await waitFor(() => expect(screen.queryByText("Working on")).toBeNull());
   });
 });
 

@@ -108,10 +108,52 @@ describe("persistence: v5 recurrences", () => {
 });
 
 describe("persistence: v6 current task pointer", () => {
-  it("round-trips currentTaskId and defaults it to null", () => {
-    expect(coerceState({}).currentTaskId).toBeNull();
-    expect(coerceState({ currentTaskId: "t9" }).currentTaskId).toBe("t9");
-    expect(coerceState({ currentTaskId: 123 }).currentTaskId).toBeNull(); // junk → null
+  it("v23: the old current task becomes in progress, paused, with a newer stamp", () => {
+    const s = coerceState({
+      currentTaskId: "t9",
+      tasks: [{ id: "t1", text: "a", updatedAt: 5 }, { id: "t9", text: "b", updatedAt: 5 }],
+    });
+    const t9 = s.tasks.find((t) => t.id === "t9");
+    expect(t9?.inProgress).not.toBeNull();
+    expect(t9?.sessions).toEqual([]); // no invented time
+    expect(t9?.updatedAt).toBeGreaterThan(5);
+    expect(s.tasks.find((t) => t.id === "t1")?.inProgress).toBeNull();
+    expect("currentTaskId" in s).toBe(false);
+  });
+
+  it("v23: a finished current task, or junk, adopts nothing", () => {
+    const done = coerceState({ currentTaskId: "t9", tasks: [{ id: "t9", completed: true }] });
+    expect(done.tasks[0].inProgress).toBeNull();
+    const junk = coerceState({ currentTaskId: 123, tasks: [{ id: "t9" }] });
+    expect(junk.tasks[0].inProgress).toBeNull();
+  });
+
+  it("v23: reads work strictly — malformed entries dropped, only the last session open", () => {
+    const t = coerceState({
+      tasks: [
+        {
+          id: "t1",
+          inProgress: { since: 10 },
+          sessions: [{ start: 30, end: null }, { start: 10, end: null }, { start: "x" }, { start: 50, end: 40 }],
+          progress: [{ at: 2, text: "b" }, { at: 1, text: "a" }, { at: "x", text: "c" }],
+        },
+      ],
+    }).tasks[0];
+    expect(t.inProgress).toEqual({ since: 10 });
+    // Sorted; an earlier open session is closed at its start; end < start → open.
+    expect(t.sessions).toEqual([
+      { start: 10, end: 10 },
+      { start: 30, end: 30 },
+      { start: 50, end: null },
+    ]);
+    expect(t.progress.map((n) => n.text)).toEqual(["a", "b"]);
+    // Deterministic: a second read is identical (cloud docs are read every round).
+    expect(coerceState({ tasks: [t] }).tasks[0].sessions).toEqual(t.sessions);
+  });
+
+  it("v23: a settled task is never in progress", () => {
+    const t = coerceState({ tasks: [{ id: "t1", completed: true, inProgress: { since: 1 } }] }).tasks[0];
+    expect(t.inProgress).toBeNull();
   });
 });
 

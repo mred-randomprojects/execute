@@ -12,6 +12,7 @@ import { useEditor, type DropPos } from "../ui/editor";
 import { renderBlock, renderInline } from "../ui/markdown";
 import { subsequenceMatch } from "../store/search";
 import { NO_SPELLCHECK } from "../ui/noSpellcheck";
+import { WorkChip } from "./WorkClock";
 
 function FocusIcon() {
   return (
@@ -342,11 +343,7 @@ export function TaskRow({ task, depth }: { task: Task; depth: number }) {
         </button>
       ) : null}
 
-      {isCurrent && !editing && (
-        <span className="mono shrink-0 rounded-sm bg-accent px-1.5 py-[1px] text-[10px] font-medium uppercase tracking-[0.12em] text-white">
-          Now
-        </span>
-      )}
+      {isCurrent && !editing && <WorkChip task={task} />}
 
       {!editing && task.notes.trim() !== "" && (
         <button

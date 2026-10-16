@@ -148,6 +148,11 @@ function mergeOwnFields(base: Task, other: Task | undefined): Task {
     completedAt: newer.completedAt,
     wontDo: newer.wontDo,
     waitingOn: newer.waitingOn,
+    // Work goes with the newer version, like the rest of the task's content: a
+    // union would hand an undone start straight back from the other copy.
+    inProgress: newer.inProgress,
+    sessions: newer.sessions,
+    progress: newer.progress,
     priority: newer.priority,
     plannedFor: newer.plannedFor,
     horizon: newer.horizon,
@@ -385,7 +390,6 @@ export function mergeStates(local: AppState, remote: AppState): AppState {
     tombstones,
     log: mergeLog(local.log, remote.log),
     theme: local.theme, // writer wins (a per-device preference, effectively)
-    currentTaskId: local.currentTaskId, // writer's "right now"
     lastOpenedDate: maxDate(local.lastOpenedDate, remote.lastOpenedDate),
     devDateOverride: local.devDateOverride,
     dailyCapacityBlocks: local.dailyCapacityBlocks, // writer wins (a per-device setting)

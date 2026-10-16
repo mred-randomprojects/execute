@@ -14,9 +14,16 @@ import type { KeyBinding } from "./types";
 // bare letters are reserved for things that don't mutate anything: `n` (new),
 // `p` (peek), the view digits, and the period brackets. Everything else goes
 // through ⌘k, which is searchable, undoable-by-name and impossible to hit by
-// accident. That is why there is no `t`, `w`, `b`, `c`, `h`, `g`, `s`, `e`,
-// `r`, `q` or `m` here: each one mutated a task or swallowed the keyboard on a
+// accident. That is why there is no `t`, `w`, `b`, `c`, `h`, `g`, `e`, `r`,
+// `q` or `m` here: each one mutated a task or swallowed the keyboard on a
 // single unmodified keypress.
+//
+// The one exception is `s` (since v23): start / stop work on the focused task.
+// It used to be schedule, which rewrote a date you might not notice; this
+// changes nothing about the task you'd have to find again — it lights a banner
+// at the top, a ▶ on the row and a clock in the sidebar the moment it lands,
+// a second `s` stops it, and ⌘z takes it back. Asked for by name (2026-10-15):
+// a timer has to cost one keystroke or it doesn't get started.
 
 export const keymap: KeyBinding[] = [
   // ── global ────────────────────────────────────────────────────────
@@ -68,6 +75,7 @@ export const keymap: KeyBinding[] = [
   { key: "Alt+ArrowUp", action: "reorder.up", context: "normal", displayKey: "⌥ ↑", description: "move task up", section: "Tasks" },
   { key: "Alt+ArrowDown", action: "reorder.down", context: "normal", displayKey: "⌥ ↓", description: "move task down", section: "Tasks" },
   { key: "Backspace", action: "task.trash", context: "normal", displayKey: "⌫", description: "won’t do · press again to trash", section: "Tasks", noRepeat: true },
+  { key: "s", action: "task.work", context: "normal", displayKey: "s", description: "start working on it — in progress, timer on · again: stop · paused: resume", section: "Tasks", noRepeat: true },
   { key: "p", action: "task.peek", context: "normal", displayKey: "p", description: "peek — unwrap the title + notes in place", section: "Tasks" },
   { key: "Alt+Enter", action: "zoom.in", context: "normal", displayKey: "⌥ ↵", description: "zoom in / focus (esc backs out)", section: "Tasks" },
 

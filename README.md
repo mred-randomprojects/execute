@@ -51,6 +51,7 @@ keymap). Highlights:
 | `⌘ ↵` | complete / uncomplete |
 | `n` | new task below · `/` capture bar |
 | `p` | peek — unwrap title + notes in place |
+| `s` | **start working** on it — in progress, timer on · again: stop · when paused: resume |
 | `tab` / `⇧ tab` | indent / outdent |
 | `⌫` | won't do · press again to trash |
 | `1` – `7` | Today / Backlog / All / Projects / Recurring / Habits & KPIs / Trash · `[` `]` walk the period tabs |
@@ -63,8 +64,10 @@ keymap). Highlights:
 you're *browsing*, so it lands on a real task with no warning — which is how `m`
 used to drop you into a move mode with no visible way out, and how `t`, `w`, `b`
 and `c` each rewrote the focused task on one keypress. So the outline keeps bare
-letters only for things that change nothing you'd have to undo (`n`, `p`),
-and everything that touches a task — schedule, won't-do, blocked, estimate,
+letters only for things that change nothing you'd have to undo (`n`, `p`) —
+plus `s`, the timer, which has to cost one keystroke or it never gets started,
+and shows the moment it lands (a banner, a ▶ on the row, a clock in the sidebar)
+— and everything else that touches a task — schedule, won't-do, blocked, estimate,
 project, repeat, plan, shutdown — goes through `⌘k`, which is searchable and
 impossible to hit by accident.
 
@@ -156,6 +159,30 @@ zombie this replaces — so blocked work never disappears: overdue and undated o
 trail Today under **Waiting on others**, oldest first, and the badge counts the
 days. Past a fortnight it turns red. Running it again unblocks it; finishing or
 declining clears it.
+
+## In progress — and how long it took
+
+`s` on a task puts it **in progress** and starts its timer. One task at a time:
+starting another stops the last. The task gets a banner at the top of the list
+(its clock, its time against the estimate, a bar that turns red past it), a ▶
+on its row, a clock in the sidebar on every view, and a `▶ 25m` in the menu
+bar, so the timer is never out of sight. `s` again stops it; the time stays on
+the task, and the details panel (`→`) lists every stretch and the total.
+
+**Currently: …** — click the line under the banner's title (or `⌘k` →
+"currently") and say where you are in it. Each one is kept with its time, so
+the details panel reads back as a trail of where you were.
+
+**Time nobody was there for doesn't count.** When the Mac sleeps or the screen
+locks, or the app quits for more than five minutes, the running stretch ends
+right there and the task stays in progress, **paused** — what you were on
+survives the night, and `s` (or the banner's ▶) resumes it. Opening Shutdown
+pauses it too: closing the day closes the clock. Completing, declining,
+blocking or trashing the task takes it out of progress for good. Closing the
+window doesn't stop anything: the app keeps running in the menu bar.
+
+It syncs, so the phone shows which task is in progress. The timer itself runs
+on the Mac.
 
 ## Coming back after a while
 
@@ -259,7 +286,8 @@ Two rules keep the number honest rather than merely flattering:
 The loop above only runs if the app gets opened, so the app has a body while its
 window doesn't:
 
-- a **menu-bar count** of what's left today (`✓` at zero) — passive, pull not push;
+- a **menu-bar count** of what's left today (`✓` at zero) — passive, pull not push —
+  led by the **work clock** (`▶ 25m`) while a task is in progress;
 - a **dock badge** with the same number;
 - **`⌘⇧space`** from anywhere: shows the window with the cursor already in the
   capture bar, so a stray thought never has to wait;
@@ -328,7 +356,7 @@ pnpm make     # → out/make/**/Execute.dmg  (+ .zip)
 ### Layout
 
 ```
-electron/        main.cjs (window + persistence IPC) · preload.cjs (bridge) · storeFile.cjs (reading the store) · backups.cjs (daily copies)
+electron/        main.cjs (window + persistence IPC) · preload.cjs (bridge) · storeFile.cjs (reading the store) · backups.cjs (daily copies) · awake.cjs (when the Mac slept or the app was quit, for the work timer)
 src/
   types.ts                      core domain types
   store/  tasks.ts (pure tree ops) · dates.ts · capture.ts · persistence.ts · store.ts

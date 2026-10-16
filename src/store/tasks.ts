@@ -17,6 +17,9 @@ export function makeTask(
     completedAt: null,
     wontDo: null,
     waitingOn: null,
+    inProgress: null,
+    sessions: [],
+    progress: [],
     children: [],
     createdAt: Date.now(),
     updatedAt: Date.now(),
@@ -41,6 +44,10 @@ export function cloneWithNewIds(task: Task): Task {
     ...task,
     id: nanoid() as TaskId,
     updatedAt: Date.now(),
+    // A copy is new work: none of the original's time, state or notes.
+    inProgress: null,
+    sessions: [],
+    progress: [],
     children: task.children.map(cloneWithNewIds),
   };
 }

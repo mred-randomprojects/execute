@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { AppState, HabitId, HabitMark, ISODate, ProjectId, TaskId } from "../types";
 import { PhoneHabits } from "./PhoneHabits";
 import { findById } from "../store/tasks";
+import { workingOn } from "../store/work";
 import { TaskSheet, type TaskPatch } from "./TaskSheet";
 import { sinceLabel, todayISO } from "../store/dates";
 import { CaptureBar } from "../components/CaptureBar";
@@ -160,7 +161,8 @@ export function ReadOnlyApp({
     today,
     bucketed: false,
     cursorId,
-    currentId: state.currentTaskId,
+    // In progress on the desktop shows here too — it's synced (store/work).
+    currentId: workingOn(state.tasks)?.id ?? null,
     selectedIds: [],
     editingId: null,
     reasonEditId: null,

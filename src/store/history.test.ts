@@ -8,8 +8,11 @@ import {
   getUndoSteps,
   initStore,
   markWontDo,
+  pauseWorkAt,
   redo,
-  setCurrentTask,
+  restoreFromTrash,
+  setProgressNote,
+  toggleWorking,
   setDailyCapacityBlocks,
   setText,
   setTheme,
@@ -20,6 +23,8 @@ import {
 } from "./store";
 import { mergeStates } from "../sync/merge";
 import { findById } from "./tasks";
+import { workingOn } from "./work";
+import { fromDocs, toDocs, asRaw } from "../sync/docs";
 import type { AppState, TaskId } from "../types";
 
 // Undo, redo, and the action log. The sync assertions are the important ones:
@@ -245,10 +250,90 @@ describe("the action log", () => {
     // a theme switch still reaches the last real change.
     setTheme("carbon");
     setDailyCapacityBlocks(9);
-    setCurrentTask(null);
 
     expect(getState().theme).toBe("carbon");
     expect(getState().actionLog.length).toBe(before);
     expect(getUndoSteps().length).toBe(steps);
+  });
+});
+
+describe("in progress (store/work) at the store", () => {
+  it("s starts, s stops, the time stays, and undo takes a start back", () => {
+    const id = addTaskAfter(null, "write the report");
+    expect(toggleWorking(id)).toBe("started");
+    expect(workingOn(getState().tasks)?.id).toBe(id);
+    tick(10 * 60_000);
+    expect(toggleWorking(id)).toBe("stopped");
+    expect(task(id)?.inProgress).toBeNull();
+    expect(task(id)?.sessions).toEqual([{ start: clock - 10 * 60_000, end: clock }]);
+
+    tick();
+    toggleWorking(id);
+    expect(getState().actionLog[0].label).toBe("Start work on “write the report”");
+    undo();
+    expect(task(id)?.sessions).toHaveLength(1); // the second start is gone
+    expect(workingOn(getState().tasks)).toBeNull();
+  });
+
+  it("completing, declining or trashing stops it — whatever the path", () => {
+    const a = addTaskAfter(null, "a");
+    const b = addTaskAfter(a, "b");
+    toggleWorking(a);
+    tick(60_000);
+    toggleComplete(a);
+    expect(task(a)?.inProgress).toBeNull();
+    expect(task(a)?.sessions[0].end).toBe(clock);
+
+    toggleWorking(b);
+    tick();
+    markWontDo(b);
+    expect(task(b)?.inProgress).toBeNull();
+    expect(workingOn(getState().tasks)).toBeNull();
+
+    const c = addTaskAfter(b, "c");
+    toggleWorking(c);
+    const trashedAt = clock + 1000;
+    tick();
+    trashTask(c);
+    expect(workingOn(getState().tasks)).toBeNull();
+    tick(60 * 60_000);
+    restoreFromTrash(c);
+    // Its clock stopped when it went to the Trash, not an hour later.
+    expect(task(c)?.inProgress).toBeNull();
+    expect(task(c)?.sessions[0].end).toBe(trashedAt);
+  });
+
+  it("a pause (sleep, quit) isn't undoable and keeps it in progress", () => {
+    const id = addTaskAfter(null, "deep work");
+    toggleWorking(id);
+    const steps = getUndoSteps().length;
+    tick(5 * 60_000);
+    pauseWorkAt(clock);
+    expect(getUndoSteps().length).toBe(steps);
+    expect(task(id)?.inProgress).not.toBeNull();
+    expect(toggleWorking(id)).toBe("resumed");
+  });
+
+  it("syncs: in progress, its stretches and notes survive the documents", () => {
+    const id = addTaskAfter(null, "synced");
+    toggleWorking(id);
+    tick();
+    setProgressNote(id, "halfway");
+    const round = fromDocs(asRaw(toDocs(getState())), getState());
+    const back = findById(round.tasks, id);
+    expect(back?.inProgress).toEqual(task(id)?.inProgress);
+    expect(back?.sessions).toEqual(task(id)?.sessions);
+    expect(back?.progress).toEqual(task(id)?.progress);
+  });
+
+  it("the newer side's work wins the merge, and a stop sticks", () => {
+    const id = addTaskAfter(null, "merge me");
+    toggleWorking(id);
+    const remote = asRemote(getState()); // the cloud: running
+    tick(60_000);
+    toggleWorking(id); // stopped here, later
+    const merged = mergeStates(getState(), remote);
+    expect(findById(merged.tasks, id)?.inProgress).toBeNull();
+    expect(findById(merged.tasks, id)?.sessions[0].end).toBe(clock);
   });
 });
