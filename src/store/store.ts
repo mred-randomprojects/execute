@@ -59,6 +59,7 @@ import {
   setProjectForIds,
 } from "./tasks";
 import { normalizeRule } from "./recurrence";
+import { rebaseStep } from "./rebase";
 import { noteProgress, pauseWork, settleWork, startWork, stopAll, stopWork, workingOn } from "./work";
 import {
   everyLabel,
@@ -67,6 +68,7 @@ import {
   normalizePerWeek,
   rangeLabel,
   sameMeasure,
+  habitLastTouched,
   sortHabits,
   stampHabit,
   withMark,
@@ -98,18 +100,20 @@ const listeners = new Set<() => void>();
 const MAX_UNDO = 100;
 
 /**
- * One reversible step. The snapshot is the state as it was *before* the action;
- * `touched` is the set of task ids the action added, removed, or edited — its
- * footprint, which {@link restamp} needs to make the reversal stick across the
- * cloud. `id` is shared with the matching {@link ActionLogEntry}, so the history
- * panel can tell which of its (persisted) lines are still reachable in memory.
+ * One reversible step: the state just before the action and the state it
+ * produced. Undo and redo apply the difference between the two — the step's
+ * footprint — on top of the state as it is by then (see store/rebase), never
+ * one of the snapshots whole: changes that arrived from other devices in the
+ * meantime are not the step's to take back. `id` is shared with the matching
+ * {@link ActionLogEntry}, so the history panel can tell which of its
+ * (persisted) lines are still reachable in memory.
  */
 interface HistoryStep {
   id: string;
   label: string;
   at: number;
-  state: AppState;
-  touched: Set<TaskId>;
+  before: AppState;
+  after: AppState;
 }
 
 /** A history step as the UI sees it — no snapshot, just the line. */
@@ -157,7 +161,9 @@ export function subscribeReady(cb: () => void): () => void {
  * adopting a remote snapshot never schedules a push back — that would echo
  * forever. We still persist to local disk (durability) and notify subscribers.
  * Undo history is left intact: it holds the user's own edit steps, which a
- * remote change from another device doesn't invalidate. Callers must only pass
+ * remote change from another device doesn't invalidate — undo applies a step's
+ * own footprint on top of whatever arrived since (see applyStep), so it can't
+ * take the remote change back with it. Callers must only pass
  * a state that already reflects local edits (i.e. a merge, not a raw remote),
  * so this can't drop unsynced local work.
  */
@@ -359,20 +365,14 @@ function indexById(tasks: Task[], into: Map<TaskId, Task>): void {
     indexById(t.children, into);
   }
 }
-function stampNode(
-  node: Task,
-  prevById: Map<TaskId, Task>,
-  now: number,
-  touched: Set<TaskId>,
-): Task {
+function stampNode(node: Task, prevById: Map<TaskId, Task>, now: number): Task {
   let children = node.children;
   if (children.length > 0) {
-    const mapped = children.map((c) => stampNode(c, prevById, now, touched));
+    const mapped = children.map((c) => stampNode(c, prevById, now));
     if (mapped.some((c, i) => c !== children[i])) children = mapped;
   }
   const before = prevById.get(node.id);
   const ownChanged = before == null || !sameOwnFields(before, node);
-  if (ownChanged) touched.add(node.id);
   // Never behind the version being edited: that version may carry another
   // device's clock, and if it runs ahead, `now` would lose the merge to it.
   const updatedAt = ownChanged ? Math.max(now, (before?.updatedAt ?? -Infinity) + 1) : node.updatedAt;
@@ -538,57 +538,64 @@ function withSyncStamps(prev: AppState, next: AppState): AppState {
   return { ...next, tasks, projects, recurrences, habits };
 }
 
-/** The stamped state plus the ids the transform actually touched. */
-interface Stamped {
-  state: AppState;
-  touched: Set<TaskId>;
-}
-
-function stampTasks(prev: AppState, next: AppState): Stamped {
-  if (next.tasks === prev.tasks) return { state: next, touched: new Set() };
+/**
+ * `updatedAt` on every task whose own fields differ from `prev` — past the
+ * version it replaces, which may carry another device's clock that runs ahead.
+ * `now` is the stamp to use: the current time, except for a change that stands
+ * for an earlier moment (see pauseWorkAt).
+ */
+function stampTasks(prev: AppState, next: AppState, now: number = Date.now()): AppState {
+  if (next.tasks === prev.tasks) return next;
   const prevById = new Map<TaskId, Task>();
   indexById(prev.tasks, prevById);
-  const nextById = new Map<TaskId, Task>();
-  indexById(next.tasks, nextById);
-  const now = Date.now();
-  const touched = new Set<TaskId>();
-  // Deletions have to be collected separately: `stampNode` only ever walks the
-  // *next* tree, so a task that was trashed leaves no node behind to mark — and
-  // it's exactly the one undo has to resurrect against its own tombstone.
-  for (const id of prevById.keys()) if (!nextById.has(id)) touched.add(id);
-  const tasks = next.tasks.map((t) => stampNode(t, prevById, now, touched));
-  return { state: { ...next, tasks }, touched };
+  const tasks = next.tasks.map((t) => stampNode(t, prevById, now));
+  return { ...next, tasks };
 }
 
 /**
- * Re-stamp `updatedAt = now` on exactly the tasks an undone (or redone) action
- * touched. This is what makes undo *stick* once you're signed in: cloud sync
- * resolves every task by last-write-wins on `updatedAt` (see src/sync/merge), so
- * a snapshot restored with its original — older — stamps loses to the very edit
- * it was meant to reverse, and the next pull puts that edit straight back.
- * Restoring a trashed task is the same story against its tombstone, which wins
- * while `deletedAt >= updatedAt`.
- *
- * Scoped to the footprint on purpose. Tasks *outside* it keep the snapshot's
- * stamps, so undoing your own edit can't also clobber an unrelated task another
- * device changed in the meantime — that one stays older, loses LWW, and heals on
- * the next pull.
+ * What undo or redo brings back (a task out of the Trash, a deleted habit or
+ * recurrence) has to out-stamp its own deletion record, or the merge reads the
+ * record as the newer word and deletes it again. Stamping `now` does that
+ * unless the record landed in the same millisecond, or came from a clock that
+ * runs ahead — so the stamp goes past the record, whatever it says.
  */
-function restamp(target: AppState, touched: Set<TaskId>, current: AppState): AppState {
-  if (touched.size === 0) return target;
-  const now = Date.now();
-  // Past the version being replaced, which may be newer than `now` (another
-  // device's clock) — or the merge would hand the undone change straight back.
-  const currentById = new Map<TaskId, Task>();
-  indexById(current.tasks, currentById);
-  const stamp = (id: TaskId) => Math.max(now, (currentById.get(id)?.updatedAt ?? -Infinity) + 1);
-  const walk = (nodes: Task[]): Task[] =>
-    nodes.map((t) => {
+function pastDeletions(next: AppState, current: AppState): AppState {
+  const deletedAt = new Map<string, number>();
+  const note = (id: string, at: number) => deletedAt.set(id, Math.max(deletedAt.get(id) ?? -Infinity, at));
+  for (const t of current.tombstones) note(t.id, t.deletedAt);
+  for (const e of current.trash) note(e.task.id, e.deletedAt);
+  if (deletedAt.size === 0) return next;
+  const wasLive = liveIds(current);
+  const floor = (id: string): number | null => (wasLive.has(id) ? null : (deletedAt.get(id) ?? null));
+  let changed = false;
+  const walk = (nodes: Task[]): Task[] => {
+    let any = false;
+    const out = nodes.map((t) => {
       const children = t.children.length > 0 ? walk(t.children) : t.children;
-      if (!touched.has(t.id)) return children === t.children ? t : { ...t, children };
-      return { ...t, children, updatedAt: stamp(t.id) };
+      const d = floor(t.id);
+      const updatedAt = d != null && d >= Math.max(t.updatedAt, t.movedAt) ? d + 1 : t.updatedAt;
+      if (children === t.children && updatedAt === t.updatedAt) return t;
+      any = true;
+      return { ...t, children, updatedAt };
     });
-  return { ...target, tasks: walk(target.tasks) };
+    return any ? out : nodes;
+  };
+  const tasks = walk(next.tasks);
+  const habits = next.habits.map((h) => {
+    const d = floor(h.id);
+    if (d == null || d < habitLastTouched(h)) return h;
+    return { ...h, updatedAt: d + 1 };
+  });
+  const recurrences = next.recurrences.map((r) => {
+    const d = floor(r.id);
+    if (d == null || d < r.updatedAt) return r;
+    return { ...r, updatedAt: d + 1 };
+  });
+  changed =
+    tasks !== next.tasks ||
+    habits.some((h, i) => h !== next.habits[i]) ||
+    recurrences.some((r, i) => r !== next.recurrences[i]);
+  return changed ? { ...next, tasks, habits, recurrences } : next;
 }
 
 /** Prepend one line to the action history, capped. `log` is the trail to extend
@@ -624,7 +631,7 @@ function withBoundedParents(s: AppState): AppState {
  * The label is required rather than defaulted so that every new mutation has to
  * answer "what do I call this, and should undo reach it?" at the call site.
  */
-function update(fn: (s: AppState) => AppState, label: string | null): void {
+function update(fn: (s: AppState) => AppState, label: string | null, stampAt?: number): void {
   const prev = state;
   // Every write passes through the parent-date bound (see store/bounds): each
   // scheduling surface in the app writes dates onto leaves, so without this a
@@ -635,8 +642,8 @@ function update(fn: (s: AppState) => AppState, label: string | null): void {
   // structure-sharing, so a write that doesn't break the bound pays nothing.
   // (The day's own rollover bookkeeping is a write too, which is what repairs a
   // parent that went stale overnight without the user touching anything.)
-  // Undo deliberately doesn't run it (applyStep restores the snapshot as it
-  // was): an undo that "helpfully" kept part of the change isn't one.
+  // Undo deliberately doesn't run it (applyStep puts back exactly what the
+  // step changed): an undo that "helpfully" kept part of the change isn't one.
   const raw = fn(prev);
   // Work settles here for the same reason: completing, declining or blocking a
   // task has a dozen doors (the outline, the Reckoning, Shutdown, the board,
@@ -647,17 +654,15 @@ function update(fn: (s: AppState) => AppState, label: string | null): void {
   // history line for a change that never happened, are both worse than silence.
   if (produced === prev) return;
 
-  const stamped = stampTasks(prev, produced);
-  const { touched } = stamped;
-  const next = withTombstones(prev, withSyncStamps(prev, stamped.state));
+  const next = withTombstones(prev, withSyncStamps(prev, stampTasks(prev, produced, stampAt)));
   if (label == null) {
     state = next;
   } else {
     const id = nanoid();
     const at = Date.now();
-    undoStack = [{ id, label, at, state: prev, touched }, ...undoStack].slice(0, MAX_UNDO);
-    redoStack = []; // a new action forks the timeline — nothing left to redo
     state = withHistory(next, next.actionLog, { id, label, kind: "do", at });
+    undoStack = [{ id, label, at, before: prev, after: state }, ...undoStack].slice(0, MAX_UNDO);
+    redoStack = []; // a new action forks the timeline — nothing left to redo
   }
   notify();
   scheduleSave();
@@ -2004,23 +2009,36 @@ export function deleteHabit(id: HabitId): void {
 
 // ─── Undo / redo / history ──────────────────────────────────────────
 //
-// Undo is a stack of whole-state snapshots — coarse, but it means every change
-// that goes through update() is reversible without any per-mutation inverse to
-// write (or forget). Redo is its mirror: undoing moves a step across to the redo
-// stack, and any *new* action forks the timeline and clears it.
+// Undo is a stack of steps, each the pair of whole states around one action —
+// coarse to record, but it means every change that goes through update() is
+// reversible without any per-mutation inverse to write (or forget). Applying a
+// step takes only its footprint (store/rebase), never a snapshot whole. Redo is
+// its mirror: undoing moves a step across to the redo stack, and any *new*
+// action forks the timeline and clears it.
 //
 // The action log is the one thing that never rewinds. It is an account of what
 // you did, so undoing records a line rather than erasing one.
 
-/** Restore a snapshot and record the move. Shared by undo and redo. */
+/**
+ * Apply a step's footprint — backwards for undo, forwards for redo — on top of
+ * the state as it is now, and record the move. Only what the step changed
+ * moves (store/rebase): a task captured on the phone since, a check-in made
+ * there, another device's rename all stay as they are.
+ *
+ * The result is stamped against the state we're leaving, like any change:
+ * what comes back is stamped `now` (past its own deletion record, too), or the
+ * cloud's newer copy of what the step did would win the next merge and hand
+ * it straight back; and tombstones are diffed against that state as well, so
+ * undoing a *create* leaves a record behind, or the cloud reads the pushed copy
+ * back as a fresh add and the task returns.
+ */
 function applyStep(step: HistoryStep, kind: "undo" | "redo"): void {
-  // Tombstones are diffed against the state we're leaving, not the snapshot's
-  // own set — undoing a *create* has to leave a record behind, or the cloud
-  // reads the pushed copy back as a fresh add and the task returns. Placement
-  // and project/recurrence stamps likewise: the snapshot's old ranks and
-  // contents come back stamped `now`, or the cloud's newer copy would win.
-  const restored = withTombstones(state, withSyncStamps(state, restamp(step.state, step.touched, state)));
-  state = withHistory(restored, state.actionLog, {
+  const current = state;
+  const rebased =
+    kind === "undo" ? rebaseStep(step.after, step.before, current) : rebaseStep(step.before, step.after, current);
+  const stamped = withSyncStamps(current, stampTasks(current, rebased));
+  const restored = withTombstones(current, pastDeletions(stamped, current));
+  state = withHistory(restored, current.actionLog, {
     id: nanoid(),
     label: step.label,
     kind,
@@ -2034,8 +2052,7 @@ export function undo(): void {
   const step = undoStack[0];
   if (step == null) return;
   undoStack = undoStack.slice(1);
-  // What we're leaving behind becomes the redo step — same name, same footprint.
-  redoStack = [{ ...step, state }, ...redoStack].slice(0, MAX_UNDO);
+  redoStack = [step, ...redoStack].slice(0, MAX_UNDO);
   applyStep(step, "undo");
 }
 
@@ -2043,7 +2060,7 @@ export function redo(): void {
   const step = redoStack[0];
   if (step == null) return;
   redoStack = redoStack.slice(1);
-  undoStack = [{ ...step, state }, ...undoStack].slice(0, MAX_UNDO);
+  undoStack = [step, ...undoStack].slice(0, MAX_UNDO);
   applyStep(step, "redo");
 }
 
