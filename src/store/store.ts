@@ -60,6 +60,7 @@ import {
 } from "./tasks";
 import { normalizeRule } from "./recurrence";
 import { rebaseStep } from "./rebase";
+import { stampTask } from "./clocks";
 import { noteProgress, pauseWork, settleWork, startWork, stopAll, stopWork, workingOn } from "./work";
 import {
   everyLabel,
@@ -307,77 +308,33 @@ function getSnapshot(): StoreSnapshot {
   return snapshot;
 }
 
-// ─── Automatic per-task updatedAt stamping ──────────────────────────
+// ─── Automatic per-task stamping ────────────────────────────────────
 //
-// Cloud sync merges per task by updatedAt (see src/sync/merge). Rather than
-// bump the stamp at each of the dozens of mutation sites (easy to forget), we
-// diff the whole tree once at the single update() choke point: any task whose
-// *own* fields changed gets stamped `now`. Structural sharing is preserved, so
-// untouched subtrees keep their identity (and don't re-render).
+// Cloud sync merges each task field group by field group, every group by its
+// own clock (see store/clocks, src/sync/merge). Rather than bump the stamps at
+// each of the dozens of mutation sites (easy to forget), we diff the whole tree
+// once at the single update() choke point: every group of a task's *own*
+// fields that changed gets its clock moved to `now`, and so does `updatedAt`.
+// Structural sharing is preserved, so untouched subtrees keep their identity
+// (and don't re-render).
 
-function horizonEq(a: Task["horizon"], b: Task["horizon"]): boolean {
-  if (a == null || b == null) return a === b;
-  return a.unit === b.unit && a.anchor === b.anchor;
-}
-function wontDoEq(a: Task["wontDo"], b: Task["wontDo"]): boolean {
-  if (a == null || b == null) return a === b;
-  return a.reason === b.reason && a.at === b.at;
-}
-function waitingEq(a: Task["waitingOn"], b: Task["waitingOn"]): boolean {
-  if (a == null || b == null) return a === b;
-  return a.who === b.who && a.since === b.since;
-}
-function workEq(a: Task, b: Task): boolean {
-  return (
-    (a.inProgress === b.inProgress || jsonEqual(a.inProgress, b.inProgress)) &&
-    (a.sessions === b.sessions || jsonEqual(a.sessions, b.sessions)) &&
-    (a.progress === b.progress || jsonEqual(a.progress, b.progress))
-  );
-}
-function labelsEq(a: string[], b: string[]): boolean {
-  return a.length === b.length && a.every((x, i) => x === b[i]);
-}
-function sameOwnFields(a: Task, b: Task): boolean {
-  return (
-    a.text === b.text &&
-    a.notes === b.notes &&
-    a.completed === b.completed &&
-    a.completedAt === b.completedAt &&
-    a.projectId === b.projectId &&
-    a.priority === b.priority &&
-    a.plannedFor === b.plannedFor &&
-    a.estimatedMinutes === b.estimatedMinutes &&
-    a.carriedCount === b.carriedCount &&
-    a.postponedCount === b.postponedCount &&
-    a.recurrenceId === b.recurrenceId &&
-    a.occurrenceDate === b.occurrenceDate &&
-    a.scheduledAt === b.scheduledAt &&
-    horizonEq(a.horizon, b.horizon) &&
-    wontDoEq(a.wontDo, b.wontDo) &&
-    waitingEq(a.waitingOn, b.waitingOn) &&
-    workEq(a, b) &&
-    labelsEq(a.labels, b.labels)
-  );
-}
 function indexById(tasks: Task[], into: Map<TaskId, Task>): void {
   for (const t of tasks) {
     into.set(t.id, t);
     indexById(t.children, into);
   }
 }
+
 function stampNode(node: Task, prevById: Map<TaskId, Task>, now: number): Task {
   let children = node.children;
   if (children.length > 0) {
     const mapped = children.map((c) => stampNode(c, prevById, now));
     if (mapped.some((c, i) => c !== children[i])) children = mapped;
   }
-  const before = prevById.get(node.id);
-  const ownChanged = before == null || !sameOwnFields(before, node);
-  // Never behind the version being edited: that version may carry another
-  // device's clock, and if it runs ahead, `now` would lose the merge to it.
-  const updatedAt = ownChanged ? Math.max(now, (before?.updatedAt ?? -Infinity) + 1) : node.updatedAt;
-  if (children === node.children && updatedAt === node.updatedAt) return node;
-  return { ...node, children, updatedAt };
+  // Each changed field group gets its clock, and updatedAt moves — never
+  // behind the version being edited: that version may carry another device's
+  // clock, and if it runs ahead, `now` would lose the merge to it.
+  return stampTask(prevById.get(node.id), children === node.children ? node : { ...node, children }, now);
 }
 
 // ─── Automatic tombstone bookkeeping ────────────────────────────────
@@ -539,13 +496,13 @@ function withSyncStamps(prev: AppState, next: AppState): AppState {
 }
 
 /**
- * `updatedAt` on every task whose own fields differ from `prev` — past the
+ * Every task whose own fields differ from `prev`, stamped (store/clocks): the
+ * clocks of the field groups that changed, and `updatedAt` — each past the
  * version it replaces, which may carry another device's clock that runs ahead.
- * `now` is the stamp to use: the current time, except for a change that stands
- * for an earlier moment (see pauseWorkAt).
  */
-function stampTasks(prev: AppState, next: AppState, now: number = Date.now()): AppState {
+function stampTasks(prev: AppState, next: AppState): AppState {
   if (next.tasks === prev.tasks) return next;
+  const now = Date.now();
   const prevById = new Map<TaskId, Task>();
   indexById(prev.tasks, prevById);
   const tasks = next.tasks.map((t) => stampNode(t, prevById, now));
@@ -631,7 +588,7 @@ function withBoundedParents(s: AppState): AppState {
  * The label is required rather than defaulted so that every new mutation has to
  * answer "what do I call this, and should undo reach it?" at the call site.
  */
-function update(fn: (s: AppState) => AppState, label: string | null, stampAt?: number): void {
+function update(fn: (s: AppState) => AppState, label: string | null): void {
   const prev = state;
   // Every write passes through the parent-date bound (see store/bounds): each
   // scheduling surface in the app writes dates onto leaves, so without this a
@@ -654,7 +611,7 @@ function update(fn: (s: AppState) => AppState, label: string | null, stampAt?: n
   // history line for a change that never happened, are both worse than silence.
   if (produced === prev) return;
 
-  const next = withTombstones(prev, withSyncStamps(prev, stampTasks(prev, produced, stampAt)));
+  const next = withTombstones(prev, withSyncStamps(prev, stampTasks(prev, produced)));
   if (label == null) {
     state = next;
   } else {
@@ -952,7 +909,10 @@ export function toggleWorking(id: TaskId): "started" | "resumed" | "stopped" | n
  * the wrong number.
  */
 export function pauseWorkAt(at: number): void {
-  update((s) => ({ ...s, tasks: pauseWork(s.tasks, at) }), null);
+  update((s) => {
+    const tasks = pauseWork(s.tasks, at);
+    return tasks === s.tasks ? s : { ...s, tasks };
+  }, null);
 }
 
 /** "Currently: …" on the task in progress — one dated line on its trail. */

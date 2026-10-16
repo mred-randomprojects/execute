@@ -90,8 +90,12 @@ describe("the per-item document format", () => {
     const writes = diffDocs(before, toDocs(getState()));
     expect(writes).toHaveLength(1);
     expect(writes[0]).toMatchObject({ collection: "tasks", id, op: "patch" });
-    // Only the fields that changed — not the whole task.
-    expect(Object.keys(writes[0].op === "patch" ? writes[0].fields : {}).sort()).toEqual(["text", "updatedAt"]);
+    // Only the fields that changed — not the whole task — and their clocks.
+    expect(Object.keys(writes[0].op === "patch" ? writes[0].fields : {}).sort()).toEqual([
+      "clocks",
+      "text",
+      "updatedAt",
+    ]);
   });
 
   it("nothing changed, nothing written", async () => {

@@ -66,8 +66,15 @@ describe("work: in progress and its timer", () => {
     expect(isRunning(get(tasks, "a"))).toBe(true);
   });
 
-  it("a pause never ends a stretch before it began — and a stretch that short isn't kept", () => {
+  it("a pause from before a stretch began leaves that stretch running", () => {
+    // The stretch started after the Mac woke: someone was there for all of it.
     const tasks = pauseWork(startWork([t("a")], "a" as TaskId, 50 * MIN), 10 * MIN);
+    expect(get(tasks, "a").sessions).toEqual([{ start: 50 * MIN, end: null }]);
+    expect(isRunning(get(tasks, "a"))).toBe(true);
+  });
+
+  it("a stretch paused under a second in isn't kept", () => {
+    const tasks = pauseWork(startWork([t("a")], "a" as TaskId, 50 * MIN), 50 * MIN + 400);
     expect(get(tasks, "a").sessions).toEqual([]);
     expect(isPaused(get(tasks, "a"))).toBe(true);
   });

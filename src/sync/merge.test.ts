@@ -19,6 +19,7 @@ function task(id: string, over: Partial<Task> = {}): Task {
     children: [],
     createdAt: 0,
     updatedAt: 1,
+    clocks: {},
     rank: "",
     movedAt: 0,
     priority: 4,
@@ -75,6 +76,42 @@ describe("mergeStates", () => {
     const local = state({ tasks: [task("a", { text: "L", updatedAt: 5 })] });
     expect(mergeStates(local, state({ tasks: [task("a", { text: "R", updatedAt: 9 })] })).tasks[0].text).toBe("R");
     expect(mergeStates(local, state({ tasks: [task("a", { text: "R", updatedAt: 2 })] })).tasks[0].text).toBe("L");
+  });
+
+  it("v24: each field group comes from the side that changed it", () => {
+    // Phone completed it overnight; the desktop paused its timer on waking, later.
+    const local = state({
+      tasks: [task("a", { notes: "desk note", updatedAt: 30, clocks: { notes: 30 } })],
+    });
+    const remote = state({
+      tasks: [task("a", { completed: true, completedAt: 20, updatedAt: 20, clocks: { status: 20 } })],
+    });
+    for (const m of [mergeStates(local, remote), mergeStates(remote, local)]) {
+      const a = byId(m, "a");
+      expect(a?.completed).toBe(true);
+      expect(a?.notes).toBe("desk note");
+      expect(a?.clocks).toEqual({ notes: 30, status: 20 });
+      expect(a?.updatedAt).toBe(30);
+    }
+  });
+
+  it("v24: the same group edited on both sides — the newer clock wins it whole", () => {
+    const local = state({ tasks: [task("a", { completed: true, completedAt: 5, updatedAt: 99, clocks: { status: 5 } })] });
+    const remote = state({ tasks: [task("a", { waitingOn: { who: "Ana", since: 9 }, updatedAt: 9, clocks: { status: 9 } })] });
+    const a = byId(mergeStates(local, remote), "a");
+    // Status is one group: no completed-and-waiting hybrid, despite local's newer updatedAt.
+    expect(a?.completed).toBe(false);
+    expect(a?.completedAt).toBeNull();
+    expect(a?.waitingOn).toEqual({ who: "Ana", since: 9 });
+  });
+
+  it("v24: pre-v24 copies (no clocks) still merge by updatedAt, and both sides agree", () => {
+    const local = state({ tasks: [task("a", { text: "L", notes: "n", updatedAt: 5 })] });
+    const remote = state({ tasks: [task("a", { text: "R", updatedAt: 9 })] });
+    const ab = mergeStates(local, remote);
+    expect(byId(ab, "a")?.text).toBe("R");
+    expect(byId(ab, "a")?.notes).toBe("");
+    expect(jsonEqual(ab.tasks, mergeStates(remote, local).tasks)).toBe(true);
   });
 
   it("unions labels and takes the max carriedCount", () => {

@@ -40,6 +40,7 @@ function task(id: string, children: Task[] = [], overrides: Partial<Task> = {}):
     children,
     createdAt: 0,
     updatedAt: 0,
+    clocks: {},
     rank: "",
     movedAt: 0,
     priority: 4,

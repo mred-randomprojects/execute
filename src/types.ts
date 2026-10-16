@@ -258,11 +258,22 @@ export interface Task {
   children: Task[];
   createdAt: number;
   /**
-   * Wall-clock ms of the last change to this task's *own* fields (not its
-   * children). Stamped automatically at the store's mutation choke point and
-   * used by cloud sync for per-task last-write-wins merging. See src/sync/merge.
+   * Wall-clock ms of the last change to any of this task's *own* fields (not
+   * its children). Stamped automatically at the store's mutation choke point.
+   * A deletion is judged against it (edit after delete resurrects), and it
+   * breaks ties between equal field-group clocks — see {@link Task.clocks}.
    */
   updatedAt: number;
+  /**
+   * v24: one clock per field group — when the task's text, notes, status,
+   * work, schedule… last changed (see {@link TASK_FIELD_MERGE}). The merge
+   * resolves each group on its own, newest clock first, so the phone
+   * completing a task and the desktop pausing its timer, or an offline laptop
+   * completing it while the phone adds a note, both survive. A group with no
+   * entry (everything before v24) has clock 0; on a tie the newer `updatedAt`
+   * decides, which is exactly how a whole task merged before.
+   */
+  clocks: TaskClocks;
   /**
    * v18: order among siblings, as a fractional rank (see store/rank). Siblings
    * are kept sorted by it; "" means not ranked yet. Assigned at the store's
@@ -326,6 +337,61 @@ export interface Task {
    */
   scheduledAt: number | null;
 }
+
+/**
+ * v24: the groups a task's own fields merge in. A group is fields that change
+ * together and must stay consistent with each other — completing sets the
+ * flag and its time and clears a won't-do in one go, so "status" is merged as
+ * one — and each group carries its own clock in {@link Task.clocks}.
+ */
+export type TaskClockGroup =
+  | "text"
+  | "notes"
+  | "status"
+  | "work"
+  | "schedule"
+  | "project"
+  | "priority"
+  | "estimate"
+  | "recurrence"
+  | "calendar";
+
+/** When each field group last changed. A missing group = clock 0. */
+export type TaskClocks = Partial<Record<TaskClockGroup, number>>;
+
+/** A task's own content: everything but identity, children, stamps and placement. */
+export type TaskOwnField = Exclude<
+  keyof Task,
+  "id" | "children" | "createdAt" | "updatedAt" | "clocks" | "rank" | "movedAt"
+>;
+
+/**
+ * How each own field merges: in its clock group, or without a clock — labels
+ * as a set (union), the deferral counters as monotonic counts (max). Listing
+ * every field makes a new one a compile error until it says how it merges.
+ */
+export const TASK_FIELD_MERGE: Record<TaskOwnField, TaskClockGroup | "union" | "max"> = {
+  text: "text",
+  notes: "notes",
+  completed: "status",
+  completedAt: "status",
+  wontDo: "status",
+  waitingOn: "status",
+  inProgress: "work",
+  sessions: "work",
+  progress: "work",
+  plannedFor: "schedule",
+  horizon: "schedule",
+  projectId: "project",
+  priority: "priority",
+  estimatedMinutes: "estimate",
+  recurrenceId: "recurrence",
+  occurrenceDate: "recurrence",
+  scheduledAt: "calendar",
+  labels: "union",
+  carriedCount: "max",
+  postponedCount: "max",
+};
 
 export type ThemeName = "slate" | "ivory" | "carbon" | "bordeaux";
 
@@ -653,7 +719,7 @@ export interface AppState {
   days: DayRecord[];
 }
 
-export const SCHEMA_VERSION = 23;
+export const SCHEMA_VERSION = 24;
 export const DEFAULT_PROJECT_ID = "project-inbox" as ProjectId;
 export const PROJECT_ROW_PREFIX = "project:";
 

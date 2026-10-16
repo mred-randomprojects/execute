@@ -127,18 +127,32 @@ export function stopWork(tasks: Task[], id: TaskId, now: number): Task[] {
 }
 
 /**
- * Close every running session at `at` and leave the task in progress, paused.
- * For time nobody was there for: the Mac asleep, the app closed.
+ * Close every session that was running at `at` and leave the task in
+ * progress, paused. For time nobody was there for: the Mac asleep, the app
+ * closed. A session that began after `at` was running while someone was
+ * there, and is left alone.
  */
 export function pauseWork(tasks: Task[], at: number): Task[] {
   return mapTasks(tasks, (t) => {
-    if (!isOpenSession(t)) return t;
+    if (!isOpenSession(t) || t.sessions[t.sessions.length - 1].start > at) return t;
     return { ...t, sessions: closeSession(t.sessions, at) };
   });
 }
 
 function isOpenSession(t: Task): boolean {
   return t.sessions.length > 0 && t.sessions[t.sessions.length - 1].end == null;
+}
+
+/**
+ * When each open session began: the running one, and any a merge left open
+ * on a task that isn't in progress any more (the phone completed it).
+ */
+export function openSessionStarts(tasks: Task[]): number[] {
+  const out: number[] = [];
+  walk(tasks, (t) => {
+    if (isOpenSession(t)) out.push(t.sessions[t.sessions.length - 1].start);
+  });
+  return out;
 }
 
 /**

@@ -23,6 +23,7 @@ import type {
   RecurrenceId,
   RecurrenceRule,
   Task,
+  TaskClocks,
   TaskId,
   TaskPriority,
   Tombstone,
@@ -50,6 +51,7 @@ import {
 } from "../types";
 import { normalizeChildProjects } from "./tasks";
 import { repairRanks } from "./placement";
+import { CLOCK_GROUPS, stampTask } from "./clocks";
 import type { CalendarEventInput } from "./calendar";
 import type { PresenceSnapshot } from "./presence";
 
@@ -276,6 +278,22 @@ function coerceProgress(raw: unknown): ProgressNote[] {
     .sort((a, b) => a.at - b.at);
 }
 
+/**
+ * v24: the field-group clocks. Strict, like the work fields: known groups with
+ * a positive finite stamp only, in one fixed order, never a default "now" —
+ * cloud documents go through here on every round and must read the same each
+ * time, and a 0 is "no clock" (the merge never writes one).
+ */
+function coerceClocks(raw: unknown): TaskClocks {
+  const out: TaskClocks = {};
+  if (!isObject(raw)) return out;
+  for (const [group] of CLOCK_GROUPS) {
+    const at = raw[group];
+    if (finite(at) && at > 0) out[group] = at;
+  }
+  return out;
+}
+
 export function coerceTask(raw: unknown): Task {
   const o = isObject(raw) ? raw : {};
   const children = Array.isArray(o.children) ? o.children.map(coerceTask) : [];
@@ -309,6 +327,9 @@ export function coerceTask(raw: unknown): Task {
     // Pre-sync data has no updatedAt → baseline from createdAt so LWW has a sane
     // starting point (a task never edited since creation "changed" at creation).
     updatedAt: num(o.updatedAt, num(o.createdAt, Date.now())),
+    // v24: per-group clocks. Pre-v24 tasks have none → every group at 0, which
+    // merges by updatedAt, exactly as the whole task did before.
+    clocks: coerceClocks(o.clocks),
     // v18: placement. A pre-v18 task has no rank — `repairRanks` in coerceState
     // assigns one from its position — and its placement is as old as the task.
     rank: str(o.rank),
@@ -606,7 +627,7 @@ function adoptCurrentTask(tasks: Task[], currentTaskId: unknown): Task[] {
       if (t.id === currentTaskId) {
         found = true;
         if (t.completed || t.wontDo != null || t.waitingOn != null) return t;
-        return { ...t, inProgress: { since: now }, updatedAt: Math.max(now, t.updatedAt + 1) };
+        return stampTask(t, { ...t, inProgress: { since: now } }, now);
       }
       const children = adopt(t.children);
       return children === t.children ? t : { ...t, children };

@@ -8,13 +8,16 @@ import type {
   Project,
   Recurrence,
   Task,
+  TaskClocks,
   TaskId,
+  TaskOwnField,
   Tombstone,
   TrashedTask,
 } from "../types";
 import { ACTION_LOG_LIMIT, MAX_DAY_RECORDS, pruneTombstones } from "../types";
 import { repairRanks } from "../store/placement";
 import { habitLastTouched, mergeHabit, sortHabits } from "../store/habits";
+import { CLOCK_GROUPS } from "../store/clocks";
 
 // ─── Two-way merge (per-task last-write-wins) ────────────────────────
 //
@@ -123,49 +126,49 @@ function stableJson(v: unknown): string {
   return JSON.stringify(v) ?? "null";
 }
 
-function ownFieldsOf(t: Task): Omit<Task, "children"> {
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- pulled out only to leave the rest
-  const { children: _children, ...own } = t;
-  return own;
+/** One field group's values, for a tie-break that only looks at that group. */
+function groupValues(t: Task, fields: readonly TaskOwnField[]): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const f of fields) out[f] = t[f];
+  return out;
 }
 
-/** Merge one task's OWN fields (keeps `base`'s children + tree position). */
+function take<K extends TaskOwnField>(into: Task, from: Task, field: K): void {
+  into[field] = from[field];
+}
+
+/**
+ * Merge one task's OWN fields (keeps `base`'s children + tree position).
+ *
+ * v24: group by group (see TASK_FIELD_MERGE). Each group comes from the side
+ * whose clock for it is newer; on equal clocks — every group before v24 has
+ * clock 0 — from the side with the newer `updatedAt`, which is how a whole
+ * task used to merge; on a full tie, by value, the same way on every device.
+ */
 function mergeOwnFields(base: Task, other: Task | undefined): Task {
   if (other == null) return base;
-  const newer =
-    other.updatedAt > base.updatedAt
-      ? other
-      : other.updatedAt < base.updatedAt
-        ? base
-        : stableJson(ownFieldsOf(other)) > stableJson(ownFieldsOf(base))
-          ? other
-          : base;
-  return {
-    ...base,
-    text: newer.text,
-    notes: newer.notes,
-    completed: newer.completed,
-    completedAt: newer.completedAt,
-    wontDo: newer.wontDo,
-    waitingOn: newer.waitingOn,
-    // Work goes with the newer version, like the rest of the task's content: a
-    // union would hand an undone start straight back from the other copy.
-    inProgress: newer.inProgress,
-    sessions: newer.sessions,
-    progress: newer.progress,
-    priority: newer.priority,
-    plannedFor: newer.plannedFor,
-    horizon: newer.horizon,
-    projectId: newer.projectId,
-    estimatedMinutes: newer.estimatedMinutes,
-    recurrenceId: newer.recurrenceId,
-    occurrenceDate: newer.occurrenceDate,
-    scheduledAt: newer.scheduledAt,
-    carriedCount: Math.max(base.carriedCount, other.carriedCount),
-    postponedCount: Math.max(base.postponedCount, other.postponedCount),
-    labels: labelsUnion(base.labels, other.labels),
-    updatedAt: Math.max(base.updatedAt, other.updatedAt),
-  };
+  const out: Task = { ...base };
+  const clocks: TaskClocks = {};
+  for (const [group, fields] of CLOCK_GROUPS) {
+    const a = base.clocks[group] ?? 0;
+    const b = other.clocks[group] ?? 0;
+    let from: Task;
+    if (a !== b) from = a > b ? base : other;
+    else if (base.updatedAt !== other.updatedAt) from = base.updatedAt > other.updatedAt ? base : other;
+    else {
+      const mine = groupValues(base, fields);
+      from = laterOfTie(mine, groupValues(other, fields)) === mine ? base : other;
+    }
+    if (from !== base) for (const f of fields) take(out, from, f);
+    const clock = Math.max(a, b);
+    if (clock > 0) clocks[group] = clock;
+  }
+  out.carriedCount = Math.max(base.carriedCount, other.carriedCount);
+  out.postponedCount = Math.max(base.postponedCount, other.postponedCount);
+  out.labels = labelsUnion(base.labels, other.labels);
+  out.updatedAt = Math.max(base.updatedAt, other.updatedAt);
+  out.clocks = clocks;
+  return out;
 }
 
 /**
@@ -403,37 +406,7 @@ export function mergeStates(local: AppState, remote: AppState): AppState {
   };
 }
 
-/**
- * Deep structural equality for JSON-safe values. AppState is fully JSON
- * (primitives, plain objects, arrays, null — no Dates/functions), so this is a
- * sound equality for it. The pull loop uses it to detect a no-op merge: an
- * unchanged result means "the remote added nothing new" → don't re-render, and
- * a result equal to the remote means "the cloud is already current" → don't echo
- * a pointless push. Both together are what keep pull↔push from looping.
- */
-export function jsonEqual(a: unknown, b: unknown): boolean {
-  if (a === b) return true;
-  if (typeof a !== "object" || a === null) return false;
-  if (typeof b !== "object" || b === null) return false;
-  const aArr = Array.isArray(a);
-  if (aArr !== Array.isArray(b)) return false;
-  if (aArr) {
-    const ar = a as unknown[];
-    const br = b as unknown[];
-    if (ar.length !== br.length) return false;
-    for (let i = 0; i < ar.length; i++) if (!jsonEqual(ar[i], br[i])) return false;
-    return true;
-  }
-  const ao = a as Record<string, unknown>;
-  const bo = b as Record<string, unknown>;
-  const keys = Object.keys(ao);
-  if (keys.length !== Object.keys(bo).length) return false;
-  for (const k of keys) {
-    if (!Object.prototype.hasOwnProperty.call(bo, k)) return false;
-    if (!jsonEqual(ao[k], bo[k])) return false;
-  }
-  return true;
-}
+export { jsonEqual } from "./json";
 
 
 /** A slot the tree can be built from; `dead` = known to be gone with its parent. */

@@ -1202,7 +1202,7 @@ export function App() {
   }, [shutdownActive, workRunning]);
   // Time nobody was there for — the Mac asleep or locked, the app quit — comes
   // off the clock: the running session closes where that began, paused.
-  useWorkAwake(loaded, activeCurrentTask, pauseWorkAt);
+  useWorkAwake(loaded, state.tasks, pauseWorkAt);
 
   const didInitialFocus = useRef(false);
   useEffect(() => {

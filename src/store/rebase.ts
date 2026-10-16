@@ -10,7 +10,7 @@ import type {
   Tombstone,
   TrashedTask,
 } from "../types";
-import { pruneTombstones } from "../types";
+import { TASK_FIELD_MERGE, pruneTombstones } from "../types";
 import { jsonEqual, treeFromSlots, type PlacedSlot } from "../sync/merge";
 import { sortHabits } from "./habits";
 
@@ -37,33 +37,6 @@ import { sortHabits } from "./habits";
 //
 // Pure, and no clocks: the store stamps the result against the current state
 // at its choke point, exactly like any other change.
-
-/** A task's content: every field but identity, children, stamps and placement. */
-type TaskContentKey = Exclude<keyof Task, "id" | "children" | "createdAt" | "updatedAt" | "rank" | "movedAt">;
-
-/** Listing every key in a Record makes a new Task field a compile error here until it's added. */
-const TASK_CONTENT: Record<TaskContentKey, true> = {
-  projectId: true,
-  text: true,
-  notes: true,
-  completed: true,
-  completedAt: true,
-  wontDo: true,
-  waitingOn: true,
-  inProgress: true,
-  sessions: true,
-  progress: true,
-  priority: true,
-  plannedFor: true,
-  horizon: true,
-  labels: true,
-  estimatedMinutes: true,
-  carriedCount: true,
-  postponedCount: true,
-  recurrenceId: true,
-  occurrenceDate: true,
-  scheduledAt: true,
-};
 
 type HabitOwnKey = Exclude<keyof Habit, "id" | "checks" | "values" | "checkedAt" | "createdAt" | "updatedAt">;
 const HABIT_OWN: Record<HabitOwnKey, true> = {
@@ -99,13 +72,14 @@ const SCALARS: Record<ScalarKey, true> = {
   presence: true,
 };
 
-function keysOf<K extends string>(fields: Record<K, true>): K[] {
+function keysOf<K extends string>(fields: Record<K, unknown>): K[] {
   const out: K[] = [];
   for (const k in fields) out.push(k);
   return out;
 }
 
-const TASK_CONTENT_KEYS = keysOf(TASK_CONTENT);
+/** A task's content fields (TASK_FIELD_MERGE lists every one of them). */
+const TASK_CONTENT_KEYS = keysOf(TASK_FIELD_MERGE);
 const HABIT_OWN_KEYS = keysOf(HABIT_OWN);
 const PROJECT_OWN_KEYS = keysOf(PROJECT_OWN);
 const RECURRENCE_OWN_KEYS = keysOf(RECURRENCE_OWN);

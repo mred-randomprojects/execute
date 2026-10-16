@@ -67,8 +67,12 @@ The format is `sync/docs.ts` (`toDocs` / `fromDocs` / `diffDocs`, pure).
 
 - **One merge.** Devices never merge documents one by one: they read the
   documents into a state (`fromDocs`) and merge it with their own through
-  `mergeStates` (`sync/merge.ts`). Content is per task by `updatedAt`,
-  placement per task by `movedAt` (siblings sorted by fractional `rank`,
+  `mergeStates` (`sync/merge.ts`). Content is per task and, since v24, per
+  field group (text, notes, status, work, schedule, project…, listed in
+  `TASK_FIELD_MERGE`), each group by its own clock in `Task.clocks`
+  (`store/clocks.ts`), so the phone completing a task and the desktop pausing
+  its timer both survive; labels merge as a set and the deferral counters by
+  max. Placement is per task by `movedAt` (siblings sorted by fractional `rank`,
   `store/rank.ts` / `store/placement.ts`), deletions by tombstones. Exact
   clock ties resolve by comparing the values, so every device picks the same
   winner — "keep local" on a tie makes two devices overwrite each other forever.

@@ -1,5 +1,6 @@
 import type { Habit, HabitId, HabitMark, ISODate, ProjectId, Task, TaskId } from "../types";
 import { markStamped } from "../store/habits";
+import { stampTask } from "../store/clocks";
 import { findById, mapById } from "../store/tasks";
 import type { TaskPatch } from "./TaskSheet";
 
@@ -7,8 +8,10 @@ import type { TaskPatch } from "./TaskSheet";
 //
 // Each takes the current view's tasks and returns them with the intent applied
 // (or the same array if it's already true), stamping every changed task past
-// its previous version. Idempotent so that a retry after a write conflict —
-// re-applied on a fresher view — can never change anything twice.
+// its previous version — the clock of each field group it changed, and
+// `updatedAt` (store/clocks), exactly as the desktop's choke point does.
+// Idempotent so that a retry after a write conflict — re-applied on a fresher
+// view — can never change anything twice.
 
 /**
  * Set one task's completion (an idempotent intent — a retry after a conflict
@@ -19,24 +22,18 @@ export function setCompleted(tasks: Task[], id: TaskId, completed: boolean): Tas
   return mapById(tasks, id, (t) => {
     if (t.completed === completed) return t;
     const now = Date.now();
-    return {
-      ...t,
-      completed,
-      completedAt: completed ? now : null,
-      wontDo: completed ? null : t.wontDo,
-      updatedAt: Math.max(now, t.updatedAt + 1),
-    };
+    return stampTask(
+      t,
+      { ...t, completed, completedAt: completed ? now : null, wontDo: completed ? null : t.wontDo },
+      now,
+    );
   });
 }
 
 /** Stamp a whole subtree onto a project: every task in it changes, so every one is stamped. */
 function assignProjectStamped(t: Task, projectId: ProjectId, now: number): Task {
-  return {
-    ...t,
-    projectId,
-    updatedAt: t.projectId === projectId ? t.updatedAt : Math.max(now, t.updatedAt + 1),
-    children: t.children.map((c) => assignProjectStamped(c, projectId, now)),
-  };
+  const children = t.children.map((c) => assignProjectStamped(c, projectId, now));
+  return stampTask(t, { ...t, projectId, children }, now);
 }
 
 /**
@@ -55,7 +52,7 @@ export function updateTask(tasks: Task[], id: TaskId, patch: TaskPatch): Task[] 
   if (same) return tasks;
   const now = Date.now();
   return mapById(tasks, id, (cur) => {
-    let next: Task = { ...cur, updatedAt: Math.max(now, cur.updatedAt + 1) };
+    let next: Task = { ...cur };
     if (patch.text !== undefined) next.text = patch.text;
     if (patch.notes !== undefined) next.notes = patch.notes;
     if (patch.plannedFor !== undefined) {
@@ -70,7 +67,7 @@ export function updateTask(tasks: Task[], id: TaskId, patch: TaskPatch): Task[] 
         children: next.children.map((c) => assignProjectStamped(c, projectId, now)),
       };
     }
-    return next;
+    return stampTask(cur, next, now);
   });
 }
 

@@ -23,6 +23,7 @@ export function makeTask(
     children: [],
     createdAt: Date.now(),
     updatedAt: Date.now(),
+    clocks: {},
     rank: "", // assigned when it lands in the tree (store/placement)
     movedAt: Date.now(),
     priority: 4,
@@ -44,7 +45,9 @@ export function cloneWithNewIds(task: Task): Task {
     ...task,
     id: nanoid() as TaskId,
     updatedAt: Date.now(),
-    // A copy is new work: none of the original's time, state or notes.
+    // A copy is new work: none of the original's time, state or notes, and
+    // no history for its clocks to merge with.
+    clocks: {},
     inProgress: null,
     sessions: [],
     progress: [],
