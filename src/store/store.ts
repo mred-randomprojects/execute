@@ -949,6 +949,13 @@ export function toggleHabitSkip(id: HabitId, date: ISODate): void {
   markHabit(id, date, h.checks[date] === "skip" ? null : "skip");
 }
 
+/** Not today ↔ unmarked for that day. */
+export function toggleHabitMissed(id: HabitId, date: ISODate): void {
+  const h = state.habits.find((x) => x.id === id);
+  if (h == null) return;
+  markHabit(id, date, h.checks[date] === "missed" ? null : "missed");
+}
+
 /** A KPI's range or cadence. */
 export function setHabitMeasure(id: HabitId, measure: HabitMeasure): void {
   dispatch({ type: "setHabitMeasure", id, measure });

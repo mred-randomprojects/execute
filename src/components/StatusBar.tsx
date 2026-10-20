@@ -81,7 +81,7 @@ const HABITS_HINTS: Array<[string, string]> = [
   ["↵", "rename"],
   ["n / k", "new habit / KPI"],
   ["⌫", "archive"],
-  ["⌘k", "rest day · more"],
+  ["⌘k", "not today · rest day · more"],
   ["⌥↑↓", "reorder"],
   ["?", "help"],
 ];

@@ -103,6 +103,7 @@ import {
   setKpiValue,
   toggleHabitDone,
   toggleHabitSkip,
+  toggleHabitMissed,
   type PostponeTarget,
 } from "./store/store";
 import {
@@ -2931,6 +2932,12 @@ export function App() {
         aliases: ["done", "check", "tick", "complete"],
         hint: "space",
         run: () => toggleHabitDone(h.id, habitDay),
+      },
+      {
+        id: "habit-missed",
+        label: marked === "missed" ? `Habit: clear the “not today” on ${day}` : `Habit: not today on ${day} (didn’t do it)`,
+        aliases: ["missed", "not today", "didn't", "no", "fail", "x"],
+        run: () => toggleHabitMissed(h.id, habitDay),
       },
       {
         id: "habit-skip",

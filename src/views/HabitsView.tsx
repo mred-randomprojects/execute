@@ -52,15 +52,15 @@ function stripCellClass(d: ISODate, index: number, days: ISODate[]): string {
 
 const NEXT_MARK: Record<"none" | HabitMark, HabitMark | null> = {
   none: "done",
-  done: "skip",
+  done: "missed",
+  missed: "skip",
   skip: null,
-  missed: "done",
 };
 
 /**
- * One day in the strip. Click cycles: unlogged → done → rest day → unlogged
- * (an answered "not today" goes to done). Unlogged and answered-no look alike
- * but for a faint ×, because they score alike — the × only says it was asked.
+ * One day in the strip. Click cycles: unlogged → done → not today → rest day →
+ * unlogged. Not today scores like unlogged, but its × is plain to see: looking
+ * back, "I didn't" and "I forgot to log" have to read as different answers.
  */
 function DayCell({
   date,
@@ -105,7 +105,9 @@ function DayCell({
           ? "bg-accent"
           : mark === "skip"
             ? "bg-surface-3 text-ink-faint"
-            : beforeStart
+            : mark === "missed"
+              ? "border border-line-strong text-ink-soft"
+              : beforeStart
               ? "border border-dashed border-line opacity-50"
               : isToday
                 ? "border border-accent"
@@ -113,7 +115,7 @@ function DayCell({
         isCursor ? "outline outline-2 outline-offset-1 outline-ink" : "",
       ].join(" ")}
     >
-      {mark === "skip" ? "–" : mark === "missed" ? <span className="text-ink-faint">×</span> : null}
+      {mark === "skip" ? "–" : mark === "missed" ? <span className="text-[11px] font-semibold">×</span> : null}
     </button>
   );
 }

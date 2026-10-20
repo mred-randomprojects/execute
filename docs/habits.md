@@ -22,9 +22,11 @@ trackers behind each choice, and the ideas still to build, roughly in order.
 - **Keys:** `↑/↓` move · `←/→` move the day cursor back through the last two
   weeks · `space` (or `⌘↵`) checks in on that day · `↵` renames, then `tab`
   moves on to the cue · `n` adds a habit · `⌫` archives (on an archived habit
-  it deletes, after a confirm). `⌘k` has the rest: rest day, target (every
-  day … once a week), cue, archive or restore, delete. Clicking a day cycles
-  it: not done → done → rest day → not done.
+  it deletes, after a confirm). `⌘k` has the rest: not today, rest day, target
+  (every day … once a week), cue, archive or restore, delete. Clicking a day
+  cycles it: unlogged → done → not today (×) → rest day (–) → unlogged. The ×
+  is drawn plainly so that, looking back, a day you answered "no" doesn't read
+  like one you forgot to log (an empty box).
 - **Typing the cadence:** "Run 3x", "Lift 2x/wk", "Stretch daily" set the
   target when you name the habit.
 - The sidebar badge counts habits still worth doing today: daily habits not

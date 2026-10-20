@@ -12,7 +12,7 @@ import {
   setDevDateOverride,
   setHorizonMany,
 } from "./store/store";
-import { addDays, monthKeyOffset, todayISO, weekKey } from "./store/dates";
+import { addDays, formatLong, monthKeyOffset, todayISO, weekKey } from "./store/dates";
 import type { AppState } from "./types";
 
 afterEach(() => {
@@ -3205,6 +3205,25 @@ describe("Not forgetting to log habits", () => {
     await waitFor(() => expect(mark("Meditate", today())).toBe("done"));
     fireEvent.click(screen.getByTitle("Check in Floss for today"));
     await waitFor(() => expect(mark("Floss", today())).toBe("done"));
+  });
+
+  it("a day in the Habits strip cycles unlogged → done → not today → rest day → unlogged", async () => {
+    await mount(() => {
+      createHabit("Stretch");
+    });
+    fireEvent.click(screen.getAllByTitle("Habits & KPIs (6)")[0]);
+    await screen.findByLabelText(new RegExp(`^${formatLong(today())}: `));
+    const cell = () => screen.getByLabelText(new RegExp(`^${formatLong(today())}: `));
+    for (const [want, label] of [
+      ["done", "done"],
+      ["missed", "not done"],
+      ["skip", "rest day"],
+      [undefined, "open"],
+    ] as const) {
+      fireEvent.click(cell());
+      await waitFor(() => expect(mark("Stretch", today())).toBe(want));
+      expect(cell().getAttribute("aria-label")).toBe(`${formatLong(today())}: ${label}`);
+    }
   });
 });
 
