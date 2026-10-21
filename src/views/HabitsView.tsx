@@ -10,6 +10,8 @@ import {
   rangeLabel,
   valueOn,
   habitStart,
+  notedDays,
+  noteOn,
   markOn,
   nudge,
   recentDays,
@@ -18,7 +20,7 @@ import {
   strength,
   weekProgress,
 } from "../store/habits";
-import { WEEKDAY_SHORT, formatLong, isoWeekday } from "../store/dates";
+import { WEEKDAY_SHORT, addDays, formatLong, isoWeekday } from "../store/dates";
 import { NO_SPELLCHECK } from "../ui/noSpellcheck";
 import { KpiValueInput } from "../components/KpiValueInput";
 
@@ -32,7 +34,7 @@ export const HABIT_STRIP_DAYS = 14;
  */
 const PLENTY = 5;
 
-export type HabitField = "name" | "cue" | "value";
+export type HabitField = "name" | "cue" | "value" | "note";
 
 export interface HabitEditing {
   id: HabitId;
@@ -65,6 +67,7 @@ const NEXT_MARK: Record<"none" | HabitMark, HabitMark | null> = {
 function DayCell({
   date,
   mark,
+  note,
   beforeStart,
   isToday,
   isCursor,
@@ -72,6 +75,7 @@ function DayCell({
 }: {
   date: ISODate;
   mark: HabitMark | null;
+  note: string;
   beforeStart: boolean;
   isToday: boolean;
   isCursor: boolean;
@@ -97,10 +101,10 @@ function DayCell({
         e.currentTarget.blur();
         onClick();
       }}
-      title={`${formatLong(date)} — ${state}`}
-      aria-label={`${formatLong(date)}: ${state}`}
+      title={`${formatLong(date)} — ${state}${note === "" ? "" : `\n${note}`}`}
+      aria-label={`${formatLong(date)}: ${state}${note === "" ? "" : `, note: ${note}`}`}
       className={[
-        "grid h-[14px] w-[14px] shrink-0 place-items-center rounded-[3px] text-[9px] leading-none transition-colors",
+        "relative grid h-[14px] w-[14px] shrink-0 place-items-center rounded-[3px] text-[9px] leading-none transition-colors",
         mark === "done"
           ? "bg-accent"
           : mark === "skip"
@@ -116,7 +120,90 @@ function DayCell({
       ].join(" ")}
     >
       {mark === "skip" ? "–" : mark === "missed" ? <span className="text-[11px] font-semibold">×</span> : null}
+      {note !== "" && <NoteDot />}
     </button>
+  );
+}
+
+/** A day that carries a note: a dot on the cell's corner. */
+function NoteDot() {
+  return (
+    <span
+      aria-hidden="true"
+      className="pointer-events-none absolute -right-[2px] -top-[2px] h-[5px] w-[5px] rounded-full bg-ink-soft ring-1 ring-bg"
+    />
+  );
+}
+
+/** "Today", "Yesterday", or the long date. */
+function dayWord(d: ISODate, today: ISODate): string {
+  if (d === today) return "Today";
+  if (d === addDays(today, -1)) return "Yesterday";
+  return formatLong(d);
+}
+
+/**
+ * Under the focused row: the picked day's note (or the way to write one) and
+ * every earlier note, newest first — the diary of the habit, read back.
+ */
+function DayNotes({
+  habit,
+  today,
+  day,
+  editing,
+  onEdit,
+  onCommit,
+}: {
+  habit: Habit;
+  today: ISODate;
+  day: ISODate;
+  editing: boolean;
+  onEdit: () => void;
+  onCommit: (value: string) => void;
+}) {
+  const note = noteOn(habit, day);
+  const others = notedDays(habit).filter((d) => d !== day);
+  return (
+    <div className="mt-2 flex flex-col gap-1 pl-[30px] text-[12px]">
+      <div className="flex min-w-0 items-baseline gap-2">
+        <span className="w-[120px] shrink-0 text-ink-soft">{dayWord(day, today)}</span>
+        {editing ? (
+          <span className="min-w-0 flex-1 text-ink">
+            <InlineInput
+              initial={note}
+              placeholder="A line about the day — “Steamed broccoli!”"
+              onCommit={onCommit}
+            />
+          </span>
+        ) : note === "" ? (
+          <button
+            tabIndex={-1}
+            onClick={(e) => {
+              e.stopPropagation();
+              e.currentTarget.blur();
+              onEdit();
+            }}
+            className="text-left text-ink-faint hover:text-ink-soft"
+          >
+            Add a note <span className="kbd ml-1">c</span>
+          </button>
+        ) : (
+          <span className="min-w-0 flex-1 whitespace-pre-wrap break-words text-ink" onDoubleClick={onEdit}>
+            {note}
+          </span>
+        )}
+      </div>
+      {others.length > 0 && (
+        <ul className="flex max-h-[132px] flex-col gap-1 overflow-auto" aria-label="Earlier notes">
+          {others.map((d) => (
+            <li key={d} className="flex min-w-0 items-baseline gap-2">
+              <span className="w-[120px] shrink-0 text-ink-faint">{dayWord(d, today)}</span>
+              <span className="min-w-0 flex-1 whitespace-pre-wrap break-words text-ink-soft">{habit.notes[d]}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }
 
@@ -216,13 +303,13 @@ function HabitRow({
       ref={rowRef}
       onClick={onSelect}
       className={[
-        "relative flex items-center gap-3 rounded px-3 py-2.5 select-none",
+        "relative flex flex-col rounded px-3 py-2.5 select-none",
         focused ? "bg-surface-2" : "cursor-default hover:bg-surface-2/60",
         archived ? "opacity-60" : "",
       ].join(" ")}
     >
       {focused && <span className="absolute left-0 top-2 bottom-2 w-[2px] bg-accent" />}
-
+      <div className="flex items-center gap-3">
       <button
         tabIndex={-1}
         onClick={(e) => {
@@ -301,6 +388,7 @@ function HabitRow({
             <DayCell
               date={d}
               mark={markOn(habit, d)}
+              note={noteOn(habit, d)}
               beforeStart={d < start}
               isToday={d === today}
               isCursor={focused && cursorDay === d}
@@ -323,6 +411,17 @@ function HabitRow({
       <span className="mono w-[40px] shrink-0 whitespace-nowrap text-right text-[11px] text-ink-soft" title={run.unit === "day" ? "Done days in a row — one miss is forgiven, two in a row end it" : "Weeks in a row that met the target"}>
         {streakLabel(run)}
       </span>
+      </div>
+      {((focused && notedDays(habit).length > 0) || editing === "note") && cursorDay != null && (
+        <DayNotes
+          habit={habit}
+          today={today}
+          day={cursorDay}
+          editing={editing === "note"}
+          onEdit={() => onEdit("note")}
+          onCommit={(v) => onCommit("note", v, null)}
+        />
+      )}
     </div>
   );
 }
@@ -332,6 +431,7 @@ function ValueCell({
   date,
   measure,
   value,
+  note,
   beforeStart,
   isToday,
   isCursor,
@@ -340,6 +440,7 @@ function ValueCell({
   date: ISODate;
   measure: HabitMeasure;
   value: number | null;
+  note: string;
   beforeStart: boolean;
   isToday: boolean;
   isCursor: boolean;
@@ -356,8 +457,8 @@ function ValueCell({
         e.currentTarget.blur();
         onClick();
       }}
-      title={`${formatLong(date)} — ${label}`}
-      aria-label={`${formatLong(date)}: ${label}`}
+      title={`${formatLong(date)} — ${label}${note === "" ? "" : `\n${note}`}`}
+      aria-label={`${formatLong(date)}: ${label}${note === "" ? "" : `, note: ${note}`}`}
       style={
         value == null
           ? undefined
@@ -367,7 +468,7 @@ function ValueCell({
             }
       }
       className={[
-        "mono grid h-[16px] w-[20px] shrink-0 place-items-center rounded-[3px] text-[9px] leading-none transition-colors",
+        "mono relative grid h-[16px] w-[20px] shrink-0 place-items-center rounded-[3px] text-[9px] leading-none transition-colors",
         value != null
           ? ""
           : beforeStart
@@ -379,6 +480,7 @@ function ValueCell({
       ].join(" ")}
     >
       {value == null ? null : formatValue(measure, value)}
+      {note !== "" && <NoteDot />}
     </button>
   );
 }
@@ -507,6 +609,7 @@ function KpiRow({
                 date={d}
                 measure={measure}
                 value={valueOn(habit, d)}
+                note={noteOn(habit, d)}
                 beforeStart={d < start}
                 isToday={d === today}
                 isCursor={focused && cursorDay === d}
@@ -537,6 +640,16 @@ function KpiRow({
             onCancel={onCancelValue}
           />
         </div>
+      )}
+      {editing !== "value" && ((focused && notedDays(habit).length > 0) || editing === "note") && (
+        <DayNotes
+          habit={habit}
+          today={today}
+          day={cursorDay}
+          editing={editing === "note"}
+          onEdit={() => onEdit("note")}
+          onCommit={(v) => onCommit("note", v, null)}
+        />
       )}
     </div>
   );

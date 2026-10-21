@@ -2978,6 +2978,45 @@ describe("Habits", () => {
     await waitFor(() => expect(getState().habits[0].checks[addDays(today, -1)]).toBeUndefined());
   });
 
+  it("c writes a note on the picked day, the row reads it back, and an emptied note clears", async () => {
+    render(<App />);
+    await screen.findByPlaceholderText("Add a task for today…");
+    act(() => {
+      createHabit("Veggies");
+    });
+    blurActive();
+    fireEvent.keyDown(document.body, { key: "6" });
+    await screen.findByText("Veggies");
+    const today = todayISO(getState().devDateOverride);
+
+    fireEvent.keyDown(document.body, { key: " " }); // check in
+    fireEvent.keyDown(document.body, { key: "c" });
+    const note = await screen.findByPlaceholderText(/A line about the day/);
+    fireEvent.change(note, { target: { value: "Steamed broccoli!" } });
+    fireEvent.keyDown(note, { key: "Enter" });
+    await waitFor(() => expect(getState().habits[0].notes).toEqual({ [today]: "Steamed broccoli!" }));
+    expect(getState().habits[0].checks[today]).toBe("done");
+    expect(await screen.findByText("Steamed broccoli!")).toBeTruthy();
+
+    // A note on yesterday too: today's stays listed beneath it.
+    blurActive();
+    fireEvent.keyDown(document.body, { key: "ArrowLeft" });
+    fireEvent.keyDown(document.body, { key: "c" });
+    const second = await screen.findByPlaceholderText(/A line about the day/);
+    fireEvent.change(second, { target: { value: "carrots" } });
+    fireEvent.keyDown(second, { key: "Enter" });
+    await waitFor(() => expect(getState().habits[0].notes[addDays(today, -1)]).toBe("carrots"));
+    expect(screen.getByText("Steamed broccoli!")).toBeTruthy();
+
+    blurActive();
+    fireEvent.keyDown(document.body, { key: "c" });
+    const edit = (await screen.findByDisplayValue("carrots")) as HTMLInputElement;
+    fireEvent.change(edit, { target: { value: "  " } });
+    fireEvent.keyDown(edit, { key: "Enter" });
+    await waitFor(() => expect(getState().habits[0].notes).toEqual({ [today]: "Steamed broccoli!" }));
+    expect(getState().tasks).toEqual([]);
+  });
+
   it("an empty new habit is taken back when left nameless", async () => {
     render(<App />);
     await screen.findByPlaceholderText("Add a task for today…");

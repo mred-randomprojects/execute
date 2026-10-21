@@ -91,6 +91,7 @@ export const keymap: KeyBinding[] = [
   { key: "ArrowRight", action: "habits.dayNext", context: "habits" },
   { key: " ", action: "habits.toggle", context: "habits", displayKey: "space", description: "check in / undo, on the picked day · on a KPI, log its number", section: "Habits" },
   { key: "Meta+Enter", action: "habits.toggle", context: "habits" },
+  { key: "c", action: "habits.note", context: "habits", displayKey: "c", description: "note on the picked day — “Steamed broccoli!” · ↵ saves, emptied clears it", section: "Habits" },
   { key: "Enter", action: "habits.rename", context: "habits", displayKey: "↵", description: "rename · tab moves on to the cue", section: "Habits" },
   { key: "n", action: "habits.new", context: "habits", displayKey: "n", description: "new habit", section: "Habits" },
   { key: "k", action: "habits.newKpi", context: "habits", displayKey: "k", description: "new KPI — a number to log (“Dizzy spells 0-3+”, “DHI 0-100 monthly”)", section: "Habits" },

@@ -78,6 +78,7 @@ const HABITS_HINTS: Array<[string, string]> = [
   ["↑ / ↓", "move"],
   ["← / →", "pick a day"],
   ["space", "check in"],
+  ["c", "note"],
   ["↵", "rename"],
   ["n / k", "new habit / KPI"],
   ["⌫", "archive"],

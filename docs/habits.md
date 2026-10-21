@@ -164,6 +164,27 @@ score (DHI, 0–100). A **KPI** is a habit with a `measure` (`min`, `max`,
 Not yet: logging KPIs on the phone, a chart per KPI, and a KPI tied to another
 one (log 0 spells, and "worst" fills itself with 0).
 
+## A note on a day (v25)
+
+The mark says whether; a note says what. Any habit or KPI can carry one line
+per day ("Steamed broccoli!", "only 10 minutes, but did it") in a `notes` map,
+and reading them back over time is the point.
+
+- **Part of the day's entry.** The note shares `checkedAt[day]` with the mark
+  and the value, and the merge carries all three together from whichever side
+  stamped the day last. Undo rebases it by the day, like a mark. Schema v25,
+  so an older client stops at "outdated" instead of dropping notes.
+- **Never asked for.** The check-in costs one key, and a note shouldn't change
+  that. In the Habits view `c` writes the note on the picked day (`↵` saves,
+  emptying it clears it); a noted day gets a dot in the strip with the note in
+  its tooltip, and the focused row lists every note, newest first.
+- **A note alone is not a mark.** It can sit on an unlogged day, and the day
+  still scores as unlogged.
+- **Reading it from outside:** `notes: { "YYYY-MM-DD": "…" }` on
+  `users/{uid}/habits/{id}`.
+
+Not yet: notes from Shutdown, the morning band and the phone.
+
 ## Known limits
 
 - An archived habit that comes back counts the archived days as misses.

@@ -98,6 +98,7 @@ import {
   setHabitArchived,
   setHabitCue,
   setHabitMeasure,
+  setHabitNote,
   moveHabit,
   setHabitPerWeek,
   setKpiValue,
@@ -115,6 +116,7 @@ import {
   habitsToLog,
   parseHabitName,
   parseKpiName,
+  noteOn,
   pendingOn,
   rangeLabel,
   valueOn,
@@ -1014,7 +1016,10 @@ export function App() {
       const kpi = habit.measure != null ? parseKpiName(value) : null;
       const { name, perWeek } = kpi != null ? { name: kpi.name, perWeek: null } : parseHabitName(value);
       // A habit left nameless at birth is a slip of the `n` key: take it back.
-      const blank = Object.keys(habit.checks).length === 0 && Object.keys(habit.values).length === 0;
+      const blank =
+        Object.keys(habit.checks).length === 0 &&
+        Object.keys(habit.values).length === 0 &&
+        Object.keys(habit.notes).length === 0;
       if (name === "" && habit.name === "" && then == null && blank) {
         deleteHabit(id);
         setHabitEditing(null);
@@ -1027,6 +1032,8 @@ export function App() {
       }
     } else if (field === "value") {
       // Values are committed by the value field itself (commitKpiValue).
+    } else if (field === "note") {
+      if (value.trim() !== noteOn(habit, habitDay)) setHabitNote(id, habitDay, value);
     } else if (value.trim() !== habit.cue) {
       setHabitCue(id, value);
     }
@@ -2415,6 +2422,9 @@ export function App() {
       if (focusedHabit.measure != null) setHabitEditing({ id: focusedHabit.id, field: "value" });
       else toggleHabitDone(focusedHabit.id, habitDay);
     },
+    "habits.note": () => {
+      if (focusedHabit != null) setHabitEditing({ id: focusedHabit.id, field: "note" });
+    },
     "habits.rename": () => {
       if (focusedHabit != null) setHabitEditing({ id: focusedHabit.id, field: "name" });
     },
@@ -2945,6 +2955,7 @@ export function App() {
         aliases: ["skip", "rest", "excuse", "sick", "vacation", "day off"],
         run: () => toggleHabitSkip(h.id, habitDay),
       },
+      noteCommand(h, day),
       {
         id: "habit-cue",
         label: h.cue === "" ? "Habit: set a cue (when / after what)…" : "Habit: edit the cue…",
@@ -2974,6 +2985,14 @@ export function App() {
     ];
   };
 
+  const noteCommand = (h: Habit, day: string): Command => ({
+    id: "habit-note",
+    label: noteOn(h, habitDay) === "" ? `Note on ${day}…` : `Edit ${day}’s note…`,
+    aliases: ["note", "comment", "describe", "explain", "diary", "journal", "why"],
+    hint: "c",
+    run: () => setHabitEditing({ id: h.id, field: "note" }),
+  });
+
   const kpiCommands = (h: Habit, m: HabitMeasure, day: string): Command[] => {
     const logged = valueOn(h, habitDay);
     const cadences: KpiEvery[] = ["day", "week", "month"];
@@ -2993,6 +3012,7 @@ export function App() {
             run: () => setKpiValue(h.id, habitDay, null),
           }]
         : []),
+      noteCommand(h, day),
       {
         id: "kpi-cue",
         label: h.cue === "" ? "KPI: set a cue (when to log it)…" : "KPI: edit the cue…",
