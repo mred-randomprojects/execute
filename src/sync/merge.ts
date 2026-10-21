@@ -272,7 +272,7 @@ function mergeTrees(
   return treeFromSlots(merged, deleted);
 }
 
-function mergeLog(a: LogEntry[], b: LogEntry[]): LogEntry[] {
+export function mergeLog(a: LogEntry[], b: LogEntry[]): LogEntry[] {
   const byId = new Map<string, LogEntry>();
   for (const e of [...a, ...b]) if (!byId.has(e.id)) byId.set(e.id, e);
   return [...byId.values()].sort((x, y) => y.at - x.at);
@@ -295,7 +295,7 @@ function mergeActionLog(a: ActionLogEntry[], b: ActionLogEntry[]): ActionLogEntr
  * `closedAt` (you closed the day at the first moment you reached zero, whichever
  * machine was watching). Commutative and idempotent, so repeated syncs converge.
  */
-function mergeDays(a: DayRecord[], b: DayRecord[]): DayRecord[] {
+export function mergeDays(a: DayRecord[], b: DayRecord[]): DayRecord[] {
   const byDate = new Map<ISODate, DayRecord>();
   for (const d of [...a, ...b]) {
     const prev = byDate.get(d.date);

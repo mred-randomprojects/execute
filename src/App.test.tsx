@@ -9,8 +9,10 @@ import {
   createProject,
   getState,
   initStore,
+  purgeFromTrash,
   setDevDateOverride,
   setHorizonMany,
+  trashTask,
 } from "./store/store";
 import { addDays, formatLong, monthKeyOffset, todayISO, weekKey } from "./store/dates";
 import type { AppState } from "./types";
@@ -3336,5 +3338,85 @@ describe("Saving to disk", () => {
     fireEvent.keyDown(input, { key: "Enter" });
     window.dispatchEvent(new Event("pagehide")); // same tick: the 200 ms save is still pending
     expect(written.at(-1)?.tasks.some((t) => t.text === "typed just before quitting")).toBe(true);
+  });
+});
+
+describe("Restore a backup…", () => {
+  afterEach(() => {
+    delete window.execute;
+  });
+
+  it("lists the backups, asks, keeps a copy of what you have, then brings a deleted task back; ⌘z takes it back", async () => {
+    const kept: AppState[] = [];
+    let backupJson = "";
+    window.execute = {
+      isElectron: true,
+      loadStore: () => Promise.resolve({}),
+      saveStore: () => Promise.resolve(true),
+      listBackups: () =>
+        Promise.resolve([{ name: "execute-store.2026-10-18.json", size: 1_400_000, mtimeMs: Date.UTC(2026, 9, 18, 3, 1) }]),
+      readBackup: () => Promise.resolve(JSON.parse(backupJson)),
+      keepCopyBeforeRestore: (data) => {
+        kept.push(data);
+        return Promise.resolve("execute-store.before-restore.2026-10-20-090507.json");
+      },
+    };
+    await initStore();
+    const id = addTaskAfter(null, "pay rent");
+    backupJson = JSON.stringify(getState());
+    await new Promise((r) => setTimeout(r, 2));
+    trashTask(id);
+    purgeFromTrash(id);
+    expect(getState().tasks.some((t) => t.id === id)).toBe(false);
+
+    render(<App />);
+    await screen.findByPlaceholderText("Add a task for today…");
+    await runCommand(/^Restore a backup…$/);
+    const picker = await screen.findByRole("dialog", { name: "Restore a backup" });
+    expect(within(picker).getByText("daily copy")).toBeTruthy();
+    fireEvent.keyDown(picker, { key: "Enter" });
+
+    expect(await screen.findByText(/^Restore the backup of /)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /^Restore y$/ }));
+
+    await waitFor(() => expect(getState().tasks.some((t) => t.id === id && t.text === "pay rent")).toBe(true));
+    expect(kept).toHaveLength(1);
+    expect(kept[0].tasks.some((t) => t.id === id)).toBe(false); // the copy is of what you had before
+    expect(await screen.findByText(/^Restored the backup of .*⌘z undoes it/)).toBeTruthy();
+
+    blurActive();
+    fireEvent.keyDown(document.body, { key: "z", metaKey: true });
+    await waitFor(() => expect(getState().tasks.some((t) => t.id === id)).toBe(false));
+  });
+
+  it("restores nothing when the copy of what you have can't be kept", async () => {
+    window.execute = {
+      isElectron: true,
+      loadStore: () => Promise.resolve({}),
+      saveStore: () => Promise.resolve(true),
+      listBackups: () => Promise.resolve([{ name: "execute-store.2026-10-18.json", size: 10, mtimeMs: 1 }]),
+      readBackup: () => Promise.resolve({ tasks: [] }),
+      keepCopyBeforeRestore: () => Promise.reject(new Error("ENOSPC: no space left on device")),
+    };
+    render(<App />);
+    await addTask("pay rent");
+    await runCommand(/^Restore a backup…$/);
+    fireEvent.keyDown(await screen.findByRole("dialog", { name: "Restore a backup" }), { key: "Enter" });
+    const before = getState();
+    fireEvent.click(await screen.findByRole("button", { name: /^Restore y$/ }));
+    expect(await screen.findByText(/^Nothing was restored: .*ENOSPC/)).toBeTruthy();
+    expect(getState()).toBe(before);
+    expect(getState().tasks.some((t) => t.text === "pay rent")).toBe(true);
+  });
+
+  it("isn't offered where there are no backups to read (the web)", async () => {
+    render(<App />);
+    await screen.findByPlaceholderText("Add a task for today…");
+    blurActive();
+    fireEvent.keyDown(document.body, { key: "k", metaKey: true });
+    const input = await screen.findByPlaceholderText("Type a command…");
+    fireEvent.change(input, { target: { value: "restore a backup" } });
+    const list = await screen.findByRole("listbox", { name: "Commands" });
+    expect(within(list).queryByText(/^Restore a backup…$/)).toBeNull();
   });
 });

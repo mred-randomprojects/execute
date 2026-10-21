@@ -50,4 +50,70 @@ function backUpDaily(storeFile, backupsDir, now = new Date(), keep = KEEP) {
   return target;
 }
 
-module.exports = { KEEP, backUpDaily, dailyBackupsToPrune, localDate };
+// ── Restoring one (the renderer's "Restore a backup…") ───────────────
+
+/**
+ * A name the renderer may ask for: a plain file name in backups/, ending in
+ * .json. No separators, no leading dot, so it can't reach outside the folder.
+ */
+const BACKUP_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]*\.json$/;
+
+/** The JSON files in backups/, newest first: name, size, last modified. */
+function listBackups(backupsDir) {
+  let names;
+  try {
+    names = fs.readdirSync(backupsDir);
+  } catch (error) {
+    if (error != null && error.code === "ENOENT") return [];
+    throw error;
+  }
+  const out = [];
+  for (const name of names) {
+    if (!BACKUP_NAME.test(name)) continue;
+    const stat = fs.lstatSync(path.join(backupsDir, name));
+    if (stat.isFile()) out.push({ name, size: stat.size, mtimeMs: stat.mtimeMs });
+  }
+  return out.sort((a, b) => b.mtimeMs - a.mtimeMs || (a.name < b.name ? 1 : -1));
+}
+
+/** One backup, parsed. Only a name `listBackups` could return. */
+function readBackup(backupsDir, name) {
+  if (typeof name !== "string" || !BACKUP_NAME.test(name)) throw new Error("Not a backup file name.");
+  const file = path.join(backupsDir, name);
+  if (!fs.lstatSync(file).isFile()) throw new Error("Not a backup file.");
+  return JSON.parse(fs.readFileSync(file, "utf8"));
+}
+
+/**
+ * Before a restore: keep what the app holds now as
+ * backups/execute-store.before-restore.<local date>-<hhmmss>.json, so the
+ * restore can itself be undone after a restart (by restoring that file).
+ * Never overwrites a file, and the daily prune never touches these names.
+ * Returns the name written.
+ */
+function keepCopyBeforeRestore(backupsDir, data, now = new Date()) {
+  fs.mkdirSync(backupsDir, { recursive: true });
+  const hhmmss = [now.getHours(), now.getMinutes(), now.getSeconds()].map((n) => String(n).padStart(2, "0")).join("");
+  const base = `execute-store.before-restore.${localDate(now)}-${hhmmss}`;
+  const json = JSON.stringify(data);
+  for (let n = 0; n < 100; n++) {
+    const name = n === 0 ? `${base}.json` : `${base}-${n}.json`;
+    try {
+      fs.writeFileSync(path.join(backupsDir, name), json, { encoding: "utf8", flag: "wx" });
+      return name;
+    } catch (error) {
+      if (error == null || error.code !== "EEXIST") throw error;
+    }
+  }
+  throw new Error("Couldn't find a free name for the copy before restoring.");
+}
+
+module.exports = {
+  KEEP,
+  backUpDaily,
+  dailyBackupsToPrune,
+  keepCopyBeforeRestore,
+  listBackups,
+  localDate,
+  readBackup,
+};

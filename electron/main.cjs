@@ -16,7 +16,7 @@ const {
   shell,
 } = require("electron");
 const { readStoreFile } = require("./storeFile.cjs");
-const { backUpDaily, localDate } = require("./backups.cjs");
+const { backUpDaily, keepCopyBeforeRestore, listBackups, localDate, readBackup } = require("./backups.cjs");
 const { isAppNavigation, isExternalUrlAllowed } = require("./navigation.cjs");
 const { createAwake } = require("./awake.cjs");
 
@@ -632,6 +632,11 @@ function registerIpc() {
   });
   ipcMain.handle("calendar:createEvent", (_event, input) => createCalendarEvent(input));
   ipcMain.handle("work:offSince", (_event, since) => awake?.firstOffSince(since) ?? null);
+  // "Restore a backup…": list backups/, read one, and keep a copy of what the
+  // app holds now before the restore replaces it (electron/backups.cjs).
+  ipcMain.handle("backups:list", () => listBackups(BACKUPS_DIR));
+  ipcMain.handle("backups:read", (_event, name) => readBackup(BACKUPS_DIR, name));
+  ipcMain.handle("backups:keepCopy", (_event, data) => keepCopyBeforeRestore(BACKUPS_DIR, data ?? {}));
 }
 
 // ── The timer's off switch (electron/awake.cjs) ──────────────────────

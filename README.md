@@ -338,7 +338,13 @@ pnpm make     # → out/make/**/Execute.dmg  (+ .zip)
   loaded (a read error, or a file that isn't valid JSON) the app shows an error
   screen and writes nothing, so the file stays as it was. The first save of
   each day copies the file to `backups/execute-store.YYYY-MM-DD.json` beside it
-  (the newest 30 are kept; nothing else in `backups/` is touched). A save that
+  (the newest 30 are kept; nothing else in `backups/` is touched). `⌘k` →
+  **Restore a backup…** puts one back: every task, project, recurring task and
+  habit it holds goes back to how it was then, deleted ones included, on every
+  device (the cloud follows instead of deleting them again); what's been added
+  since stays. It keeps a copy of what you had in `backups/` first, and `⌘z`
+  undoes it. Don't copy a backup over the store file by hand: the first sync
+  would delete again whatever the cloud has a deletion record for. A save that
   fails shows a banner and is retried until one lands, and closing the window
   writes a save still waiting on its debounce. Local-first; no
   CDN (fonts are bundled). Optional two-way cloud sync (Firebase, one small
@@ -356,7 +362,7 @@ pnpm make     # → out/make/**/Execute.dmg  (+ .zip)
 ### Layout
 
 ```
-electron/        main.cjs (window + persistence IPC) · preload.cjs (bridge) · storeFile.cjs (reading the store) · backups.cjs (daily copies) · awake.cjs (when the Mac slept or the app was quit, for the work timer)
+electron/        main.cjs (window + persistence IPC) · preload.cjs (bridge) · storeFile.cjs (reading the store) · backups.cjs (daily copies, and listing/reading them for a restore) · awake.cjs (when the Mac slept or the app was quit, for the work timer)
 src/
   types.ts                      core domain types
   store/  tasks.ts (pure tree ops) · dates.ts · capture.ts · persistence.ts · store.ts

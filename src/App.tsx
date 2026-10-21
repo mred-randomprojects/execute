@@ -54,6 +54,8 @@ import {
   reorderAcrossProjects,
   resetCommandRanking,
   restoreFromTrash,
+  restoreBackup,
+  getState as getStoreState,
   setBoardPreferred,
   setWrapAll,
   setHideCompleted,
@@ -240,6 +242,9 @@ import { EstimatePicker } from "./components/EstimatePicker";
 import { CalendarPicker } from "./components/CalendarPicker";
 import { gcalTemplateUrl } from "./store/calendar";
 import { ConfirmModal, type ConfirmRequest } from "./components/ConfirmModal";
+import { BackupPicker } from "./components/BackupPicker";
+import { backupKind, backupWhen } from "./ui/backups";
+import { coerceState, type BackupFile } from "./store/persistence";
 
 const THEMES: ThemeName[] = ["slate", "ivory", "carbon", "bordeaux"];
 
@@ -377,6 +382,10 @@ export function App() {
     null
   );
   const [confirm, setConfirm] = useState<ConfirmRequest | null>(null);
+  // "Restore a backup…" (desktop): the list being picked from, and what the
+  // last restore did (or why it didn't), shown in a banner until dismissed.
+  const [backupList, setBackupList] = useState<BackupFile[] | null>(null);
+  const [restoreNotice, setRestoreNotice] = useState<{ text: string; failed: boolean } | null>(null);
   const [laterLayout, setLaterLayout] = useState<"date" | "project">("date");
   const [showPanel, setShowPanel] = useState(false);
   // Bumped to ask an open detail panel to dive from preview into its notes editor
@@ -2275,6 +2284,63 @@ export function App() {
     // panel doesn't strand it in the middle of a list that just changed shape.
     setHistorySel(0);
   };
+  // ── Restore a backup… (desktop) ───────────────────────────────────
+  // The daily copies in backups/ were only good with the cloud cut off: put
+  // back over the store file, the first sync deleted again whatever the cloud
+  // had a deletion record for. This restores through the store instead
+  // (store/restore), as one undoable step the cloud then follows, after
+  // keeping a copy of what the app holds now beside the backups.
+  const bridge = window.execute;
+  const canRestore =
+    bridge?.listBackups != null && bridge.readBackup != null && bridge.keepCopyBeforeRestore != null;
+  const openBackups = () => {
+    const list = window.execute?.listBackups;
+    if (list == null) return;
+    list().then(
+      (files) => {
+        if (files.length === 0) setRestoreNotice({ text: "There are no backups yet.", failed: true });
+        else setBackupList(files);
+      },
+      (e: unknown) =>
+        setRestoreNotice({ text: `Couldn't list the backups: ${e instanceof Error ? e.message : String(e)}`, failed: true }),
+    );
+  };
+  const runRestore = async (file: BackupFile) => {
+    const b = window.execute;
+    if (b?.readBackup == null || b.keepCopyBeforeRestore == null) return;
+    const when = backupWhen(file);
+    try {
+      const backup = coerceState(await b.readBackup(file.name));
+      // Never restore without the copy: it is what undoes this after a restart.
+      const kept = await b.keepCopyBeforeRestore(getStoreState());
+      const changed = restoreBackup(backup, `Restore the backup of ${when}`);
+      setRestoreNotice({
+        text: changed
+          ? `Restored the backup of ${when}. ⌘z undoes it; what you had is kept as backups/${kept}.`
+          : `The backup of ${when} holds nothing you don't have: nothing changed.`,
+        failed: false,
+      });
+    } catch (e: unknown) {
+      setRestoreNotice({
+        text: `Nothing was restored: ${e instanceof Error ? e.message : String(e)}`,
+        failed: true,
+      });
+    }
+  };
+  const askRestore = (file: BackupFile) => {
+    setConfirm({
+      title: `Restore the backup of ${backupWhen(file)}?`,
+      body:
+        `Every task, project, recurring task and habit in this ${backupKind(file)} goes back to how it was ` +
+        "then, deleted ones included, on every device. What's been added since stays. A copy of what " +
+        "you have now is kept in backups/ first, and ⌘z undoes the restore.",
+      confirmLabel: "Restore",
+      enterAction: "cancel",
+      tone: "neutral",
+      onConfirm: () => void runRestore(file),
+    });
+  };
+
   const moveHistoryCursor = (dir: "up" | "down") => {
     setHistorySel((i) =>
       dir === "down" ? Math.min(i + 1, historyRows.length - 1) : Math.max(i - 1, 0),
@@ -2356,8 +2422,9 @@ export function App() {
     showEstimate,
     showCalendar,
     showRepeat: repeatTarget != null,
-    // The habit log panel is modal like a confirm: nothing fires beneath it.
-    showConfirm: confirm != null || habitLogDate != null,
+    // The habit log panel and the backup list are modal like a confirm:
+    // nothing fires beneath them.
+    showConfirm: confirm != null || habitLogDate != null || backupList != null,
     reckoningActive,
     boardMode,
     shutdownActive,
@@ -3390,6 +3457,16 @@ export function App() {
       hint: "⌘y",
       run: openHistory,
     },
+    ...(canRestore
+      ? [
+          {
+            id: "restore-backup",
+            label: "Restore a backup…",
+            aliases: ["backup", "restore", "recover", "undelete", "bring back", "lost"],
+            run: openBackups,
+          },
+        ]
+      : []),
     // Presence — desktop only; on the web companion there's no menu bar to own.
     ...(window.execute?.isElectron === true
       ? [
@@ -3522,6 +3599,26 @@ export function App() {
           >
             <span className="shrink-0 font-medium text-bad">Not saved to disk — retrying</span>
             <span className="truncate text-ink-soft">{saveError}</span>
+          </div>
+        )}
+        {restoreNotice != null && (
+          <div
+            role="status"
+            className={[
+              "flex items-center gap-2 border-b px-4 py-1.5 text-[12px]",
+              restoreNotice.failed ? "border-bad bg-bad-soft" : "border-line bg-surface-2",
+            ].join(" ")}
+          >
+            <span className={["min-w-0 flex-1", restoreNotice.failed ? "text-bad" : "text-ink-soft"].join(" ")}>
+              {restoreNotice.text}
+            </span>
+            <button
+              type="button"
+              onClick={() => setRestoreNotice(null)}
+              className="shrink-0 rounded border border-line bg-surface px-2 py-0.5 text-[11px] hover:bg-surface-3"
+            >
+              Dismiss
+            </button>
           </div>
         )}
         <div className="flex flex-1 overflow-hidden">
@@ -3908,6 +4005,9 @@ export function App() {
             setPostponeReq(null);
           }}
         />
+      )}
+      {backupList != null && (
+        <BackupPicker backups={backupList} onPick={askRestore} onClose={() => setBackupList(null)} />
       )}
       {showProject && filingTargetCount > 0 && (
         <ProjectPicker

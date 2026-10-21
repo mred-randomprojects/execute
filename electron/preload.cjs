@@ -39,6 +39,11 @@ contextBridge.exposeInMainWorld("execute", {
     ipcRenderer.on("power:awake", handler);
     return () => ipcRenderer.removeListener("power:awake", handler);
   },
+  // "Restore a backup…": the daily copies in backups/ (names, sizes, dates),
+  // one read back, and a copy of the current state kept before restoring.
+  listBackups: () => ipcRenderer.invoke("backups:list"),
+  readBackup: (name) => ipcRenderer.invoke("backups:read", name),
+  keepCopyBeforeRestore: (data) => ipcRenderer.invoke("backups:keepCopy", data),
   // Clicking the evening nudge opens the shutdown ritual itself, not just the app.
   onOpenShutdown: (fn) => {
     const handler = () => fn();

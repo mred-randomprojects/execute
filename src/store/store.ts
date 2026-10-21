@@ -19,6 +19,8 @@ import type {
 import { ACTION_LOG_LIMIT, DEFAULT_PROJECT_ID, emptyState } from "../types";
 import { findById } from "./tasks";
 import { rebaseStep } from "./rebase";
+import { restoreOnto } from "./restore";
+import { jsonEqual } from "../sync/json";
 import {
   coerceState,
   corruptStore,
@@ -1024,6 +1026,32 @@ function applyStep(step: HistoryStep, kind: "undo" | "redo"): void {
   });
   notify();
   scheduleSave();
+}
+
+/**
+ * Put a backup back (store/restore): everything it holds as it was then, and
+ * whatever is newer kept. One undo step, committed like an undo — every change
+ * stamped now, whatever comes back stamped past its own deletion record — so
+ * the merge takes it as the newest word and the cloud follows instead of
+ * deleting it again. Returns false when it would change nothing (or before the
+ * store has loaded).
+ */
+export function restoreBackup(backup: AppState, label: string): boolean {
+  if (!getLoaded()) return false;
+  const current = state;
+  const now = Date.now();
+  const next = commitRebased(current, restoreOnto(current, backup), now);
+  const same = (["tasks", "trash", "projects", "recurrences", "habits", "log", "days"] as const).every((k) =>
+    jsonEqual(next[k], current[k]),
+  );
+  if (same) return false;
+  const id = nanoid();
+  state = withHistory(next, current.actionLog, { id, label, kind: "do", at: now });
+  undoStack = [{ id, label, at: now, before: current, after: state }, ...undoStack].slice(0, MAX_UNDO);
+  redoStack = [];
+  notify();
+  scheduleSave();
+  return true;
 }
 
 export function undo(): void {

@@ -6,7 +6,8 @@ import path from "node:path";
 import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
-const { KEEP, backUpDaily, dailyBackupsToPrune, localDate } = require("./backups.cjs");
+const { KEEP, backUpDaily, dailyBackupsToPrune, keepCopyBeforeRestore, listBackups, localDate, readBackup } =
+  require("./backups.cjs");
 
 /** `n` consecutive daily backup names ending on 2026-10-09, oldest first. */
 function dailyNames(n) {
@@ -101,5 +102,62 @@ describe("backUpDaily", () => {
     const daily = left.filter((n) => /^execute-store\.\d{4}-\d{2}-\d{2}\.json$/.test(n)).sort();
     expect(daily).toEqual(dailyNames(KEEP));
     expect(daily.at(-1)).toBe("execute-store.2026-10-09.json");
+  });
+});
+
+// "Restore a backup…" reads backups/ through these: only plain .json names in
+// that folder, never a path out of it, and the copy kept before a restore
+// never overwrites anything and is never pruned.
+describe("restoring: listBackups, readBackup, keepCopyBeforeRestore", () => {
+  let dir;
+  let backups;
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), "execute-restore-"));
+    backups = path.join(dir, "backups");
+    fs.mkdirSync(backups);
+  });
+  afterEach(() => {
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("lists the .json files, newest first, and nothing else", () => {
+    for (const [name, at] of [
+      ["execute-store.2026-10-18.json", 1],
+      ["execute-store.2026-10-19.json", 2],
+      ["execute-store.2026-10-09.json.tmp", 3],
+      ["notes.txt", 4],
+      [".hidden.json", 5],
+    ]) {
+      const file = path.join(backups, name);
+      fs.writeFileSync(file, "{}");
+      fs.utimesSync(file, at, at);
+    }
+    fs.mkdirSync(path.join(backups, "folder.json"));
+    fs.symlinkSync(path.join(dir, "elsewhere.json"), path.join(backups, "link.json"));
+    expect(listBackups(backups).map((b) => b.name)).toEqual([
+      "execute-store.2026-10-19.json",
+      "execute-store.2026-10-18.json",
+    ]);
+    expect(listBackups(path.join(dir, "missing"))).toEqual([]);
+  });
+
+  it("reads a listed backup, and refuses any name that could leave the folder", () => {
+    fs.writeFileSync(path.join(backups, "execute-store.2026-10-18.json"), '{"tasks":[]}');
+    fs.writeFileSync(path.join(dir, "secret.json"), '{"secret":1}');
+    expect(readBackup(backups, "execute-store.2026-10-18.json")).toEqual({ tasks: [] });
+    for (const name of ["../secret.json", "/etc/passwd", "a/b.json", "..json", "x.txt", "", null, 42]) {
+      expect(() => readBackup(backups, name), String(name)).toThrow();
+    }
+  });
+
+  it("keeps a copy before restoring under a name of its own, never overwriting one", () => {
+    const now = new Date(2026, 9, 20, 9, 5, 7);
+    const first = keepCopyBeforeRestore(backups, { tasks: [1] }, now);
+    const second = keepCopyBeforeRestore(backups, { tasks: [2] }, now);
+    expect(first).toBe("execute-store.before-restore.2026-10-20-090507.json");
+    expect(second).toBe("execute-store.before-restore.2026-10-20-090507-1.json");
+    expect(readBackup(backups, first)).toEqual({ tasks: [1] });
+    expect(readBackup(backups, second)).toEqual({ tasks: [2] });
+    expect(dailyBackupsToPrune([first, second, ...dailyNames(KEEP + 1)])).not.toContain(first);
   });
 });

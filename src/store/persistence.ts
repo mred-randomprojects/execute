@@ -91,6 +91,19 @@ interface ExecuteBridge {
   onAwake?: (fn: () => void) => () => void;
   /** Subscribe to "open the shutdown ritual" (the evening nudge was clicked). */
   onOpenShutdown?: (fn: () => void) => () => void;
+  /** The JSON files in backups/, newest first (desktop only). */
+  listBackups?: () => Promise<BackupFile[]>;
+  /** One backup, parsed (desktop only). */
+  readBackup?: (name: string) => Promise<unknown>;
+  /** Keep `data` in backups/ before a restore; resolves with the file's name (desktop only). */
+  keepCopyBeforeRestore?: (data: AppState) => Promise<string>;
+}
+
+/** A file in the desktop's backups/ folder (electron/backups.cjs listBackups). */
+export interface BackupFile {
+  name: string;
+  size: number;
+  mtimeMs: number;
 }
 
 declare global {
