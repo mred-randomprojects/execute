@@ -97,8 +97,10 @@ The format is `sync/docs.ts` (`toDocs` / `fromDocs` / `diffDocs`, pure).
   merged against (else `StaleViewError`: nothing written, merge first, retry).
   Transactions fail instead of queueing offline, so a waking laptop can't
   replay a stale write over a newer one. First-time uploads in bulk and log
-  lines go out as plain batches. Log lines are write-only, past a per-device
-  watermark (listening to thousands would eat the read quota).
+  lines go out as plain batches. Log lines go up past a per-device watermark
+  and are not listened to (thousands would eat the read quota); instead each
+  start reads back, once, the lines from this device's newest on, so a new Mac
+  or a lost or restored store file gets the log (Review, History) back.
 - **The phone** (`sync/v2/viewer.ts`) keeps no local copy and doesn't merge:
   it loads open tasks and those completed in the last 14 days (plus projects
   and meta), and writes each edit as an idempotent intent in a guarded
@@ -133,7 +135,8 @@ guarded commits, lagging views via `hold()`/`release()`), including hundreds of
 randomized two-device runs that must converge and then write nothing.
 
 **Quota (Spark, free).** Cold start ≈ 1.3k reads on the desktop (collections
-minus the log), ≈ 360 on the phone; a normal edit is one read + one small
+minus the log, plus the log's read-back: one line normally, all ≈ 3k once on a
+new Mac), ≈ 360 on the phone; a normal edit is one read + one small
 write. The one-time migration was ≈ 3.6k writes.
 
 ### History: the v1 single document, and what broke

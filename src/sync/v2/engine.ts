@@ -118,7 +118,11 @@ export interface EngineOptions {
   backoffMs?: readonly number[];
 }
 
-/** Everything the desktop needs; the log is written, never read back. */
+/**
+ * Everything the desktop listens to. Not the log: thousands of lines would eat
+ * the read quota on every start. It is read once per start instead, from the
+ * newest line this device has (see `readBackLog`).
+ */
 const LISTENED: readonly ListenTarget[] = [
   "tasks",
   "projects",
@@ -159,6 +163,31 @@ function withoutLog(docs: CloudDocs): CloudDocs {
 }
 
 /**
+ * How far the log watermark can move once `inCloud` (ids read back from the
+ * cloud) is known: past every line, oldest first, that the cloud already has,
+ * up to the first one it doesn't. Lines that share a timestamp move together,
+ * so a line the cloud lacks is never left at or below the mark, where it would
+ * never be sent.
+ */
+export function logMarkAfterReadBack(
+  log: readonly { id: string; at: number }[],
+  inCloud: ReadonlySet<string>,
+  mark: number,
+): number {
+  const byAt = new Map<number, boolean>();
+  for (const e of log) {
+    if (e.at <= mark) continue;
+    byAt.set(e.at, (byAt.get(e.at) ?? true) && inCloud.has(e.id));
+  }
+  let safe = mark;
+  for (const at of [...byAt.keys()].sort((a, b) => a - b)) {
+    if (byAt.get(at) !== true) break;
+    safe = at;
+  }
+  return safe;
+}
+
+/**
  * The documents of a state as a reader would see them: through `fromDocs` once,
  * so read-side normalisation (tombstone expiry, sorting, coercion) applies to
  * both sides of a diff alike and can never show up as a difference that no
@@ -189,6 +218,12 @@ export class DocSync {
   private delivered = new Map<ListenTarget, number>();
   private waiters = new Set<() => void>();
   private unsubs: (() => void)[] = [];
+  /** Log lines read back this start, until a round merges them (see `readBackLog`). */
+  private cloudLog = new Map<string, unknown>();
+  /** Ids of the log lines the cloud is known to have, so they aren't sent again. */
+  private cloudLogIds = new Set<string>();
+  private logReadBack: "notYet" | "reading" | "fresh" | "done" = "notYet";
+  private logUnsub: (() => void) | null = null;
   private timer: ReturnType<typeof setTimeout> | null = null;
   private timerDue = Infinity;
   private retryTimer: ReturnType<typeof setTimeout> | null = null;
@@ -276,6 +311,9 @@ export class DocSync {
     this.stopped = true;
     for (const u of this.unsubs) u();
     this.unsubs = [];
+    this.logUnsub?.();
+    this.logUnsub = null;
+    if (this.logReadBack === "reading") this.logReadBack = "notYet";
     this.raw.clear();
     if (this.timer != null) clearTimeout(this.timer);
     if (this.retryTimer != null) clearTimeout(this.retryTimer);
@@ -304,6 +342,56 @@ export class DocSync {
         ),
       );
     }
+  }
+
+  /**
+   * Read back, once per start, the log lines the cloud has from this device's
+   * newest one on: all of them on a new Mac or after the store file was lost,
+   * the ones since on a store restored from an older backup, and normally just
+   * that newest line. Without it the log (the reasons behind Review and each
+   * task's History) never came back from the cloud, though every line is
+   * there. A failure costs nothing but the read-back: sync goes on, and the
+   * next start tries again.
+   */
+  private readBackLog(local: AppState): void {
+    if (this.logReadBack !== "notYet") return;
+    this.logReadBack = "reading";
+    const newest = local.log.reduce((m, e) => (Number.isFinite(e.at) ? Math.max(m, e.at) : m), 0);
+    let unsub: (() => void) | null = null;
+    let done = false;
+    // A store may answer from inside listen(), i.e. before this round's merge,
+    // which then takes the lines in: no need for another round.
+    let answeredInline = true;
+    const finish = () => {
+      done = true;
+      unsub?.();
+      if (this.logUnsub === unsub) this.logUnsub = null;
+    };
+    try {
+      unsub = this.store.listen(
+        "log",
+        (docs) => {
+          if (done || this.stopped) return;
+          finish();
+          this.cloudLog = new Map(docs);
+          this.cloudLogIds = new Set(docs.keys());
+          this.logReadBack = "fresh";
+          if (!answeredInline) this.request();
+        },
+        () => {
+          if (done) return;
+          finish();
+          this.logReadBack = "done";
+        },
+        { field: "at", op: ">=", value: newest },
+      );
+    } catch {
+      this.logReadBack = "done"; // never let the read-back stop sync
+      return;
+    }
+    answeredInline = false;
+    if (done) unsub();
+    else this.logUnsub = unsub;
   }
 
   /** A failed listener is dead; tear them all down and try again after a pause. */
@@ -429,7 +517,7 @@ export class DocSync {
       recurrences: get("recurrences"),
       habits: get("habits"),
       tombstones: get("tombstones"),
-      log: new Map(),
+      log: this.cloudLog,
       days: get("days"),
       meta: get("meta").get(META_DOC_ID) ?? null,
     };
@@ -474,7 +562,7 @@ export class DocSync {
     }
     const mark = this.watermark.get();
     for (const e of local.log) {
-      if (e.at > mark) writes.push({ collection: "log", id: e.id, op: "set", data: e });
+      if (e.at > mark && !this.cloudLogIds.has(e.id)) writes.push({ collection: "log", id: e.id, op: "set", data: e });
     }
     return writes;
   }
@@ -622,11 +710,20 @@ export class DocSync {
 
       const version = this.host.version();
       let local = this.host.getLocal();
+      this.readBackLog(local);
       const view = this.cloudView(local);
       const merged = mergeStates(local, view);
       if (!jsonEqual(merged, local)) {
         this.adoptCounted(merged);
         local = merged;
+      }
+      if (this.logReadBack === "fresh") {
+        // Lines the cloud already has needn't go up again, now or after a
+        // restart: move the watermark past them.
+        this.logReadBack = "done";
+        this.cloudLog = new Map(); // merged now: no need to parse it every round
+        const mark = logMarkAfterReadBack(local.log, this.cloudLogIds, this.watermark.get());
+        if (mark > this.watermark.get()) this.watermark.set(mark);
       }
 
       const writes = this.pending(local, view);

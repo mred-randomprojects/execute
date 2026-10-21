@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { DocSync, FORMAT_DOC_ID, canonicalDocs, type EngineHost, type Watermark } from "./engine";
+import { DocSync, FORMAT_DOC_ID, canonicalDocs, type EngineHost, type Watermark, logMarkAfterReadBack } from "./engine";
 import { MemoryStore } from "./memoryStore";
 import type { DocWrite } from "../docs";
 import { jsonEqual } from "../merge";
@@ -37,7 +37,7 @@ function memoryWatermark(): Watermark {
 function device(
   store: MemoryStore,
   initial: AppState,
-  opts: { v1?: AppState | null; frozen?: { count: number }; now?: () => number } = {},
+  opts: { v1?: AppState | null; frozen?: { count: number }; now?: () => number; watermark?: Watermark } = {},
 ): Device {
   let version = 0;
   const d: Device = {
@@ -56,7 +56,7 @@ function device(
     },
     engine: undefined as unknown as DocSync, // replaced just below
   };
-  d.engine = new DocSync(store, d, memoryWatermark(), {
+  d.engine = new DocSync(store, d, opts.watermark ?? memoryWatermark(), {
     migration:
       opts.v1 === undefined
         ? undefined
@@ -599,5 +599,114 @@ describe("guards", () => {
     now += 60 * 60_000;
     await d.engine.syncNow();
     expect((store.read("meta", "heartbeat") as { at: number }).at).toBe(now);
+  });
+});
+
+describe("the log, read back from the cloud", () => {
+  const line = (id: string, at: number): LogEntry => ({
+    id,
+    taskId: "t" as TaskId,
+    taskText: "t",
+    action: "completed",
+    reason: "no time",
+    at,
+    date: "2026-09-24",
+  });
+  const logIds = (s: AppState) => s.log.map((e) => e.id).sort();
+  class CountingLog extends MemoryStore {
+    logWrites = 0;
+    override async commit(writes: readonly DocWrite[], expect?: Parameters<MemoryStore["commit"]>[1]) {
+      await super.commit(writes, expect);
+      this.logWrites += writes.filter((w) => w.collection === "log").length;
+    }
+  }
+
+  it("a new Mac gets every line back, and sends none of them up again", async () => {
+    const store = new CountingLog();
+    const lines = [line("l3", 300), line("l2", 200), line("l1", 100)];
+    const first = device(store, { ...(await busy()), log: lines }, { v1: null });
+    await first.engine.syncNow();
+    first.engine.stop();
+    expect(store.logWrites).toBe(3);
+
+    const mark = memoryWatermark();
+    const fresh = device(store, emptyState(), { watermark: mark });
+    await fresh.engine.syncNow();
+    expect(logIds(fresh.state)).toEqual(["l1", "l2", "l3"]);
+    expect(fresh.state.log.find((e) => e.id === "l2")?.reason).toBe("no time");
+    expect(store.logWrites).toBe(3);
+    expect(mark.get()).toBe(300);
+
+    // Restarted: the lines are local now, and the watermark keeps them home.
+    fresh.engine.stop();
+    const again = device(store, fresh.state, { watermark: mark });
+    await again.engine.syncNow();
+    expect(store.logWrites).toBe(3);
+    expect(again.engine.getStatus().kind).toBe("inSync");
+  });
+
+  it("a store restored from an older backup gets the lines written since", async () => {
+    const store = new CountingLog();
+    const mark = memoryWatermark();
+    const d = device(store, { ...(await busy()), log: [line("l2", 200), line("l1", 100)] }, { v1: null, watermark: mark });
+    await d.engine.syncNow();
+    d.edit((s) => ({ ...s, log: [line("l4", 400), line("l3", 300), ...s.log] }));
+    await d.engine.syncNow();
+    const backup = { ...d.state, log: d.state.log.filter((e) => e.at <= 200) };
+    d.engine.stop();
+
+    const restored = device(store, backup, { watermark: mark }); // same Mac, older file
+    await restored.engine.syncNow();
+    expect(logIds(restored.state)).toEqual(["l1", "l2", "l3", "l4"]);
+  });
+
+  it("a local line the cloud lacks still goes up when newer lines from elsewhere came back", async () => {
+    const store = new CountingLog();
+    await store.commit([
+      { collection: "log", id: "x200", op: "set", data: line("x200", 200) },
+      { collection: "log", id: "x300", op: "set", data: line("x300", 300) },
+      { collection: "log", id: "x400", op: "set", data: line("x400", 400) },
+    ]);
+    store.logWrites = 0;
+    const mark = memoryWatermark();
+    const d = device(store, { ...(await busy()), log: [line("mine", 250)] }, { v1: null, watermark: mark });
+    await d.engine.syncNow();
+    expect(store.read("log", "mine")).toBeDefined();
+    // Read back from this device's newest line on: what's older stays in the cloud.
+    expect(logIds(d.state)).toEqual(["mine", "x300", "x400"]);
+    expect(store.logWrites).toBe(1);
+    expect(mark.get()).toBe(400);
+  });
+
+  it("sync goes on when the log can't be read back", async () => {
+    class NoLogReads extends MemoryStore {
+      override listen(...args: Parameters<MemoryStore["listen"]>): () => void {
+        const [target, , onError] = args;
+        if (target === "log") {
+          onError(new Error("PERMISSION_DENIED"));
+          return () => {};
+        }
+        return super.listen(...args);
+      }
+    }
+    const store = new NoLogReads();
+    const d = device(store, { ...(await busy()), log: [line("l1", 100)] }, { v1: null });
+    await d.engine.syncNow();
+    expect(d.engine.getStatus().kind).toBe("inSync");
+    expect(store.read("log", "l1")).toBeDefined();
+  });
+
+  it("moves the watermark only past lines the cloud has, a timestamp at a time", () => {
+    const log = [
+      { id: "a", at: 100 },
+      { id: "b", at: 200 },
+      { id: "c", at: 200 },
+      { id: "d", at: 300 },
+    ];
+    expect(logMarkAfterReadBack(log, new Set(["a", "b", "c", "d"]), 0)).toBe(300);
+    expect(logMarkAfterReadBack(log, new Set(["a", "b", "d"]), 0)).toBe(100); // c shares 200 with b
+    expect(logMarkAfterReadBack(log, new Set(["b", "c", "d"]), 0)).toBe(0);
+    expect(logMarkAfterReadBack(log, new Set(["d"]), 200)).toBe(300);
+    expect(logMarkAfterReadBack(log, new Set(), 500)).toBe(500);
   });
 });
