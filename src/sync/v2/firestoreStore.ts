@@ -33,7 +33,7 @@ function withTimeout<T>(p: Promise<T>): Promise<T> {
   // A late rejection of an abandoned commit must not surface as unhandled.
   p.catch(() => {});
   return new Promise<T>((resolve, reject) => {
-    const t = setTimeout(() => reject(new Error("The cloud didn't answer in time")), COMMIT_TIMEOUT_MS);
+    const t = setTimeout(() => reject(new Error("The cloud didn't answer — will retry.")), COMMIT_TIMEOUT_MS);
     p.then(
       (v) => {
         clearTimeout(t);

@@ -67,26 +67,10 @@ function AuthedViewer({ user, onSignOut }: { user: User; onSignOut: () => void }
   const [phase, setPhase] = useState<"loading" | "ready" | "error">("loading");
   const [errorMsg, setErrorMsg] = useState("");
   const [reloadKey, setReloadKey] = useState(0);
-  // An edit that couldn't even be queued (still loading, or data from a newer
-  // schema). One that failed to save is kept and retried by ViewerSync, which
-  // reports it in the snapshot (`unsaved`, `saveError`) until it lands.
+  // A write that failed. Shown until the next one succeeds, so a check-off that
+  // didn't save can't quietly disappear.
   const [saveError, setSaveError] = useState<string | null>(null);
   const syncRef = useRef<ViewerSync | null>(null);
-
-  // An unsaved edit is retried on a timer; also try at once when the network
-  // or the tab comes back, which is when a bad mobile link usually recovers.
-  useEffect(() => {
-    const retry = () => syncRef.current?.retryNow();
-    const onVisible = () => {
-      if (document.visibilityState === "visible") retry();
-    };
-    window.addEventListener("online", retry);
-    document.addEventListener("visibilitychange", onVisible);
-    return () => {
-      window.removeEventListener("online", retry);
-      document.removeEventListener("visibilitychange", onVisible);
-    };
-  }, []);
 
   useEffect(() => {
     setPhase("loading");
@@ -182,9 +166,6 @@ function AuthedViewer({ user, onSignOut }: { user: User; onSignOut: () => void }
       () => setSaveError(null),
       (e: unknown) => {
         console.error("cloud sync failed", e);
-        // Kept and retried: the snapshot's own notice says so.
-        const s = sync.snapshot();
-        if (s.phase === "ready" && s.unsaved > 0) return;
         setSaveError(e instanceof Error ? e.message : "Couldn't save that change.");
       },
     );
@@ -228,15 +209,9 @@ function AuthedViewer({ user, onSignOut }: { user: User; onSignOut: () => void }
       notice={
         snap.outdated
           ? { text: "A newer version of Execute saved this data. Reload to update before editing.", action: "Reload", onAction: () => window.location.reload() }
-          : snap.unsaved > 0
-            ? {
-                text: `${snap.unsaved === 1 ? "1 change isn't" : `${snap.unsaved} changes aren't`} saved yet (${snap.saveError ?? "the cloud didn't answer"}). Keeping ${snap.unsaved === 1 ? "it" : "them"} here and retrying.`,
-                action: "Retry now",
-                onAction: () => syncRef.current?.retryNow(),
-              }
-            : saveError != null
-              ? { text: `Couldn't save: ${saveError}`, action: "Dismiss", onAction: () => setSaveError(null) }
-              : null
+          : saveError != null
+            ? { text: `Couldn't save: ${saveError}`, action: "Dismiss", onAction: () => setSaveError(null) }
+            : null
       }
       email={user.email}
       onSignOut={onSignOut}

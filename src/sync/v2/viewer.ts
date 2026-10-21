@@ -17,39 +17,13 @@ import { StaleViewError, docKey, type DocStore, type Expected, type ListenTarget
 // documents in the meantime, nothing is written, the view refreshes, and the
 // intent is applied again. Intents are idempotent ("set completed to true",
 // "add this task"), so a retry can't flip anything twice.
-//
-// Edits are written one at a time, in the order they were made. One that fails
-// (a bad mobile link, a timeout) is not dropped: it stays at the head of the
-// queue, shown on screen as not saved yet, and is retried with backoff (and at
-// once on `retryNow`, which the page calls when the network or the tab comes
-// back). Everything made after it waits behind it, so a retry can never land
-// an older edit over a newer one. The queue lives in memory only: on the
-// shared origin, task text has no business in localStorage.
 
 export const RECENT_DAYS = 14;
 const DAY_MS = 86_400_000;
 const MAX_ATTEMPTS = 3;
 const REFRESH_WAIT_MS = 5_000;
-/** How long a saved edit stays on screen while waiting for the cloud's echo. */
+/** How long an optimistic edit is shown while waiting for the cloud's echo. */
 const OPTIMISTIC_MS = 5_000;
-/** Waits before retrying an edit that failed to save; the last one repeats. */
-export const RETRY_BACKOFF_MS: readonly number[] = [2_000, 5_000, 15_000, 30_000, 60_000];
-
-export type ViewerEdit = (s: AppState) => AppState;
-
-interface QueuedEdit {
-  edit: ViewerEdit;
-  resolve: () => void;
-  reject: (e: unknown) => void;
-  /** Whether the caller has been told it failed (once is enough). */
-  told: boolean;
-}
-
-/** An edit that was saved but whose echo may not have reached the listeners yet. */
-interface ShownEdit {
-  edit: ViewerEdit;
-  until: number;
-}
 
 export type ViewerSnapshot =
   | { phase: "loading" }
@@ -62,13 +36,6 @@ export type ViewerSnapshot =
       updatedAt: number | null;
       /** The data was written by a newer schema: read-only until this page reloads. */
       outdated: boolean;
-      /**
-       * Edits made here that aren't in the cloud yet because a write failed —
-       * shown in `state`, retried until they land. 0 when nothing has failed.
-       */
-      unsaved: number;
-      /** Why the oldest unsaved edit hasn't been saved, while there is one. */
-      saveError: string | null;
     };
 
 function isObject(x: unknown): x is Record<string, unknown> {
@@ -85,15 +52,7 @@ export class ViewerSync {
   private unsubs: (() => void)[] = [];
   private deliveries = 0;
   private waiters = new Set<() => void>();
-  /** Edits not yet in the cloud, oldest first; the head is the one being written. */
-  private queue: QueuedEdit[] = [];
-  /** Saved edits still shown until the listeners echo them. */
-  private shown: ShownEdit[] = [];
-  private writing = false;
-  private stopped = false;
-  private failures = 0;
-  private lastError: string | null = null;
-  private retryTimer: ReturnType<typeof setTimeout> | null = null;
+  private optimistic: { state: AppState; until: number } | null = null;
 
   constructor(
     private readonly store: DocStore,
@@ -103,14 +62,13 @@ export class ViewerSync {
   ) {}
 
   start(): void {
-    this.stopped = false;
     const cutoff = this.now() - RECENT_DAYS * DAY_MS;
     const on = (name: string, into: Map<string, unknown>) => (docs: ReadonlyMap<string, unknown>) => {
       into.clear();
       for (const [k, v] of docs) into.set(k, v);
       this.got.add(name);
       this.deliveries++;
-      if (name === "open" || name === "recent") this.shown = [];
+      if (name === "open" || name === "recent") this.optimistic = null;
       for (const w of [...this.waiters]) w();
       this.emit();
     };
@@ -124,16 +82,9 @@ export class ViewerSync {
   }
 
   stop(): void {
-    this.stopped = true;
     for (const u of this.unsubs) u();
     this.unsubs = [];
     for (const w of [...this.waiters]) w();
-    if (this.retryTimer != null) clearTimeout(this.retryTimer);
-    this.retryTimer = null;
-    const dropped = this.queue;
-    this.queue = [];
-    this.shown = [];
-    for (const q of dropped) q.reject(new Error("Signed out before this change was saved."));
   }
 
   private emit(): void {
@@ -175,35 +126,13 @@ export class ViewerSync {
         if (typeof v === "number" && (updatedAt == null || v > updatedAt)) updatedAt = v;
       }
     }
-    const failed = this.lastError != null && this.queue.length > 0;
+    const optimistic = this.optimistic != null && this.optimistic.until > Date.now() ? this.optimistic.state : null;
     return {
       phase: "ready",
-      state: this.withLocalEdits(this.view()),
+      state: optimistic ?? this.view(),
       updatedAt,
       outdated: remoteVersion > SCHEMA_VERSION,
-      unsaved: failed ? this.queue.length : 0,
-      saveError: failed ? this.lastError : null,
     };
-  }
-
-  /**
-   * The cloud's view with this page's own edits on top: the saved ones whose
-   * echo hasn't arrived yet, then every one still waiting to be saved, in the
-   * order they were made. Intents are idempotent, so one the view already
-   * holds changes nothing.
-   */
-  private withLocalEdits(view: AppState): AppState {
-    const t = Date.now();
-    this.shown = this.shown.filter((e) => e.until > t);
-    let s = view;
-    for (const e of [...this.shown.map((x) => x.edit), ...this.queue.map((q) => q.edit)]) s = this.placed(s, e);
-    return s;
-  }
-
-  /** `edit` applied to `s`, with new and moved tasks ranked (store/placement). */
-  private placed(s: AppState, edit: ViewerEdit): AppState {
-    const edited = edit(s);
-    return edited === s ? s : { ...edited, tasks: placeTasks(s.tasks, edited.tasks, this.now()) };
   }
 
   private expected(collection: "tasks" | "habits", id: string): Expected {
@@ -228,93 +157,25 @@ export class ViewerSync {
   }
 
   /**
-   * Make an edit (an idempotent intent over the current view): shown at once,
-   * then written after every edit made before it. Resolves once it is in the
-   * cloud. If writing it fails it stays queued and shown, and is retried until
-   * it lands; the promise rejects with that first failure, so the caller can
-   * say so, but the edit is not lost. Rejects without queuing only when no
-   * write is possible at all (still loading, or data from a newer schema).
+   * Apply an edit (an idempotent intent over the current view) and write it.
+   * Shows it at once; retries against a refreshed view if another device got
+   * there first. Only task and habit documents are ever written from here.
    */
-  apply(edit: ViewerEdit): Promise<void> {
-    const snap = this.snapshot();
-    if (snap.phase !== "ready") return Promise.reject(new Error("Still loading — try again in a moment."));
-    if (snap.outdated) {
-      return Promise.reject(new Error("A newer version of Execute saved this data. Reload the page to update."));
-    }
-    return new Promise<void>((resolve, reject) => {
-      this.queue.push({ edit, resolve, reject, told: false });
-      this.emit();
-      void this.pump();
-    });
-  }
-
-  /** Try the unsaved edits again now (the network or the tab just came back). */
-  retryNow(): void {
-    if (this.queue.length === 0 || this.writing || this.stopped) return;
-    if (this.retryTimer != null) clearTimeout(this.retryTimer);
-    this.retryTimer = null;
-    void this.pump();
-  }
-
-  /** Write the queue, oldest first, until it's empty or a write fails. */
-  private async pump(): Promise<void> {
-    if (this.writing || this.stopped) return;
-    this.writing = true;
-    try {
-      while (this.queue.length > 0 && !this.stopped) {
-        const head = this.queue[0];
-        try {
-          await this.write(head.edit);
-        } catch (e: unknown) {
-          if (this.stopped) return;
-          this.failures += 1;
-          this.lastError = e instanceof Error ? e.message : String(e);
-          if (!head.told) {
-            head.told = true;
-            head.reject(e);
-          }
-          this.emit();
-          this.scheduleRetry();
-          return;
-        }
-        if (this.stopped) return;
-        this.queue.shift();
-        this.failures = 0;
-        this.lastError = null;
-        this.shown.push({ edit: head.edit, until: Date.now() + OPTIMISTIC_MS });
-        head.resolve();
-        this.emit();
-      }
-    } finally {
-      this.writing = false;
-    }
-  }
-
-  private scheduleRetry(): void {
-    if (this.retryTimer != null) clearTimeout(this.retryTimer);
-    const delay = RETRY_BACKOFF_MS[Math.min(this.failures, RETRY_BACKOFF_MS.length) - 1];
-    this.retryTimer = setTimeout(() => {
-      this.retryTimer = null;
-      void this.pump();
-    }, delay);
-  }
-
-  /**
-   * Write one edit against the current view, retrying on a refreshed view if
-   * another device changed one of its documents first.
-   */
-  private async write(edit: ViewerEdit): Promise<void> {
+  async apply(edit: (s: AppState) => AppState): Promise<void> {
     for (let attempt = 1; ; attempt++) {
       const snap = this.snapshot();
       if (snap.phase !== "ready") throw new Error("Still loading — try again in a moment.");
       if (snap.outdated) throw new Error("A newer version of Execute saved this data. Reload the page to update.");
       const view = this.view();
-      const placed = this.placed(view, edit);
+      const edited = edit(view);
+      const placed: AppState = { ...edited, tasks: placeTasks(view.tasks, edited.tasks, this.now()) };
       const writes = diffDocs(toDocs(view), toDocs(placed)).flatMap((w) =>
         w.collection === "tasks" || w.collection === "habits" ? [{ ...w, collection: w.collection }] : [],
       );
       if (writes.length === 0) return;
 
+      this.optimistic = { state: placed, until: Date.now() + OPTIMISTIC_MS };
+      this.emit();
       const since = this.deliveries;
       try {
         await this.store.commit(
@@ -323,6 +184,8 @@ export class ViewerSync {
         );
         return;
       } catch (e: unknown) {
+        this.optimistic = null;
+        this.emit();
         if (!(e instanceof StaleViewError) || attempt >= MAX_ATTEMPTS) throw e;
         await this.waitForDelivery(since);
       }

@@ -106,11 +106,7 @@ The format is `sync/docs.ts` (`toDocs` / `fromDocs` / `diffDocs`, pure).
   and meta), and writes each edit as an idempotent intent in a guarded
   transaction, re-applied on a fresh view if the desktop got there first.
   Writes are field-level patches, so a subtask it shows detached (its parent
-  wasn't loaded) is never written back as a move. Edits go out one at a time,
-  in order; one whose write fails (a bad mobile link) stays on screen marked
-  unsaved and is retried with backoff and when the network or the tab comes
-  back, with every later edit held behind it. The queue is in memory only (no
-  task text in the shared origin's storage), so closing the page drops it.
+  wasn't loaded) is never written back as a move.
 - **Reads are deterministic.** A cloud document reads the same every round —
   no "now" or random defaults — or it would look edited and be rewritten
   forever.
