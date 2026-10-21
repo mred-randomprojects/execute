@@ -13,7 +13,7 @@ import {
   signOut as firebaseSignOut,
   type User,
 } from "firebase/auth";
-import { firebaseAuth } from "./firebase";
+import { clearCloudCache, firebaseAuth } from "./firebase";
 
 interface AuthContextValue {
   user: User | null;
@@ -25,7 +25,14 @@ interface AuthContextValue {
 const AuthContext = createContext<AuthContextValue | null>(null);
 const googleProvider = new GoogleAuthProvider();
 
-export function AuthProvider({ children }: { children: ReactNode }) {
+/** The web viewer's sign-in. `afterSignOut` defaults to reloading the page. */
+export function AuthProvider({
+  children,
+  afterSignOut = () => window.location.reload(),
+}: {
+  children: ReactNode;
+  afterSignOut?: () => void;
+}) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -41,9 +48,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await signInWithPopup(firebaseAuth(), googleProvider);
   }, []);
 
+  // Signing out leaves Firestore's offline copy of the data in IndexedDB, on
+  // the origin every app of the account shares: clear it too, then reload,
+  // since the SDK can't be used after clearing (and the page starts clean).
   const signOut = useCallback(async () => {
     await firebaseSignOut(firebaseAuth());
-  }, []);
+    try {
+      await clearCloudCache();
+    } catch (e: unknown) {
+      console.error("Signed out, but the offline copy of the data couldn't be cleared", e);
+    }
+    afterSignOut();
+  }, [afterSignOut]);
 
   return (
     <AuthContext.Provider value={{ user, loading, signIn, signOut }}>

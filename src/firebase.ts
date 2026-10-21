@@ -1,9 +1,11 @@
 import { initializeApp, type FirebaseApp } from "firebase/app";
 import { getAuth, type Auth } from "firebase/auth";
 import {
+  clearIndexedDbPersistence,
   initializeFirestore,
   persistentLocalCache,
   persistentSingleTabManager,
+  terminate,
   type Firestore,
 } from "firebase/firestore";
 
@@ -106,4 +108,19 @@ export function firebaseAuth(): Auth {
 /** The Firestore instance, constructing the SDK on first call. Throws if unconfigured. */
 export function firebaseDb(): Firestore {
   return init().db;
+}
+
+/**
+ * Delete the copy of the cloud data Firestore keeps in this browser's
+ * IndexedDB (`firestore/[DEFAULT]/<project>/main`). Signing out doesn't: the
+ * open and recent tasks, notes and habits would stay readable after it, on an
+ * origin the web viewer shares with every other app of the account. For the
+ * viewer's sign-out; the SDK is unusable afterwards, so the caller reloads.
+ * Throws if the cache can't be cleared (another tab of the viewer holds it).
+ */
+export async function clearCloudCache(): Promise<void> {
+  if (!firebaseConfigured()) return;
+  const db = firebaseDb();
+  await terminate(db);
+  await clearIndexedDbPersistence(db);
 }
