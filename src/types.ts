@@ -198,6 +198,13 @@ export interface Habit {
    */
   values: Record<ISODate, number>;
   /**
+   * v25: a line about the day — "Steamed broccoli!", "only 10 minutes, but
+   * did it" — on a habit or a KPI, by day. A missing key = no note. Part of the
+   * day's entry, so it shares the per-day clock with `checks` and `values`
+   * ({@link Habit.checkedAt}) and travels with them in the merge.
+   */
+  notes: Record<ISODate, string>;
+  /**
    * v20: when each day's mark last changed, clears included (a cleared day
    * keeps its stamp and loses its `checks` entry). The merge's clock for
    * check-ins: newest per day wins, so the phone and the desktop marking the
@@ -719,7 +726,7 @@ export interface AppState {
   days: DayRecord[];
 }
 
-export const SCHEMA_VERSION = 24;
+export const SCHEMA_VERSION = 25;
 export const DEFAULT_PROJECT_ID = "project-inbox" as ProjectId;
 export const PROJECT_ROW_PREFIX = "project:";
 

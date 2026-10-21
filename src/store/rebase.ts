@@ -38,7 +38,7 @@ import { sortHabits } from "./habits";
 // Pure, and no clocks: the store stamps the result against the current state
 // at its choke point, exactly like any other change.
 
-type HabitOwnKey = Exclude<keyof Habit, "id" | "checks" | "values" | "checkedAt" | "createdAt" | "updatedAt">;
+type HabitOwnKey = Exclude<keyof Habit, "id" | "checks" | "values" | "notes" | "checkedAt" | "createdAt" | "updatedAt">;
 const HABIT_OWN: Record<HabitOwnKey, true> = {
   name: true,
   cue: true,
@@ -302,21 +302,32 @@ function rebaseHabit(f: Habit, t: Habit, c: Habit): Habit {
   const days = new Set([
     ...Object.keys(f.checks),
     ...Object.keys(f.values),
+    ...Object.keys(f.notes),
     ...Object.keys(t.checks),
     ...Object.keys(t.values),
+    ...Object.keys(t.notes),
   ]);
   for (const d of days) {
-    const stepChanged = f.checks[d] !== t.checks[d] || f.values[d] !== t.values[d];
-    if (!stepChanged || (out.checks[d] === t.checks[d] && out.values[d] === t.values[d])) continue;
+    const stepChanged = f.checks[d] !== t.checks[d] || f.values[d] !== t.values[d] || f.notes[d] !== t.notes[d];
+    if (
+      !stepChanged ||
+      (out.checks[d] === t.checks[d] && out.values[d] === t.values[d] && out.notes[d] === t.notes[d])
+    ) {
+      continue;
+    }
     const checks = { ...out.checks };
     const values = { ...out.values };
+    const notes = { ...out.notes };
     const mark = t.checks[d];
     const value = t.values[d];
+    const note = t.notes[d];
     if (mark === undefined) delete checks[d];
     else checks[d] = mark;
     if (value === undefined) delete values[d];
     else values[d] = value;
-    out = { ...out, checks, values };
+    if (note === undefined) delete notes[d];
+    else notes[d] = note;
+    out = { ...out, checks, values, notes };
   }
   return out;
 }

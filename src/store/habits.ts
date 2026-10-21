@@ -145,16 +145,16 @@ function sameOwn(a: Habit, b: Habit): boolean {
 /** Every day either map has an entry for — what the per-day clock covers. */
 function loggedDays(h: Habit | undefined): string[] {
   if (h == null) return [];
-  return [...Object.keys(h.checks), ...Object.keys(h.values)];
+  return [...Object.keys(h.checks), ...Object.keys(h.values), ...Object.keys(h.notes)];
 }
 
 /**
- * One day's entry, mark and value together — what the per-day clock stamps.
+ * One day's entry, mark, value and note together — what the per-day clock stamps.
  * An empty day sorts lowest, so a tie keeps the answer over the blank.
  */
 function dayEntry(h: Habit | undefined, d: ISODate): string {
-  if (h == null) return "\t";
-  return `${h.checks[d] ?? ""}\t${h.values[d] ?? ""}`;
+  if (h == null) return "\t\t";
+  return `${h.checks[d] ?? ""}\t${h.values[d] ?? ""}\t${h.notes[d] ?? ""}`;
 }
 
 /** The newest stamp a habit carries — what a tombstone has to beat. */
@@ -199,6 +199,12 @@ export function markStamped(h: Habit, date: ISODate, mark: HabitMark | null, now
   return marked === h ? h : stampHabit(h, marked, now);
 }
 
+/** One day's note, set and stamped — the phone's idempotent intent. */
+export function noteStamped(h: Habit, date: ISODate, note: string, now: number): Habit {
+  const next = withNote(h, date, note);
+  return next === h ? h : stampHabit(h, next, now);
+}
+
 /** One day's KPI value, set and stamped — the phone's idempotent intent. */
 export function valueStamped(h: Habit, date: ISODate, value: number | null, now: number): Habit {
   const next = withValue(h, date, value);
@@ -216,18 +222,21 @@ export function mergeHabit(a: Habit, b: Habit, tie: <T>(x: T, y: T) => T): Habit
   const own = a.updatedAt > b.updatedAt ? a : b.updatedAt > a.updatedAt ? b : tie(fa, fb) === fa ? a : b;
   const checks: Record<ISODate, HabitMark> = {};
   const values: Record<ISODate, number> = {};
+  const notes: Record<ISODate, string> = {};
   const checkedAt: Record<ISODate, number> = {};
   const days = new Set([...loggedDays(a), ...Object.keys(a.checkedAt), ...loggedDays(b), ...Object.keys(b.checkedAt)]);
   for (const d of days) {
     const sa = a.checkedAt[d] ?? 0;
     const sb = b.checkedAt[d] ?? 0;
-    // The day's mark and value travel together, from whichever side stamped
+    // The day's mark, value and note travel together, from whichever side stamped
     // it last; on a tie, the same side on every device (by value).
     const from = sa > sb ? a : sb > sa ? b : dayEntry(a, d) >= dayEntry(b, d) ? a : b;
     const mark = from.checks[d];
     if (mark != null) checks[d] = mark;
     const value = from.values[d];
     if (value != null) values[d] = value;
+    const note = from.notes[d];
+    if (note != null) notes[d] = note;
     const at = Math.max(sa, sb);
     if (at > 0) checkedAt[d] = at;
   }
@@ -238,6 +247,7 @@ export function mergeHabit(a: Habit, b: Habit, tie: <T>(x: T, y: T) => T): Habit
     updatedAt: Math.max(a.updatedAt, b.updatedAt),
     checks,
     values,
+    notes,
     checkedAt,
   };
 }
@@ -449,6 +459,31 @@ export function recentDays(today: ISODate, n: number): ISODate[] {
   const out: ISODate[] = [];
   for (let i = n - 1; i >= 0; i--) out.push(addDays(today, -i));
   return out;
+}
+
+// ─── Notes ───────────────────────────────────────────────────────────
+//
+// A line about the day, on a habit or a KPI: what the check-in alone can't say
+// ("Steamed broccoli!", "only 10 minutes"). Optional, never asked for — the
+// mark is the log; the note is the diary of it, read back over time.
+
+export function noteOn(h: Habit, date: ISODate): string {
+  return h.notes[date] ?? "";
+}
+
+/** The habit with `date`'s note set to `note` (trimmed; empty clears it). */
+export function withNote(h: Habit, date: ISODate, note: string): Habit {
+  const clean = note.trim();
+  if (noteOn(h, date) === clean) return h;
+  const notes = { ...h.notes };
+  if (clean === "") delete notes[date];
+  else notes[date] = clean;
+  return { ...h, notes };
+}
+
+/** Every noted day, newest first. */
+export function notedDays(h: Habit): ISODate[] {
+  return Object.keys(h.notes).sort((a, b) => b.localeCompare(a));
 }
 
 // ─── KPIs ────────────────────────────────────────────────────────────

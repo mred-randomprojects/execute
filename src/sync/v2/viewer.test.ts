@@ -170,6 +170,7 @@ describe("the phone's view", () => {
       checkedAt: {},
       measure: null,
       values: {},
+      notes: {},
       archivedAt: null,
       rank: 0,
       createdAt: Date.now() - 10 * DAY,

@@ -53,6 +53,7 @@ import {
   sameMeasure,
   sortHabits,
   withMark,
+  withNote,
   withValue,
 } from "../store/habits";
 import { horizonWords } from "../selectors";
@@ -171,6 +172,7 @@ export type Command =
   | { type: "markHabit"; id: HabitId; date: ISODate; mark: HabitMark | null }
   | { type: "setHabitMeasure"; id: HabitId; measure: HabitMeasure }
   | { type: "setKpiValue"; id: HabitId; date: ISODate; value: number | null }
+  | { type: "setHabitNote"; id: HabitId; date: ISODate; note: string }
   | { type: "moveHabit"; id: HabitId; dir: 1 | -1 }
   | { type: "setHabitArchived"; id: HabitId; archived: boolean }
   | { type: "deleteHabit"; id: HabitId };
@@ -792,6 +794,7 @@ export function applyCommand(s: AppState, cmd: Command, ctx: CommandContext): Ap
         checks: {},
         measure: cmd.measure,
         values: {},
+        notes: {},
         checkedAt: {},
         archivedAt: null,
         rank: now,
@@ -822,6 +825,8 @@ export function applyCommand(s: AppState, cmd: Command, ctx: CommandContext): Ap
       );
     case "setKpiValue":
       return mapHabit(s, cmd.id, (h) => (h.measure == null ? h : withValue(h, cmd.date, cmd.value)));
+    case "setHabitNote":
+      return mapHabit(s, cmd.id, (h) => withNote(h, cmd.date, cmd.note));
     case "moveHabit": {
       const habits = moveHabitRank(s.habits, cmd.id, cmd.dir);
       return habits === s.habits ? s : { ...s, habits: sortHabits(habits) };
@@ -1061,6 +1066,10 @@ export function describeCommand(s: AppState, cmd: Command, now: number): string 
       const measure = s.habits.find((h) => h.id === cmd.id)?.measure ?? null;
       if (cmd.value == null || measure == null) return `Clear ${habit(cmd.id)} · ${cmd.date}`;
       return `${habit(cmd.id)} = ${formatValue(measure, cmd.value)} · ${cmd.date}`;
+    }
+    case "setHabitNote": {
+      const clean = cmd.note.trim();
+      return clean === "" ? `Clear the note on ${habit(cmd.id)} · ${cmd.date}` : `Note on ${habit(cmd.id)} · ${cmd.date}: ${quoteText(clean)}`;
     }
     case "moveHabit":
       return `Move ${habit(cmd.id)} ${cmd.dir === 1 ? "down" : "up"}`;

@@ -441,6 +441,16 @@ function coerceValues(raw: unknown): Record<string, number> {
   return out;
 }
 
+// v25: a note per day. Pre-v25 habits have none.
+function coerceNotes(raw: unknown): Record<string, string> {
+  const out: Record<string, string> = {};
+  if (!isObject(raw)) return out;
+  for (const [date, v] of Object.entries(raw)) {
+    if (ISO_DAY.test(date) && typeof v === "string" && v.trim() !== "") out[date] = v;
+  }
+  return out;
+}
+
 function coerceHabit(raw: unknown): Habit {
   const o = isObject(raw) ? raw : {};
   const createdAt = num(o.createdAt, Date.now());
@@ -452,6 +462,7 @@ function coerceHabit(raw: unknown): Habit {
     checks: coerceChecks(o.checks),
     measure: coerceMeasure(o.measure),
     values: coerceValues(o.values),
+    notes: coerceNotes(o.notes),
     // v20: per-day stamps. v19 marks have none → stamp 0, which any newer
     // answer on another device outvotes.
     checkedAt: coerceStamps(o.checkedAt),

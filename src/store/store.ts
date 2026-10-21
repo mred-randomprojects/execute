@@ -966,6 +966,11 @@ export function setKpiValue(id: HabitId, date: ISODate, value: number | null): v
   dispatch({ type: "setKpiValue", id, date, value });
 }
 
+/** A line about one day of a habit or KPI (empty clears it). */
+export function setHabitNote(id: HabitId, date: ISODate, note: string): void {
+  dispatch({ type: "setHabitNote", id, date, note });
+}
+
 /** One place up or down within its list (habits, KPIs, or the archive). */
 export function moveHabit(id: HabitId, dir: 1 | -1): void {
   dispatch({ type: "moveHabit", id, dir });

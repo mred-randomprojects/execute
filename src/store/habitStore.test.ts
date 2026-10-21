@@ -10,6 +10,7 @@ import {
   setHabitMeasure,
   moveHabit,
   setHabitPerWeek,
+  setHabitNote,
   setKpiValue,
   toggleHabitDone,
   toggleHabitSkip,
@@ -19,7 +20,8 @@ import { mergeStates } from "../sync/merge";
 import { asRaw, fromDocs, toDocs } from "../sync/docs";
 import { jsonEqual } from "../sync/merge";
 import type { AppState, Habit, HabitId } from "../types";
-import { DEFAULT_MEASURE, markStamped, moveHabitRank, valueStamped } from "./habits";
+import { DEFAULT_MEASURE, markStamped, moveHabitRank, noteStamped, valueStamped } from "./habits";
+import { coerceState } from "./persistence";
 
 // Habits through the store and the merge: undoable, tombstoned on delete, and
 // never anywhere near the task tree the Reckoning reads.
@@ -136,6 +138,7 @@ describe("per-day check-in merge (v20)", () => {
     checkedAt: {},
     measure: null,
     values: {},
+    notes: {},
     archivedAt: null,
     rank: 0,
     createdAt: 1,
@@ -213,6 +216,7 @@ describe("KPIs (v21)", () => {
     checkedAt: {},
     measure: { min: 0, max: 3, openTop: true, every: "day" },
     values: {},
+    notes: {},
     archivedAt: null,
     rank: 0,
     createdAt: 1,
@@ -284,6 +288,82 @@ describe("KPIs (v21)", () => {
     const s = getState();
     expect(jsonEqual(fromDocs(asRaw(toDocs(s)), s).habits, s.habits)).toBe(true);
     expect(fromDocs(asRaw(toDocs(s)), s).habits[0].values).toEqual({ "2026-10-01": 42 });
+  });
+});
+
+describe("notes on a day (v25)", () => {
+  const base = (over: Partial<Habit> = {}): Habit => ({
+    id: "nx" as HabitId,
+    name: "Veggies",
+    cue: "",
+    perWeek: 7,
+    checks: {},
+    checkedAt: {},
+    measure: null,
+    values: {},
+    notes: {},
+    archivedAt: null,
+    rank: 0,
+    createdAt: 1,
+    updatedAt: 1,
+    ...over,
+  });
+  const withHabit = (h: Habit): AppState => ({ ...getState(), habits: [h] });
+  const both = (a: Habit, b: Habit) => {
+    const ab = mergeStates(withHabit(a), withHabit(b)).habits[0];
+    const ba = mergeStates(withHabit(b), withHabit(a)).habits[0];
+    expect(ab).toEqual(ba);
+    return ab;
+  };
+
+  it("writes, trims, clears — undoable, stamped per day, on a habit and on a KPI", async () => {
+    const id = createHabit("Veggies");
+    markHabit(id, "2026-10-20", "done");
+    const markedAt = habitOf(getState(), id)?.checkedAt["2026-10-20"] ?? 0;
+    await tick();
+    setHabitNote(id, "2026-10-20", "  Steamed broccoli!  ");
+    const h = habitOf(getState(), id);
+    expect(h?.notes).toEqual({ "2026-10-20": "Steamed broccoli!" });
+    expect(h?.checks).toEqual({ "2026-10-20": "done" });
+    expect(h?.checkedAt["2026-10-20"]).toBeGreaterThan(markedAt);
+    setHabitNote(id, "2026-10-20", "   ");
+    expect(habitOf(getState(), id)?.notes).toEqual({});
+    undo();
+    expect(habitOf(getState(), id)?.notes).toEqual({ "2026-10-20": "Steamed broccoli!" });
+
+    const k = createHabit("Dizzy spells", 7, DEFAULT_MEASURE);
+    setHabitNote(k, "2026-10-19", "after the long run");
+    expect(habitOf(getState(), k)?.notes).toEqual({ "2026-10-19": "after the long run" });
+    expect(getState().tasks).toEqual([]);
+  });
+
+  it("a note alone, on an unmarked day, is kept — and isn't a mark", () => {
+    const id = createHabit("Veggies");
+    setHabitNote(id, "2026-10-18", "forgot to log, but had a salad");
+    const h = habitOf(getState(), id);
+    expect(h?.checks).toEqual({});
+    expect(h?.notes["2026-10-18"]).toBe("forgot to log, but had a salad");
+  });
+
+  it("merge: the note travels with its day's clock", () => {
+    const phone = markStamped(base(), "2026-10-20", "done", 100);
+    const desk = noteStamped(phone, "2026-10-20", "Steamed broccoli!", 200);
+    expect(both(phone, desk)).toMatchObject({ checks: { "2026-10-20": "done" }, notes: { "2026-10-20": "Steamed broccoli!" } });
+    const other = noteStamped(base(), "2026-10-19", "carrots", 150);
+    expect(both(desk, other).notes).toEqual({ "2026-10-19": "carrots", "2026-10-20": "Steamed broccoli!" });
+    const cleared = noteStamped(desk, "2026-10-20", "", 300);
+    expect(both(desk, cleared).notes).toEqual({});
+  });
+
+  it("reads back from cloud documents and storage exactly; pre-v25 habits get none", () => {
+    const id = createHabit("Veggies");
+    setHabitNote(id, "2026-10-20", "Steamed broccoli!");
+    const s = getState();
+    expect(jsonEqual(fromDocs(asRaw(toDocs(s)), s).habits, s.habits)).toBe(true);
+    expect(fromDocs(asRaw(toDocs(s)), s).habits[0].notes).toEqual({ "2026-10-20": "Steamed broccoli!" });
+    const old = JSON.parse(JSON.stringify({ ...s, schemaVersion: 24 }));
+    delete old.habits[0].notes;
+    expect(coerceState(old).habits[0].notes).toEqual({});
   });
 });
 
