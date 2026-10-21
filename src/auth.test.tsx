@@ -73,4 +73,31 @@ describe("signing out of the web viewer", () => {
     expect(error).toHaveBeenCalled();
     error.mockRestore();
   });
+
+  it("doesn't wait forever for a cache another tab holds open", async () => {
+    vi.useFakeTimers();
+    const firebase = await import("./firebase");
+    vi.mocked(firebase.clearCloudCache).mockReturnValueOnce(new Promise<void>(() => {}));
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { AuthProvider, useAuth } = await import("./auth");
+    let signOut: (() => Promise<void>) | null = null;
+    function Probe() {
+      signOut = useAuth().signOut;
+      return null;
+    }
+    render(
+      <AuthProvider afterSignOut={() => calls.push("reload")}>
+        <Probe />
+      </AuthProvider>,
+    );
+    let done: Promise<void> | undefined;
+    act(() => {
+      done = signOut?.();
+    });
+    await vi.advanceTimersByTimeAsync(3_000);
+    await done;
+    expect(calls).toEqual(["signOut", "reload"]);
+    error.mockRestore();
+    vi.useRealTimers();
+  });
 });
