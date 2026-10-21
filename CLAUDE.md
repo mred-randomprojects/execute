@@ -42,3 +42,12 @@ browser scopes by origin is a single pool they all share:
 <!-- /mred-randomprojects:shared-origin -->
 
 **In this repo:** Served at `/execute/`, where only the web viewer runs. localStorage: none of its own (the Firestore SDK can leave a transient `firestore_zombie_*` key when a tab closes). sessionStorage: none. IndexedDB: Firestore's persistent cache `firestore/[DEFAULT]/execute-todo-1d3bc/main`. Cache Storage: none, no service worker. Cookies: none. Uses Firebase, so its session is one of the records in `firebaseLocalStorageDb`. The code's three localStorage keys — `execute-store` (the `pnpm dev` browser fallback), `execute.v2.logWatermark.<uid>` and `execute.habitPromptDismissed` — are written only by the desktop app (Electron's own `file://` storage, apart from any browser's) and the localhost dev server, never on the shared site.
+
+## The rituals are secondary
+
+The owner rarely uses the rituals (the Reckoning, Shutdown, Plan, the morning
+band). He reviews and decides on tasks by hand in the ordinary views. So any
+capability added to a ritual (a verb, a field, a note) must also be reachable
+from the everyday views (the outline, the Habits view, `⌘k`), and that
+everyday path is the one to build first. A feature that exists only inside a
+ritual is, in practice, a feature nobody uses.
