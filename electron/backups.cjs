@@ -86,10 +86,12 @@ function readBackup(backupsDir, name) {
 
 /**
  * Before a restore: keep what the app holds now as
- * backups/execute-store.before-restore.<local date>-<hhmmss>.json, so the
- * restore can itself be undone after a restart (by restoring that file).
- * Never overwrites a file, and the daily prune never touches these names.
- * Returns the name written.
+ * backups/execute-store.before-restore.<local date>-<hhmmss>.json, so nothing
+ * the restore overwrote is lost, even after a restart has emptied ⌘z.
+ * Restoring that file puts every edit the restore reverted back; it doesn't
+ * delete what the restore brought back (a restore never deletes). Never
+ * overwrites a file, and the daily prune never touches these names. Returns
+ * the name written.
  */
 function keepCopyBeforeRestore(backupsDir, data, now = new Date()) {
   fs.mkdirSync(backupsDir, { recursive: true });
