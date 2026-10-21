@@ -93,20 +93,37 @@ project is pinned in `.firebaserc`.
 
 (Console fallback: **Firestore Database → Rules**, paste, **Publish**.)
 
-The important rule is:
+What they enforce:
 
-```js
-match /users/{userId}/{document=**} {
-  allow read, write: if request.auth != null &&
-    request.auth.uid == userId &&
-    request.auth.token.email == "maxiredigonda@gmail.com" &&
-    request.auth.token.email_verified == true;
-}
+- Only `maxiredigonda@gmail.com`, verified, signed in **with Google**, and only
+  under its own `users/{uid}/`. Any other account, an anonymous session, or
+  the same email from another sign-in provider gets nothing.
+- Each collection allows only what the app does with it: the six per-item
+  collections (`tasks`, `projects`, `recurrences`, `habits`, `tombstones`,
+  `days`) read and write; `log` read (the desktop's read-back), create and
+  update, never delete; `meta/state|format|heartbeat` read, create and update,
+  never delete; the frozen v1 `data/appData` get only. Anything else (another
+  collection, a deeper path, `users/{uid}` itself) is denied.
+
+So even the owner's own session — stolen, or a buggy build — can't delete the
+v1 backup, `meta/*` or the log, or fill the project with junk collections.
+The rules don't validate field values: a refused write stops the desktop's
+sync, so a clock running ahead must never trip one.
+
+Test them before publishing:
+
+```bash
+pnpm test:rules            # Rules API :test, every client path + every known attack
 ```
 
-That means only your signed-in Google account can read and write its own app
-data. Client-side checks are not security — this rule is the real enforcement,
-and the read-only web viewer still requires sign-in to load anything.
+`scripts/rules-test.mjs` sends `firestore.rules` and ~150 cases to the Firebase
+Rules API `:test` endpoint (it evaluates only: nothing is published, no data is
+read). It needs `gcloud` signed in with access to the project. When the client
+starts using a new collection, meta document or operation, add it to the rules
+and to the test together, or sync fails with permission-denied.
+
+Client checks are not security — the rules are the real enforcement, and the
+web viewer still requires sign-in to load anything.
 
 ## 7. Add GitHub Actions Secrets (when the web viewer ships)
 

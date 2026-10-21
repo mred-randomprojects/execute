@@ -1,20 +1,60 @@
 rules_version = '2';
 
+// Execute (execute-todo-1d3bc). One owner: maxiredigonda@gmail.com, signed in
+// with Google (the only provider enabled). Everything a device syncs lives
+// under users/{uid}/, one document per item (sync v2): see
+// src/sync/v2/engine.ts (the desktop) and src/sync/v2/viewer.ts (the phone).
+//
+// Each collection allows exactly what the app does with it. Anything else —
+// another collection, a deeper path, the users/{uid} document itself, a root
+// collection — matches no rule and is denied. So a stolen or buggy session of
+// the owner still can't delete the frozen v1 backup, meta/* or the log, or
+// fill the project with collections the app never reads.
+//
+// Every client access path (ALLOW) and every known attack (DENY) is checked by
+// scripts/rules-test.mjs against the Firebase Rules API: `pnpm test:rules`.
+// Publish with `pnpm deploy:rules`.
+
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Everything a user's devices sync lives under users/{userId}/: the v1
-    // document (data/appData) and the v2 per-item collections (tasks,
-    // projects, recurrences, tombstones, log, days, meta). Only the owner's
-    // verified Google account may read or write any of it.
-    match /users/{userId}/{document=**} {
-      allow read, write: if request.auth != null &&
-        request.auth.uid == userId &&
-        request.auth.token.email == "maxiredigonda@gmail.com" &&
-        request.auth.token.email_verified == true;
+
+    function isOwner(userId) {
+      return request.auth != null
+        && request.auth.uid == userId
+        && request.auth.token.email == "maxiredigonda@gmail.com"
+        && request.auth.token.email_verified == true
+        && request.auth.token.firebase.sign_in_provider == "google.com";
     }
 
-    match /{document=**} {
-      allow read, write: if false;
+    // The per-item collections. Both clients listen to them and read them in
+    // guarded transactions; the desktop creates, patches and (cleaning up junk
+    // and expired tombstones) deletes them; the phone creates and patches
+    // tasks and habits.
+    match /users/{userId}/{coll}/{docId} {
+      allow read, write: if isOwner(userId)
+        && coll in ["tasks", "projects", "recurrences", "habits", "tombstones", "days"];
+    }
+
+    // The log: written blind by the desktop (a line sent again after a failed
+    // round is an update of the same document), and read back once per start
+    // from the newest line the device has. Never deleted.
+    match /users/{userId}/log/{entryId} {
+      allow read, create, update: if isOwner(userId);
+    }
+
+    // meta/state (schema version, last opened day), meta/format (the sync v2
+    // switch-over) and meta/heartbeat: listened to by both clients, written by
+    // the desktop. Never deleted.
+    match /users/{userId}/meta/{docId} {
+      allow read: if isOwner(userId);
+      allow create, update: if isOwner(userId)
+        && docId in ["state", "format", "heartbeat"];
+    }
+
+    // The v1 single document, frozen as a backup since 2026-09-25. Nothing in
+    // the app reads or writes it; it stays readable for a manual recovery.
+    match /users/{userId}/data/{docId} {
+      allow get: if isOwner(userId) && docId == "appData";
     }
   }
 }
