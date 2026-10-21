@@ -1,5 +1,10 @@
 #!/usr/bin/env bash
-# Run the Firebase CLI (pinned major) for this repo.
+# Run the Firebase CLI for this repo, at one exact version.
+#
+# It runs with your Firebase/Google login, which reaches every Firebase project
+# of this account, so it is pinned: a floating `@15` would fetch and run
+# whatever 15.x npm serves that day. Bump FIREBASE_TOOLS on purpose, to a
+# release that has been out for a while.
 #
 # firebase-tools needs Node >= 20, and a login shell may still resolve an older
 # Node (the repo pins 22 in .nvmrc, but nothing switches to it by itself). So
@@ -19,4 +24,6 @@ if [[ -z "$NODE_BIN" || "$(node_major "$NODE_BIN")" -lt 20 ]]; then
   export PATH="$NEWEST/bin:$PATH"
 fi
 
-exec npx -y firebase-tools@15 "$@"
+FIREBASE_TOOLS="firebase-tools@15.33.0"
+
+exec npx -y "$FIREBASE_TOOLS" "$@"
