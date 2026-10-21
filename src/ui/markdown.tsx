@@ -25,6 +25,21 @@ const RULES: Array<{ type: InlineToken["type"]; re: RegExp }> = [
   { type: "italic", re: /_([^_]+)_/ },
 ];
 
+/**
+ * Schemes a link may point at: the web and mail. Anything else is rendered as
+ * plain text, never as a live link. A `javascript:` link would run as script
+ * on mred-randomprojects.github.io, the origin the phone viewer shares with
+ * every other app there (and their Firebase sessions); `data:`, `file:` and
+ * app schemes have no business in a task either. Same list as the desktop's
+ * window-open guard (electron/navigation.cjs).
+ */
+const LINK_SCHEME = /^(https?|mailto):/i;
+
+/** Whether `href` may be rendered as a clickable link. */
+export function isSafeHref(href: string): boolean {
+  return LINK_SCHEME.test(href);
+}
+
 export function tokenizeInline(text: string): InlineToken[] {
   const tokens: InlineToken[] = [];
   let rest = text;
@@ -147,6 +162,7 @@ export function renderInline(text: string, hits: readonly number[] = []): ReactN
           </span>
         );
       case "link":
+        if (!isSafeHref(t.href)) return <span key={i}>{value}</span>;
         return (
           <a
             key={i}

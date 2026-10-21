@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { createElement, Fragment } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { occurrences, renderInline, tokenizeInline } from "./markdown";
+import { isSafeHref, occurrences, renderInline, tokenizeInline } from "./markdown";
 
 describe("tokenizeInline", () => {
   it("returns plain text untouched", () => {
@@ -57,5 +57,44 @@ describe("renderInline hits", () => {
   });
   it("drops a hit that lands on syntax", () => {
     expect(html("**x**", [0])).not.toContain("<mark");
+  });
+});
+
+describe("links", () => {
+  const html = (text: string) => renderToStaticMarkup(createElement(Fragment, null, renderInline(text)));
+
+  it("renders web and mail links as links", () => {
+    expect(html("[docs](https://x.y/a?b=1)")).toContain('<a href="https://x.y/a?b=1"');
+    expect(html("[old](http://x.y)")).toContain('<a href="http://x.y"');
+    expect(html("[Ana](mailto:ana@x.y)")).toContain('<a href="mailto:ana@x.y"');
+    expect(html("[loud](HTTPS://X.Y)")).toContain('<a href="HTTPS://X.Y"');
+  });
+
+  it("renders any other scheme as its text, never as a link", () => {
+    for (const href of [
+      "javascript:alert(document.domain)",
+      "JavaScript:alert(1)",
+      "javascript:fetch%28%27/x%27%29",
+      "\u0001javascript:alert(1)",
+      "data:text/html,<script>alert(1)</script>",
+      "vbscript:msgbox(1)",
+      "file:///etc/passwd",
+      "//evil.example/x",
+      "/execute/",
+      "www.example.com",
+    ]) {
+      const out = html(`[open](${href})`);
+      expect(out, href).not.toContain("<a");
+      expect(out, href).not.toContain("href=");
+      expect(out, href).toContain("open");
+    }
+  });
+
+  it("allows exactly http, https and mailto", () => {
+    expect(isSafeHref("https://a")).toBe(true);
+    expect(isSafeHref("mailto:a@b")).toBe(true);
+    expect(isSafeHref(" https://a")).toBe(false);
+    expect(isSafeHref("httpsx://a")).toBe(false);
+    expect(isSafeHref("javascript:https://a")).toBe(false);
   });
 });
