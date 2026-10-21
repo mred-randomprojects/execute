@@ -3,15 +3,15 @@ import { loadEnv, type PluginOption } from "vite";
 import react from "@vitejs/plugin-react";
 
 // The Electron renderer ships the CSP in index.html: scripts from 'self' plus
-// 'unsafe-inline' (React fast-refresh's inline preamble in dev; production keeps
-// it too, for now), and connections to the dev HMR socket and the Google
+// 'unsafe-inline' (React fast-refresh's inline preamble in dev; the desktop's
+// production build keeps it too, for now), and connections to the dev HMR socket and the Google
 // endpoints that desktop cloud sync calls (Firebase Auth token exchange,
 // Firestore). No Google script or frame origins: desktop sign-in runs in the
 // system browser. The web viewer (VITE_VIEWER=1) also loads Google's sign-in
 // scripts and frames, so for that build only we swap the CSP meta tag for one
 // that permits exactly the Google/Firebase origins the SDK needs (and nothing
 // broader).
-function viewerCsp(authDomain: string, isDev: boolean): string {
+export function viewerCsp(authDomain: string, isDev: boolean): string {
   const connect = [
     "'self'",
     "https://identitytoolkit.googleapis.com",
@@ -26,13 +26,19 @@ function viewerCsp(authDomain: string, isDev: boolean): string {
   return [
     "default-src 'self'",
     // apis.google.com/js/api.js is the gapi loader signInWithPopup pulls in.
-    "script-src 'self' 'unsafe-inline' https://apis.google.com https://www.gstatic.com",
+    // 'unsafe-inline' only for the dev server (React fast-refresh's inline
+    // preamble): the built page has no inline script, and without it a
+    // javascript: URL can't run on this origin, which every app of the
+    // account shares.
+    `script-src 'self'${isDev ? " 'unsafe-inline'" : ""} https://apis.google.com https://www.gstatic.com`,
     "style-src 'self' 'unsafe-inline'",
     "img-src 'self' data: https://*.googleusercontent.com",
     "font-src 'self' data:",
     // the gapi iframe, Google's login page, and Firebase's auth handler page.
     `frame-src 'self' https://apis.google.com https://accounts.google.com https://${authDomain}`,
     `connect-src ${connect}`,
+    "object-src 'none'",
+    "base-uri 'self'",
   ].join("; ");
 }
 
