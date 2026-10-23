@@ -38,7 +38,7 @@ not a rewrite**. The rules that make that possible:
   rules, recurrence, capture parsing — exactly one implementation in the core,
   called from both shells. Only _UI and capabilities_ may differ.
 - **Differ by capability flag, not by fork.** e.g. `canDrag`, `syncAvailable`.
-  Desktop-only concerns (cloud sync, perhaps the Reckoning gate) and web/mobile
+  Desktop-only concerns (cloud sync, the menu bar) and web/mobile
   concerns (touch affordances) are flags over the _same_ components.
 - **Converge the UI when parity is wanted.** The end state is rendering the real
   `App` in the browser behind a Firestore persistence adapter and retiring the

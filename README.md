@@ -3,9 +3,10 @@
 A keyboard-first, **inbox-zero** todo app. Local-first desktop (Electron).
 
 The idea: a task you commit to **today** should be finished today. If it isn't,
-the app makes you reckon with it the next day — finish it, or **break it into a
-smaller piece you can actually complete today**. You can't silently carry work
-forward. The smallest version of a task is the one that gets done.
+it stays in front of you, marked with how late it is, until you finish it,
+move it on purpose, or **break it into a smaller piece you can actually
+complete today**. Moving it is allowed and **counted**, so work can't drift
+forward silently. The smallest version of a task is the one that gets done.
 
 ## The loop
 
@@ -17,24 +18,40 @@ forward. The smallest version of a task is the one that gets done.
 3. **Organize** — create colored project dividers and move tasks through them;
    each task keeps its project when it later appears in Today or Backlog.
 4. **Finish** — clear Today to reach **inbox zero**.
-5. **The Reckoning** — open the app on a new day with unfinished commitments and
-   a gate blocks Today until each leftover is resolved:
-   - **`e` done** — it was actually finished
-   - **`t` keep for today** — re-commit to it unchanged
-   - **`b` break down** — split it; the small step you'll finish today goes to Today
-   - **`s` postpone** — a deliberate "not today" that has to **name the day**
-   - **`d` drop** — delete it
+5. **Overdue stays in sight** — a task left on an earlier day stays in Today
+   with a red "2d ago" chip, and a banner over Today counts them. Nothing
+   blocks you: finish it, move it, or decline it right there in the list, or
+   run the **task review** (below) to go through everything in one pass.
 
    Deferring is allowed — that's the whole point of a mindful postpone — but it
-   is **counted**. Keeping bumps `carried N×`; postponing bumps `postponed N×`,
-   and both badges follow the task around the app, not just inside the gate. Past
-   a threshold the gate stops taking the cheap answer for free: the third keep
-   offers to break the task down instead, and the fourth postpone asks whether
-   it's ever going to happen (with "won't do" as the default answer). Neither is
-   a block — the escape is always one deliberate key away, because a gate you
-   can't pass just moves the dodge somewhere the app can't see.
+   is **counted**, wherever you do it. Moving an overdue task back to today
+   bumps `carried N×`; moving it anywhere else bumps `postponed N×`; both
+   badges follow the task around the app. In the review, past a threshold the
+   cheap answer stops being free: the third keep offers to break the task down
+   instead, and the fourth postpone asks whether it's ever going to happen
+   (with "won't do" as the default answer). Neither is a block — the escape is
+   always one deliberate key away.
 
-## Keyboard
+## Task review
+
+`⌘k` → **Review tasks…** (or the overdue banner over Today) opens one list of
+every task waiting on a decision: what's **overdue**, what's still open
+**today**, and what **this week** holds without a day. Each row shows where it
+lives (project › parent) and takes the same keys:
+
+`e` done · `t` today · `→` tomorrow · `b` break it down · `s` postpone to a
+named day · `w` won't do · `d` drop · `l` later (set aside for this pass,
+nothing counted) · `/` add an optional *why* to the next choice.
+
+On a task that came due (overdue or today's), a move is a deferral and is
+counted on the task. On the week's undated work, `t` is a fresh commitment and
+`s` plain rescheduling. It never opens on its own and nothing is gated on it:
+it's the fast way through, and every verb in it also works from the list or
+`⌘k` (break down is `⌘k` → "Break it down…" on any task). It replaced the
+morning gate (the Reckoning), Shutdown and Plan, which asked the same question
+at fixed hours and went unused.
+
+## Keyboard## Keyboard
 
 Press **`?`** anywhere for the full, always-current list (it's generated from the
 keymap). Highlights:
@@ -68,7 +85,7 @@ letters only for things that change nothing you'd have to undo (`n`, `p`) —
 plus `s`, the timer, which has to cost one keystroke or it never gets started,
 and shows the moment it lands (a banner, a ▶ on the row, a clock in the sidebar)
 — and everything else that touches a task — schedule, won't-do, blocked, estimate,
-project, repeat, plan, shutdown — goes through `⌘k`, which is searchable and
+project, repeat, break down, review — goes through `⌘k`, which is searchable and
 impossible to hit by accident.
 
 **Saying when, in words.** The schedule picker (and `⌘k` itself — type
@@ -85,50 +102,48 @@ tolerates a fat finger, so "reschedu sat" works. In `⌘k`, a verb puts the days
 at the top of the list; a bare day ("in two days") sits below the commands whose
 letters also match, so `mon` still runs a month command on `↵`.
 
-The exception is the **rituals** (the Reckoning, Shutdown, Plan, the planning
-board). Those are modal takeovers that own the whole screen and print their
-letters on the chips you're looking at — `e` done · `t` keep/carry · `b` break
-down · `s` postpone · `d` drop · `w` won't do — so a stray press can't reach you
-mid-browse. Because those letters are now unbound in the outline, each one has
-exactly one meaning in the whole app. A test enforces both halves of this rule.
+The exception is the **task review**, which owns the whole screen while it's
+open and prints its letters on the chips you're looking at — `e` done · `t`
+today · `b` break down · `s` postpone · `d` drop · `w` won't do — so a stray
+press can't reach you mid-browse. Because those letters are unbound in the
+outline, each one has exactly one meaning in the whole app. A test enforces both
+halves of this rule.
 
 Task **titles** and **notes** render inline **markdown** (`` `code` ``, `**bold**`,
 `*italic*`, `~~strike~~`, `[links](url)`). The detail panel shows a read-only,
 rendered title and a created timestamp (in your local timezone).
 
-In **the Reckoning** and at completion you can attach an optional **reason**;
+In **the task review** and at completion you can attach an optional **reason**;
 these are recorded in an event log (and shown in a task's History panel) so the
 data can later be analysed.
 
 ## Habits
 
 Things you keep rather than finish live in their own view (`6`), never in the
-task tree, so a habit can't reckon or change the day's counts. Each habit has a
+task tree, so a habit can't go overdue or change the day's counts. Each habit has a
 weekly target ("Run 3x" when you name it sets 3× a week), an optional cue
 ("after my morning coffee"), a two-week strip, a forgiving **strength** score
 and a streak that survives a single miss (*never miss twice*). `space` checks
 in, `←`/`→` pick an earlier day to backfill, `⌥↑`/`⌥↓` reorder, and `⌘k` marks a rest day, which
-costs nothing. You're asked at the moments the app already owns, so a habit
-doesn't go unlogged: Shutdown ends with "did each one happen today?"
-(`y` / `r` / `x`), Today shows a band for anything left unlogged yesterday,
-and the evening nudge counts habits too. Chips under Today's tabs and
-"Check in: …" in `⌘k` work from anywhere, and the phone has the same chips,
-plus a yes/no for anything left unlogged yesterday. The design, the lessons behind it
+costs nothing. `c` adds a note to the picked day ("Steamed broccoli!"), and the
+focused row lists them all. The sidebar badge and the menu bar count what's
+still unlogged today; chips under Today's tabs, "Check in: …" and "Log habits:
+today / yesterday" in `⌘k` work from anywhere, and the phone has the same
+chips, plus a yes/no for anything left unlogged yesterday. The design, the lessons behind it
 and what comes next: [`docs/habits.md`](docs/habits.md).
 
 **KPIs** sit in the same view, under the habits: a number to log instead of a
 yes/no — a symptom count, a 0–10 rating, a monthly questionnaire score. `k`
 adds one, and the range and cadence go after the name: "Dizzy spells 0-3+",
 "Worst one 0-10", "DHI 0-100 monthly". `space` logs the picked day's number.
-They're asked at the same moments as habits (Shutdown, the morning band, `⌘k`
-"Log habits"), where you type the number and press `↵`. A KPI has no
+`⌘k` → "Log habits" asks for them too: type the number and press `↵`. A KPI has no
 strength or streak, only its values, and the row shows the 7-day average beside
 the 28-day one (the latest value beside the previous one for a weekly or monthly
 KPI). The phone doesn't log KPIs yet.
 
 ## Your week, read back to you
 
-Click the heatmap (or `⌘k` → "review"). Everything in there was already being
+Click the heatmap (or `⌘k` → "weekly look-back"). Everything in there was already being
 recorded and shown nowhere: days closed, finished, declined, deferred — and the
 **reasons**.
 
@@ -145,7 +160,7 @@ you've been blocked on longest.
 ## Waiting on someone else
 
 `⌘k` → "blocked" on a task that's waiting, and name who you're waiting on. It stays
-open and stays yours eventually — it just steps out of the Reckoning and out of
+open and stays yours eventually — it just never goes overdue and steps out of
 the day's tally while the ball is in someone else's court.
 
 Before this existed, a task waiting on a reply had nowhere honest to go. It
@@ -176,8 +191,7 @@ the details panel reads back as a trail of where you were.
 **Time nobody was there for doesn't count.** When the Mac sleeps or the screen
 locks, or the app quits for more than five minutes, the running stretch ends
 right there and the task stays in progress, **paused** — what you were on
-survives the night, and `s` (or the banner's ▶) resumes it. Opening Shutdown
-pauses it too: closing the day closes the clock. Completing, declining,
+survives the night, and `s` (or the banner's ▶) resumes it. Completing, declining,
 blocking or trashing the task takes it out of progress for good. Closing the
 window doesn't stop anything: the app keeps running in the menu bar.
 
@@ -186,20 +200,18 @@ on the Mac.
 
 ## Coming back after a while
 
-The gate exists to stop work carrying forward *silently* — not to punish
-absence. But after a week away that's exactly what it does: twenty overdue
-commitments standing between you and starting, at the moment your motivation is
-lowest. That's where people quit, and a strict app you've stopped opening
-enforces nothing at all.
+After a week away, twenty overdue commitments are waiting at the moment your
+motivation is lowest. That's where people quit, and a strict app you've stopped
+opening enforces nothing at all.
 
-So past ten overdue tasks (or three days unopened) the Reckoning offers a door:
-**Start clean** moves the pile to the Inbox. It's still a decision, still
+So past ten overdue tasks (or three days unopened) the task review offers a
+door: **Move all to the Inbox**. It's still a decision, still
 confirmed, still recorded — and every task keeps its `postponed N×`. That's the
 difference between an amnesty and a leak.
 
 ## Capacity you didn't have to guess
 
-Over-commitment is the *cause*; the Reckoning is only the symptom — so the app
+Over-commitment is the *cause*; an overdue pile is only the symptom — so the app
 says something at the moment you commit, not the next morning. Push Today past
 your daily budget and a strip appears: **"16 of 12 blocks committed — something
 here isn't going to happen."**
@@ -210,60 +222,11 @@ of your last two weeks. It stays silent until there are at least three usable
 days, and silent when your setting is already about right — an app that always
 has a correction for you gets tuned out.
 
-## Plan — decide what today is
-
-`⌘k` → "plan" opens the day. Everything asking for it in one place — work you put on
-*this week* but never gave a day, and the recurrences firing today — with `t` to
-take one on and `s` to name a different day.
-
-The capacity meter sits **above** the list, not below it. That's the whole point:
-a day nobody chose is the day that over-commits, because one more yes costs
-nothing when you can't see the total. Work you already dated isn't re-offered —
-re-asking a decision you've made is how a ritual becomes a chore.
-
-## Shutdown — decide tonight, not tomorrow morning
-
-`⌘k` → "close the day" when you stop working, or click the notification that
-arrives at your **shutdown time**. Shutdown is one list: today's still-open
-tasks, each shown with where it lives (project › parent), then today's habits.
-`↑`/`↓` walk all of it. On a task, the Reckoning's verbs point at tomorrow:
-`e` done · `t` carry to tomorrow · `b` break it into something you'd actually do
-· `s` postpone to a named day · `w` won't do · `d` drop. On a habit: `y` did it ·
-`r` rest day · `x` not today. On a KPI, type the number and press `↵`. `⇧t` carries every waiting task in one move, and
-`/` adds an optional *why* to the next choice.
-
-On anything, **`l` means later today**: not done yet, but still today's. It isn't
-counted as a carry and isn't logged; the row just steps aside so the pass can
-move on. A pass where everything left is "later" ends as **Done for now**, not
-closed. That's the honest ending for a 14:15 shutdown, and the next run asks
-again.
-
-**Your shutdown time** is when you actually stop, set separately for weekdays
-and weekends: type it into `⌘k` ("shutdown 14:15", "shutdown weekends 11am",
-"shutdown every day 6pm"), and switch either kind of day off with "Shutdown on
-weekends … turn off". At that time a notification arrives ("Shutdown · 14:15",
-with what's left and any habits to log), and its **Start shutdown** button (or a
-click on it) opens the ritual. Today's banner says so too. The time only
-*prompts*: Shutdown runs whenever you like, from `⌘k`, the menu bar's
-**Start shutdown…**, or the banner, at 14:15, at 19:00, or not at all.
-
-The Reckoning hasn't moved or softened — it just has nothing to catch when you've
-been here first. That's the trade: the gate stays, and you earn your way past it
-the night before. It sits at the worst hour of the day (cold, before you've
-started, wanting to *begin*) and it asks you at 9am why yesterday went the way it
-did, when at 6pm you still remember. Shutdown is the same accounting at the hour
-you can actually answer it.
-
-Carrying to tomorrow still bumps `carried N×`. Facing a task at 6pm is better
-behaviour and it's rewarded where rewards belong — the day closes, the run grows,
-the morning gate never fires — but the counter measures the task, not your
-virtue: it really is the third day running that you've promised to do it.
-
 ## Closing the day
 
 Inbox zero is the goal; **closing** is the habit. A day is closed when every
-commitment it carried has an outcome — finished, consciously declined, or faced
-in the Reckoning and moved on purpose. Deliberately *not* "you did everything":
+commitment it carried has an outcome — finished, consciously declined, or moved
+on purpose — and nothing is left overdue. Deliberately *not* "you did everything":
 that's unreachable on a bad day, and a target you miss by having a bad day is one
 you stop looking at.
 
@@ -291,16 +254,10 @@ window doesn't:
 - a **dock badge** with the same number;
 - **`⌘⇧space`** from anywhere: shows the window with the cursor already in the
   capture bar, so a stray thought never has to wait;
-- **two notifications a day** and only two — a morning "here's your day" (or
-  "nothing committed yet" — the one empty day worth interrupting for) and the
-  **shutdown** at your shutdown time (above), which opens straight into the
-  ritual. Neither goes stale: the morning one fires only during its hour, the
-  shutdown one up to 90 minutes after its time, so a laptop opened at 3pm
-  doesn't get a stale good-morning;
-- **Start shutdown…** in the menu-bar menu, any time;
+- the menu-bar menu also says how many habits are still unlogged today;
 - optional **launch at login**, off until you ask for it (`⌘k` → "launch at login").
 
-All of it toggles from the command palette; closing the window on macOS leaves
+No notifications: nothing here interrupts. All of it toggles from the command palette; closing the window on macOS leaves
 the count and the shortcut alive, which is the point.
 
 ## Develop
@@ -316,7 +273,7 @@ pnpm check    # typecheck + lint + tests: what CI and install.sh run first
 ```
 
 In `pnpm dev`/`pnpm start` a **Dev · time travel** panel appears in the sidebar so
-you can jump days and exercise the Reckoning without waiting. It's hidden in
+you can jump days and see overdue work without waiting. It's hidden in
 packaged builds.
 
 ## Package
@@ -370,5 +327,5 @@ src/
   selectors.ts                  view filters + Today/leftover computations
   ui/editor.tsx                 interaction context shared by rows
   components/  TaskRow · CaptureBar · Sidebar · HelpOverlay · CommandPalette · …
-  views/  OutlineView · ReckoningView
+  views/  OutlineView · TaskReviewView · HabitsView · …
 ```

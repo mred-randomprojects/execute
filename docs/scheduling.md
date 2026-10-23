@@ -1,7 +1,14 @@
 # Scheduling for later — design spec
 
-Status: **proposal, not yet built.** Captures the model for fuzzy "schedule for
-later" so we can review before writing code.
+Status: **built** (the original proposal follows, as written).
+
+> **Update, 2026-10-23: the Reckoning's gate is gone.** Overdue leaves (the same
+> `leftoverLeaves`: open, live, a concrete `plannedFor` before today) no longer
+> block Today. They stay *in* Today with a red "2d ago" chip, and moving one
+> from anywhere counts as a deferral (back to today → `carriedCount`, anywhere
+> else → `postponedCount`; see `deferralOf` in `src/core/commands.ts`). The
+> task review (⌘k → Review tasks) lists them first. Read "reckons" below as
+> "goes overdue": the rule that horizons never do is unchanged.
 
 ## Goal
 

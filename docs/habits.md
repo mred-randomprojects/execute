@@ -41,6 +41,11 @@ trackers behind each choice, and the ideas still to build, roughly in order.
 
 ## Not forgetting to log (v1.1)
 
+> **Update, 2026-10-23:** Shutdown, the morning band and the shutdown
+> notification described below were removed with the rest of the rituals. What
+> remains: the sidebar badge and the menu bar's habit line, the chips over
+> Today, ⌘k → "Check in" and "Log habits: today / yesterday", and the phone.
+
 Forgetting to log is a different failure from not doing the habit, so an
 unmarked day is now kept apart from an answered one. A third mark,
 **`missed`** ("not today"), scores exactly like an unmarked day but records
@@ -183,7 +188,7 @@ and reading them back over time is the point.
 - **Reading it from outside:** `notes: { "YYYY-MM-DD": "…" }` on
   `users/{uid}/habits/{id}`.
 
-Not yet: notes from Shutdown, the morning band and the phone.
+Not yet: notes from the phone.
 
 ## Known limits
 

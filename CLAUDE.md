@@ -41,13 +41,17 @@ browser scopes by origin is a single pool they all share:
 
 <!-- /mred-randomprojects:shared-origin -->
 
-**In this repo:** Served at `/execute/`, where only the web viewer runs. localStorage: none of its own (the Firestore SDK can leave a transient `firestore_zombie_*` key when a tab closes). sessionStorage: none. IndexedDB: Firestore's persistent cache `firestore/[DEFAULT]/execute-todo-1d3bc/main`, deleted when you sign out of the viewer. Cache Storage: none, no service worker. Cookies: none. Uses Firebase, so its session is one of the records in `firebaseLocalStorageDb`. The code's three localStorage keys — `execute-store` (the `pnpm dev` browser fallback), `execute.v2.logWatermark.<uid>` and `execute.habitPromptDismissed` — are written only by the desktop app (Electron's own `file://` storage, apart from any browser's) and the localhost dev server, never on the shared site.
+**In this repo:** Served at `/execute/`, where only the web viewer runs. localStorage: none of its own (the Firestore SDK can leave a transient `firestore_zombie_*` key when a tab closes). sessionStorage: none. IndexedDB: Firestore's persistent cache `firestore/[DEFAULT]/execute-todo-1d3bc/main`, deleted when you sign out of the viewer. Cache Storage: none, no service worker. Cookies: none. Uses Firebase, so its session is one of the records in `firebaseLocalStorageDb`. The code's two localStorage keys — `execute-store` (the `pnpm dev` browser fallback) and `execute.v2.logWatermark.<uid>` — are written only by the desktop app (Electron's own `file://` storage, apart from any browser's) and the localhost dev server, never on the shared site.
 
-## The rituals are secondary
+## The everyday views come first
 
-The owner rarely uses the rituals (the Reckoning, Shutdown, Plan, the morning
-band). He reviews and decides on tasks by hand in the ordinary views. So any
-capability added to a ritual (a verb, a field, a note) must also be reachable
-from the everyday views (the outline, the Habits view, `⌘k`), and that
-everyday path is the one to build first. A feature that exists only inside a
-ritual is, in practice, a feature nobody uses.
+The owner reviews and decides on tasks by hand in the ordinary views. The
+rituals that asked at fixed moments (the Reckoning's morning gate, Shutdown,
+Plan, the morning habits band, the notifications) went unused and were removed
+in October 2026; the **task review** (⌘k → Review tasks) replaced them as a
+screen you open when you want it, never on its own. So any capability added to
+the review (a verb, a field, a note) must also be reachable from the everyday
+views (the outline, the Habits view, `⌘k`), and that everyday path is the one
+to build first. A feature that exists only inside the review is, in practice,
+a feature nobody uses. Don't bring back a gate, a scheduled ritual or a
+notification without being asked.
