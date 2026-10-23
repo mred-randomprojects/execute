@@ -190,7 +190,7 @@ describe("The morning plan", () => {
   });
 });
 
-describe("The weekly review", () => {
+describe("The weekly look-back", () => {
   it("reads back the reasons it has been collecting all along", async () => {
     render(<App />);
     await addTask("chase the invoice");
@@ -202,8 +202,8 @@ describe("The weekly review", () => {
     fireEvent.change(why, { target: { value: "waiting on finance" } });
     fireEvent.keyDown(why, { key: "Enter" });
 
-    fireEvent.click(screen.getByTitle("Review your week"));
-    const dialog = await screen.findByRole("dialog", { name: "Review" });
+    fireEvent.click(screen.getByTitle("Weekly look-back"));
+    const dialog = await screen.findByRole("dialog", { name: "Weekly look-back" });
     expect(within(dialog).getByText("Why things didn't happen")).toBeTruthy();
     expect(within(dialog).getByText("waiting on finance")).toBeTruthy();
   });
@@ -221,18 +221,18 @@ describe("The weekly review", () => {
       );
     }
 
-    fireEvent.click(screen.getByTitle("Review your week"));
-    const dialog = await screen.findByRole("dialog", { name: "Review" });
+    fireEvent.click(screen.getByTitle("Weekly look-back"));
+    const dialog = await screen.findByRole("dialog", { name: "Weekly look-back" });
     expect(within(dialog).getByText("Kept putting off")).toBeTruthy();
     expect(within(dialog).getByText("vague big thing")).toBeTruthy();
   });
 
-  it("says so plainly when there's nothing to review yet", async () => {
+  it("says so plainly when there's nothing to look back on yet", async () => {
     render(<App />);
     await screen.findByPlaceholderText("Add a task for today…");
-    fireEvent.click(screen.getByTitle("Review your week"));
-    const dialog = await screen.findByRole("dialog", { name: "Review" });
-    expect(within(dialog).getByText(/Nothing to review yet/)).toBeTruthy();
+    fireEvent.click(screen.getByTitle("Weekly look-back"));
+    const dialog = await screen.findByRole("dialog", { name: "Weekly look-back" });
+    expect(within(dialog).getByText(/Nothing to look back on yet/)).toBeTruthy();
   });
 });
 

@@ -227,8 +227,8 @@ import { RepeatPicker } from "./components/RepeatPicker";
 import { DetailPanel, type DetailHandlers } from "./components/DetailPanel";
 import { HelpOverlay } from "./components/HelpOverlay";
 import { HistoryPanel, buildHistoryRows, type HistoryRow } from "./components/HistoryPanel";
-import { ReviewPanel } from "./components/ReviewPanel";
-import { buildReview } from "./store/review";
+import { LookBackPanel } from "./components/LookBackPanel";
+import { buildLookBack } from "./store/lookBack";
 import { DevControls } from "./components/DevControls";
 import { StatusBar } from "./components/StatusBar";
 import { CommandPalette, type Command } from "./components/CommandPalette";
@@ -347,8 +347,8 @@ export function App() {
   // The history panel's cursor lives here, like every other list's: the keymap's
   // "history" context drives it, the panel just renders it.
   const [showHistory, setShowHistory] = useState(false);
-  // The weekly review — everything the app already knew and never told you.
-  const [showReview, setShowReview] = useState(false);
+  // The weekly look-back — everything the app already knew and never told you.
+  const [showLookBack, setShowLookBack] = useState(false);
   const [historySel, setHistorySel] = useState(0);
   const [showPalette, setShowPalette] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
@@ -2016,7 +2016,7 @@ export function App() {
       else if (repeatTarget != null) setRepeatTarget(null);
       else if (showHelp) setShowHelp(false);
       else if (showHistory) setShowHistory(false);
-      else if (showReview) setShowReview(false);
+      else if (showLookBack) setShowLookBack(false);
       else if (showPalette) setShowPalette(false);
       else if (showSearch) setShowSearch(false);
       else if (showSchedule) {
@@ -2416,7 +2416,7 @@ export function App() {
     showPalette,
     showSearch,
     showHistory,
-    showReview,
+    showLookBack,
     showSchedule,
     showProject,
     showEstimate,
@@ -3369,10 +3369,10 @@ export function App() {
       run: cmd.planOpen,
     },
     {
-      id: "review",
-      label: "Review your week",
-      aliases: ["review", "week", "weekly", "digest", "reasons", "why", "stats", "report"],
-      run: () => setShowReview(true),
+      id: "look-back",
+      label: "Weekly look-back",
+      aliases: ["look back", "week", "weekly", "digest", "reasons", "why", "stats", "report"],
+      run: () => setShowLookBack(true),
     },
     {
       id: "shutdown",
@@ -3571,7 +3571,7 @@ export function App() {
         onCycleTheme={cycleTheme}
         themeName={state.theme}
         hideWhenNarrow={panelOpen}
-        streak={<DayStreak days={state.days} today={today} onOpenReview={() => setShowReview(true)} />}
+        streak={<DayStreak days={state.days} today={today} onOpenLookBack={() => setShowLookBack(true)} />}
       >
         {activeCurrentTask != null && (
           <SidebarWork
@@ -3934,11 +3934,11 @@ export function App() {
       </main>
 
       {showHelp && <HelpOverlay onClose={() => setShowHelp(false)} />}
-      {showReview && (
-        <ReviewPanel
-          review={buildReview(state, today)}
+      {showLookBack && (
+        <LookBackPanel
+          review={buildLookBack(state, today)}
           today={today}
-          onClose={() => setShowReview(false)}
+          onClose={() => setShowLookBack(false)}
         />
       )}
       {showHistory && (

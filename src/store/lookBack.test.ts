@@ -3,7 +3,7 @@ import type { AppState, ISODate, LogAction, LogEntry, Task, TaskId } from "../ty
 import { emptyState } from "../types";
 import { makeTask } from "./tasks";
 import { addDays } from "./dates";
-import { buildReview } from "./review";
+import { buildLookBack } from "./lookBack";
 
 const TODAY: ISODate = "2026-08-09";
 const ago = (n: number): ISODate => addDays(TODAY, -n);
@@ -30,15 +30,15 @@ const task = (text: string, over: Partial<Task> = {}): Task => ({
   ...over,
 });
 
-describe("buildReview", () => {
+describe("buildLookBack", () => {
   it("covers a week ending today", () => {
-    const r = buildReview(state(), TODAY);
+    const r = buildLookBack(state(), TODAY);
     expect(r.to).toBe(TODAY);
     expect(r.from).toBe(ago(6));
   });
 
   it("counts what happened, by kind", () => {
-    const r = buildReview(
+    const r = buildLookBack(
       state({ log: [log("completed", null), log("postponed", null), log("postponed", null)] }),
       TODAY
     );
@@ -48,12 +48,12 @@ describe("buildReview", () => {
   });
 
   it("ignores anything outside the window", () => {
-    const r = buildReview(state({ log: [log("completed", null, ago(30))] }), TODAY);
+    const r = buildLookBack(state({ log: [log("completed", null, ago(30))] }), TODAY);
     expect(r.counts.completed).toBe(0);
   });
 
   it("tallies reasons, most common first", () => {
-    const r = buildReview(
+    const r = buildLookBack(
       state({
         log: [
           log("postponed", "no time"),
@@ -70,7 +70,7 @@ describe("buildReview", () => {
   });
 
   it("folds casing and whitespace — a split tally hides the pattern", () => {
-    const r = buildReview(
+    const r = buildLookBack(
       state({
         log: [
           log("postponed", "No time"),
@@ -85,7 +85,7 @@ describe("buildReview", () => {
   });
 
   it("labels a folded group with its most common spelling", () => {
-    const r = buildReview(
+    const r = buildLookBack(
       state({ log: [log("postponed", "no time"), log("kept", "no time"), log("kept", "No time")] }),
       TODAY
     );
@@ -93,7 +93,7 @@ describe("buildReview", () => {
   });
 
   it("skips blank reasons rather than tallying an empty row", () => {
-    const r = buildReview(
+    const r = buildLookBack(
       state({ log: [log("postponed", null), log("postponed", ""), log("kept", "   ")] }),
       TODAY
     );
@@ -101,7 +101,7 @@ describe("buildReview", () => {
   });
 
   it("reads reasons off deferrals only — one on a completion is a note", () => {
-    const r = buildReview(
+    const r = buildLookBack(
       state({ log: [log("completed", "finally"), log("postponed", "no time")] }),
       TODAY
     );
@@ -109,7 +109,7 @@ describe("buildReview", () => {
   });
 
   it("lists what you're blocked on, longest wait first", () => {
-    const r = buildReview(
+    const r = buildLookBack(
       state({
         tasks: [
           task("newer", { waitingOn: { who: "Bo", since: 9_000 } }),
@@ -122,7 +122,7 @@ describe("buildReview", () => {
   });
 
   it("surfaces the tasks you keep putting off, worst first", () => {
-    const r = buildReview(
+    const r = buildLookBack(
       state({
         tasks: [
           task("mild", { carriedCount: 1, postponedCount: 1 }),
@@ -137,7 +137,7 @@ describe("buildReview", () => {
   });
 
   it("leaves resolved tasks out of the chronic list — that story is over", () => {
-    const r = buildReview(
+    const r = buildLookBack(
       state({
         tasks: [
           task("done at last", { carriedCount: 5, completed: true }),
@@ -150,7 +150,7 @@ describe("buildReview", () => {
   });
 
   it("is empty and harmless on a brand-new store", () => {
-    const r = buildReview(state(), TODAY);
+    const r = buildLookBack(state(), TODAY);
     expect(r.reasons).toEqual([]);
     expect(r.waiting).toEqual([]);
     expect(r.chronic).toEqual([]);

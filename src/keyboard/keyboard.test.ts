@@ -96,7 +96,7 @@ describe("getActiveContext", () => {
     planActive: false,
     habitsActive: false,
     trashActive: false,
-    showReview: false,
+    showLookBack: false,
   };
 
   it("defaults to normal", () => {
@@ -177,7 +177,7 @@ describe("getActiveContext — focus zones", () => {
     planActive: false,
     habitsActive: false,
     trashActive: false,
-    showReview: false,
+    showLookBack: false,
   };
 
   afterEach(() => {

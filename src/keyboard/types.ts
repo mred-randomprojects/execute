@@ -12,7 +12,7 @@ export type KeyContext =
   | "palette"
   | "search"
   | "history"
-  | "review"
+  | "lookBack"
   | "schedule"
   | "project"
   | "estimate"
@@ -34,7 +34,7 @@ export interface ContextState {
   showPalette: boolean;
   showSearch: boolean;
   showHistory: boolean;
-  showReview: boolean;
+  showLookBack: boolean;
   showSchedule: boolean;
   showProject: boolean;
   showEstimate: boolean;

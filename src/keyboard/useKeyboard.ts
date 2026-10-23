@@ -35,9 +35,9 @@ export function getActiveContext(state: ContextState): KeyContext {
   // The history panel is modal like the help overlay: it owns the keyboard while
   // it's up, so ↑/↓/↵ walk and rewind the history rather than the outline.
   if (state.showHistory) return "history";
-  // The review is a read-only panel; it owns the keyboard so esc closes it
+  // The weekly look-back is a read-only panel; it owns the keyboard so esc closes it
   // rather than unwinding whatever sits beneath.
-  if (state.showReview) return "review";
+  if (state.showLookBack) return "lookBack";
   if (state.showPalette) return "palette";
   // The task finder likewise owns the keyboard while open, so outline shortcuts
   // stay dormant beneath the search field.

@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import type { ISODate } from "../types";
 import { WAITING_STALE_DAYS } from "../types";
-import type { Review } from "../store/review";
+import type { LookBack } from "../store/lookBack";
 import { formatLong } from "../store/dates";
 
 function Stat({ value, label, tone }: { value: number; label: string; tone?: string }) {
@@ -32,12 +32,12 @@ const daysSince = (ms: number): number => Math.floor((Date.now() - ms) / 86_400_
  * diagnosis — "no time ×9" is a capacity problem, "waiting on Ana ×4" is a
  * dependency problem, and they want opposite fixes.
  */
-export function ReviewPanel({
+export function LookBackPanel({
   review,
   today,
   onClose,
 }: {
-  review: Review;
+  review: LookBack;
   today: ISODate;
   onClose: () => void;
 }) {
@@ -58,7 +58,7 @@ export function ReviewPanel({
         ref={ref}
         tabIndex={-1}
         role="dialog"
-        aria-label="Review"
+        aria-label="Weekly look-back"
         onKeyDown={(e) => {
           e.stopPropagation();
           if (e.key === "Escape" || e.key === "Enter") {
@@ -70,7 +70,7 @@ export function ReviewPanel({
         className="flex max-h-[80vh] w-full max-w-lg flex-col overflow-hidden rounded border border-line bg-surface shadow-lg outline-none"
       >
         <div className="mono flex items-center justify-between border-b border-line px-5 py-2.5 text-[11px] uppercase tracking-[0.14em] text-ink-faint">
-          <span>Your week</span>
+          <span>Weekly look-back</span>
           <span>
             {formatLong(review.from)} – {formatLong(review.to)}
           </span>
@@ -149,7 +149,7 @@ export function ReviewPanel({
 
           {rate.counted === 0 && review.reasons.length === 0 && (
             <p className="py-6 text-center text-[13px] text-ink-faint">
-              Nothing to review yet — this fills in as you close days.
+              Nothing to look back on yet — this fills in as you close days.
             </p>
           )}
         </div>

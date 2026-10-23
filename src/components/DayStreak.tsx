@@ -63,12 +63,12 @@ function tooltip(day: HeatDay): string {
 export function DayStreak({
   days,
   today,
-  onOpenReview,
+  onOpenLookBack,
 }: {
   days: DayRecord[];
   today: ISODate;
-  /** The squares show the shape of the week; the review shows why it's that shape. */
-  onOpenReview: () => void;
+  /** The squares show the shape of the week; the look-back shows why it's that shape. */
+  onOpenLookBack: () => void;
 }) {
   const grid = useMemo(() => heatmap(days, today, WEEKS), [days, today]);
   const run = useMemo(() => currentRun(days, today), [days, today]);
@@ -80,8 +80,8 @@ export function DayStreak({
 
   return (
     <button
-      onClick={onOpenReview}
-      title="Review your week"
+      onClick={onOpenLookBack}
+      title="Weekly look-back"
       className="w-full rounded-sm px-2.5 pb-1 pt-2 text-left transition-colors hover:bg-surface-2/60"
     >
       <div className="mb-1.5 flex items-baseline justify-between">

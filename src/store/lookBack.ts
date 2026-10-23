@@ -4,7 +4,7 @@ import { recentRate, type RecentRate } from "./streak";
 import { waitingOnOthers } from "../selectors";
 import { walk } from "./tasks";
 
-// The weekly review: everything the app already knew and never told you.
+// The weekly look-back: everything the app already knew and never told you.
 //
 // Execute has been recording a reason on every Reckoning choice since long
 // before this file existed — and reading them back exactly nowhere except one
@@ -17,7 +17,7 @@ import { walk } from "./tasks";
 // Pure and derived — this computes, it never writes. Everything comes from the
 // log, the day records and the live tree.
 
-/** How many days a review covers. A week: long enough for a pattern, short
+/** How many days a look-back covers. A week: long enough for a pattern, short
  *  enough that you still remember it. */
 export const REVIEW_WINDOW_DAYS = 7;
 
@@ -37,7 +37,7 @@ export interface ChronicTask {
   deferrals: number;
 }
 
-export interface Review {
+export interface LookBack {
   from: ISODate;
   to: ISODate;
   /** Days closed, of the days that asked something of you. */
@@ -88,11 +88,11 @@ function tallyReasons(reasons: string[]): ReasonTally[] {
     .slice(0, MAX_REASONS);
 }
 
-export function buildReview(
+export function buildLookBack(
   state: AppState,
   today: ISODate,
   window: number = REVIEW_WINDOW_DAYS
-): Review {
+): LookBack {
   const from = addDays(today, -(window - 1));
   const inWindow = state.log.filter((e) => e.date >= from && e.date <= today);
 
