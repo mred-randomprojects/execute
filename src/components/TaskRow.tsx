@@ -433,7 +433,7 @@ export function TaskRow({ task, depth }: { task: Task; depth: number }) {
         </button>
       )}
 
-      {task.plannedFor != null && isOpen(task) && ed.view !== "today" && (
+      {task.plannedFor != null && isOpen(task) && (ed.view !== "today" || task.plannedFor < ed.today) && (
         <span
           className={[
             "mono shrink-0 rounded-sm px-1.5 py-[1px] text-[10px] font-medium",

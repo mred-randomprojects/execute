@@ -99,10 +99,11 @@ describe("groupTasksByProject", () => {
 describe("viewPredicate", () => {
   const today = "2026-06-18";
 
-  it("today: only tasks planned for today", () => {
+  it("today: tasks planned for today, and open ones left on an earlier day", () => {
     const p = viewPredicate("today", today);
     expect(p(task("a", "work", today))).toBe(true);
-    expect(p(task("b", "work", "2026-06-17"))).toBe(false);
+    expect(p(task("b", "work", "2026-06-17"))).toBe(true); // overdue stays in Today
+    expect(p({ ...task("b2", "work", "2026-06-17"), completed: true })).toBe(false);
     expect(p(task("c", "work", null))).toBe(false);
   });
 
@@ -199,6 +200,16 @@ describe("Schedule inheritance (parent due dates bound their subtrees)", () => {
     ]);
     const forest = filterTreeEffective([parent], periodPredicate("thisMonth", today));
     expect(forest[0]?.children).toEqual([]); // it speaks for itself: someday, not June
+  });
+
+  it("Today holds overdue work until it's done or moved; a finished or blocked one leaves", () => {
+    const late = task("call the bank", "work", addDays(today, -2));
+    const done = { ...task("paid rent", "work", addDays(today, -1)), completed: true };
+    const blocked = { ...task("hear back", "work", addDays(today, -1)), waitingOn: { who: "Ana", since: 0 } };
+    expect(todayTasks([late, done, blocked], today).map((t) => t.text)).toEqual(["call the bank"]);
+    // …and hiding completed tasks doesn't prune it.
+    const shown = filterTreeEffective([late], (t) => periodPredicate("today", today)(t) && t.completed === false);
+    expect(shown.map((t) => t.text)).toEqual(["call the bank"]);
   });
 
   it("todayTasks keeps an unscheduled open child under a today parent", () => {

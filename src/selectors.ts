@@ -175,7 +175,7 @@ export function periodPredicate(period: Period, today: ISODate): TaskPredicate {
       t.plannedFor != null ? match(t.plannedFor) : t.horizon != null && taskBucket(t, today) === period;
   switch (period) {
     case "today":
-      return (t) => t.plannedFor === today;
+      return (t) => t.plannedFor === today || isOverdueLeaf(t, today);
     case "tomorrow":
       return (t) => t.plannedFor === addDays(today, 1);
     case "thisWeek":
@@ -233,8 +233,20 @@ export function groupTasksByDay(tasks: Task[], today: ISODate, period: Period): 
 }
 
 /** A subtree still holds live today-work: an *open* leaf effectively due today. */
+/**
+ * A leaf that came due on an earlier day and is still yours to do — what the
+ * morning gate used to stop you on. Now it simply stays in Today, marked with
+ * how late it is, until you do it or move it (which counts as a deferral; see
+ * deferralOf in core/commands).
+ */
+export function isOverdueLeaf(t: Task, today: ISODate): boolean {
+  return t.children.length === 0 && isLive(t) && t.plannedFor != null && t.plannedFor < today;
+}
+
 export function hasOpenTodayLeaf(t: Task, today: ISODate, inherited: ScheduleCarry = null): boolean {
-  if (t.children.length === 0) return effectiveOf(t, inherited).plannedFor === today && isOpen(t);
+  if (t.children.length === 0) {
+    return (effectiveOf(t, inherited).plannedFor === today && isOpen(t)) || isOverdueLeaf(t, today);
+  }
   const down = carryOf(t, inherited);
   return t.children.some((c) => hasOpenTodayLeaf(c, today, down));
 }

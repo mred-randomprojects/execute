@@ -28,6 +28,7 @@ import {
   getAncestorPath,
   indentTask,
   indentUnder,
+  isLive,
   isOpen,
   makeTask,
   mapById,
@@ -233,6 +234,48 @@ function makeLog(s: AppState, task: Task, action: LogAction, reason: string | nu
     at: ctx.now,
     date: todayFor(s, ctx.now),
   };
+}
+
+/**
+ * A new schedule for a task that already came due and is still undone is a
+ * deferral, wherever it's made — the list, the picker, ⌘k, the review — so
+ * it's counted and logged the way the morning gate always counted it: back to
+ * today is a keep (carriedCount), anywhere else a postponement
+ * (postponedCount). A move to another past day decides nothing and isn't
+ * counted.
+ */
+function deferralOf(t: Task, plannedFor: ISODate | null, today: ISODate): "kept" | "postponed" | null {
+  if (!isLive(t) || t.plannedFor == null || t.plannedFor >= today) return null;
+  if (plannedFor != null && plannedFor < today) return null;
+  return plannedFor === today ? "kept" : "postponed";
+}
+
+/** Reschedule `ids`, counting and logging each overdue one as a deferral. */
+function scheduleCounted(
+  s: AppState,
+  ids: TaskId[],
+  plannedFor: ISODate | null,
+  horizon: Horizon | null,
+  ctx: CommandContext,
+): AppState {
+  const today = todayFor(s, ctx.now);
+  let tasks = s.tasks;
+  const logs: LogEntry[] = [];
+  for (const id of ids) {
+    const t = findById(tasks, id);
+    if (t == null) continue;
+    const deferral = deferralOf(t, plannedFor, today);
+    tasks = mapById(tasks, id, (x) => ({
+      ...x,
+      plannedFor,
+      horizon: plannedFor != null ? null : horizon,
+      carriedCount: x.carriedCount + (deferral === "kept" ? 1 : 0),
+      postponedCount: x.postponedCount + (deferral === "postponed" ? 1 : 0),
+    }));
+    if (deferral != null) logs.push(makeLog(s, t, deferral, null, ctx));
+  }
+  const next = withTasks(s, tasks);
+  return logs.length === 0 || next === s ? next : { ...next, log: [...logs, ...s.log] };
 }
 
 /** The newest "skipped" log entry for `taskId`, patched with a reason. */
@@ -571,17 +614,11 @@ export function applyCommand(s: AppState, cmd: Command, ctx: CommandContext): Ap
 
     // Scheduling — a concrete date and a fuzzy horizon are mutually exclusive.
     case "setPlannedFor":
-      return withTasks(s, mapById(s.tasks, cmd.id, (t) => ({ ...t, plannedFor: cmd.plannedFor, horizon: null })));
-    case "setPlannedForMany": {
-      let tasks = s.tasks;
-      for (const id of cmd.ids) tasks = mapById(tasks, id, (x) => ({ ...x, plannedFor: cmd.date, horizon: null }));
-      return withTasks(s, tasks);
-    }
-    case "setHorizonMany": {
-      let tasks = s.tasks;
-      for (const id of cmd.ids) tasks = mapById(tasks, id, (x) => ({ ...x, plannedFor: null, horizon: cmd.horizon }));
-      return withTasks(s, tasks);
-    }
+      return scheduleCounted(s, [cmd.id], cmd.plannedFor, null, ctx);
+    case "setPlannedForMany":
+      return scheduleCounted(s, cmd.ids, cmd.date, null, ctx);
+    case "setHorizonMany":
+      return scheduleCounted(s, cmd.ids, null, cmd.horizon, ctx);
     case "postponeMany": {
       // A deliberate postponement — the task already came due and didn't get
       // done — is counted (postponedCount) and logged. Plain rescheduling isn't.

@@ -24,7 +24,7 @@ function renderApp(state: AppState, extra: Partial<Parameters<typeof ReadOnlyApp
 }
 
 describe("the phone's Today", () => {
-  it("shows tasks left on a past day under Earlier instead of reading as empty", () => {
+  it("keeps tasks left on a past day in Today, marked with how late they are", () => {
     const today = todayISO(null);
     const state: AppState = {
       ...emptyState(),
@@ -35,8 +35,8 @@ describe("the phone's Today", () => {
     };
     renderApp(state);
     expect(screen.getByText("planned today")).toBeTruthy();
-    expect(screen.getByText("Earlier")).toBeTruthy();
     expect(screen.getByText("left over")).toBeTruthy();
+    expect(screen.getByText("3d ago")).toBeTruthy();
   });
 
   it("says how fresh the cloud copy is", () => {

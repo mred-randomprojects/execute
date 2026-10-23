@@ -117,6 +117,34 @@ describe("the core (no UI)", () => {
     expect(moved.log).toEqual([]);
   });
 
+  it("rescheduling an overdue task from anywhere counts it: back to today is a keep, elsewhere a postponement", () => {
+    // NOW is 2026-10-16: A came due on the 14th, B is due on the 20th.
+    const s = run(
+      withTwo(),
+      { type: "setPlannedFor", id: A, plannedFor: "2026-10-14" },
+      { type: "setPlannedFor", id: B, plannedFor: "2026-10-20" },
+    );
+    expect(s.log).toEqual([]); // dating a task isn't deferring it
+
+    const kept = run(s, { type: "setPlannedForMany", ids: [A, B], date: "2026-10-16" });
+    expect(findById(kept.tasks, A)).toMatchObject({ plannedFor: "2026-10-16", carriedCount: 1, postponedCount: 0 });
+    expect(findById(kept.tasks, B)).toMatchObject({ carriedCount: 0, postponedCount: 0 }); // never came due
+    expect(kept.log.map((l) => [l.taskId, l.action])).toEqual([[A, "kept"]]);
+
+    const later = run(s, { type: "setHorizonMany", ids: [A], horizon: { unit: "week", anchor: null } });
+    expect(findById(later.tasks, A)).toMatchObject({ plannedFor: null, postponedCount: 1, carriedCount: 0 });
+    expect(later.log[0]).toMatchObject({ taskId: A, action: "postponed" });
+
+    const inbox = run(s, { type: "setPlannedFor", id: A, plannedFor: null });
+    expect(findById(inbox.tasks, A)?.postponedCount).toBe(1);
+
+    // Another past day decides nothing; a finished task isn't deferred.
+    expect(run(s, { type: "setPlannedFor", id: A, plannedFor: "2026-10-15" }).log).toEqual([]);
+    const done = run(s, { type: "toggleComplete", id: A });
+    const moved = run(done, { type: "setPlannedFor", id: A, plannedFor: "2026-10-20" });
+    expect(findById(moved.tasks, A)?.postponedCount).toBe(0);
+  });
+
   it("accepting a recurrence materializes its template with the caller's id", () => {
     const rule: RecurrenceRule = { freq: "day", interval: 1, weekdays: [], anchor: "2026-10-01", ends: { kind: "never" } };
     const rec = "rec" as RecurrenceId;
