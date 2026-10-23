@@ -9,7 +9,7 @@ import { isOpen } from "./tasks";
  * schedule any more; it's a lie about one, and until this it was permanent.
  *
  * Permanent, because every scheduling surface in the app writes dates onto
- * *leaves* and nothing ever touched an ancestor: the Reckoning's input
+ * *leaves* and nothing ever touched an ancestor: the overdue list's input
  * (`leftoverLeaves`) is leaves-only by design, so a task with children can never
  * reckon. Plan a parent and its subtask for Monday, carry the subtask forward on
  * Tuesday morning, and the parent stays pinned to Monday for good — overdue in

@@ -458,10 +458,6 @@ export function setDailyCapacityBlocks(blocks: number): void {
   dispatch({ type: "setDailyCapacityBlocks", blocks });
 }
 
-/** Choose how the reckoning renders (board vs. card review). Not undoable. */
-export function setBoardPreferred(preferred: boolean): void {
-  dispatch({ type: "setBoardPreferred", preferred });
-}
 
 /** Render every task row peeked (title unwrapped + notes inline). Not undoable. */
 export function setWrapAll(on: boolean): void {
@@ -642,7 +638,7 @@ export function toggleWontDo(id: TaskId, reason: string | null = null): void {
 // ─── Waiting on someone else ────────────────────────────────────────
 //
 // Not a resolution: the task stays open and stays yours eventually. It just
-// steps out of the Reckoning and out of the day's tally while the ball is in
+// never goes overdue and steps out of the day's tally while the ball is in
 // someone else's court. Completing or declining clears it, because both settle
 // the task — see {@link WaitingOn} for why this exists at all.
 
@@ -680,16 +676,16 @@ export function postponeManyTo(
 }
 
 /**
- * Re-commit unfinished tasks to a day, unchanged — the Reckoning's "Keep for
- * today" and the evening shutdown's "→ Tomorrow". Bumps `carriedCount` (the
+ * Re-commit unfinished tasks to a day, unchanged — the task review's "Keep for
+ * today" and "→ Tomorrow". Bumps `carriedCount` (the
  * counter behind the "carried N×" badge) and logs each one. One update, so a
  * batch is a single undo step.
  *
- * Both callers bump the same counter on purpose. Facing a task at 6pm rather
- * than 9am the next morning is better *behaviour*, and it's rewarded where
- * rewards belong — the day closes, the streak grows, the morning gate never
- * fires. The counter isn't measuring virtue, it's measuring the task: this
- * really is the third day running that you've promised to do it.
+ * Both bump the same counter on purpose. Facing a task tonight rather than
+ * tomorrow morning is better *behaviour*, and it's rewarded where rewards
+ * belong — the day closes, the streak grows. The counter isn't measuring
+ * virtue, it's measuring the task: this really is the third day running that
+ * you've promised to do it.
  */
 export function carryManyTo(
   ids: TaskId[],
@@ -699,7 +695,7 @@ export function carryManyTo(
   dispatch({ type: "carryMany", ids, date, reason });
 }
 
-/** {@link carryManyTo}, aimed at today — the Reckoning's "Keep for today". */
+/** {@link carryManyTo}, aimed at today — the task review's "Keep for today". */
 export function keepManyForToday(ids: TaskId[], reason: string | null = null): void {
   carryManyTo(ids, todayFor(state, Date.now()), reason);
 }
@@ -763,7 +759,7 @@ export function trashMany(ids: TaskId[]): void {
   dispatch({ type: "trashMany", ids });
 }
 
-/** Reckoning "Drop all": trash a batch of leftovers, each logged as dropped. */
+/** Trash a batch, each logged as dropped. */
 export function dropManyWithLog(ids: TaskId[], reason: string | null = null): void {
   dispatch({ type: "dropManyWithLog", ids, reason });
 }

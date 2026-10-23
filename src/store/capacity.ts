@@ -5,9 +5,9 @@ import { blocksFromMinutes } from "./estimate";
 // What a day of yours actually holds, as opposed to what you think it holds.
 //
 // `dailyCapacityBlocks` has always been a number the user typed — 12 by default,
-// about four hours of task-work. The Reckoning then spends every morning
-// discovering that yesterday's plan didn't fit. But over-commitment is the
-// *cause* and the gate is only the symptom: the fix belongs at the moment of
+// about four hours of task-work. Every morning then discovers that
+// yesterday's plan didn't fit. But over-commitment is the *cause* and the
+// overdue pile only the symptom: the fix belongs at the moment of
 // committing, and the evidence has been sitting in the day records the whole
 // time.
 //

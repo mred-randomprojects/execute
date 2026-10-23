@@ -9,33 +9,6 @@ const NORMAL_HINTS: Array<[string, string]> = [
   ["?", "help"],
 ];
 
-const RECKONING_HINTS: Array<[string, string]> = [
-  ["↑ / ↓", "select"],
-  ["← / →", "group"],
-  ["e", "done"],
-  ["t", "keep"],
-  ["b", "break down"],
-  ["s", "postpone"],
-  ["d", "drop"],
-  ["v", "board"],
-  ["?", "help"],
-];
-
-// The board is the reckoning's other skin, with its own keys: showing the
-// cards' hints here sent ← / → / tab / 1–8 to a footer inside the board, and
-// left this bar naming keys the board doesn't lead with.
-const BOARD_HINTS: Array<[string, string]> = [
-  ["→", "to today"],
-  ["←", "back"],
-  ["tab", "switch column"],
-  ["e", "done"],
-  ["b", "break down"],
-  ["s", "postpone"],
-  ["d", "drop"],
-  ["1 – 8", "estimate"],
-  ["v", "cards"],
-];
-
 const PROJECTS_HINTS: Array<[string, string]> = [
   ["↑ / ↓", "move"],
   ["→", "open"],
@@ -54,23 +27,15 @@ const TRASH_HINTS: Array<[string, string]> = [
   ["?", "help"],
 ];
 
-const SHUTDOWN_HINTS: Array<[string, string]> = [
-  ["↑ / ↓", "select"],
+const REVIEW_HINTS: Array<[string, string]> = [
+  ["↑ / ↓", "move"],
   ["e", "done"],
-  ["l", "later today"],
-  ["t", "tomorrow"],
+  ["t", "today"],
+  ["→", "tomorrow"],
   ["b", "break down"],
   ["s", "postpone"],
   ["w", "won’t do"],
-  ["esc", "leave"],
-];
-
-const SHUTDOWN_HABIT_HINTS: Array<[string, string]> = [
-  ["↑ / ↓", "select"],
-  ["y", "did it"],
-  ["l", "later today"],
-  ["r", "rest day"],
-  ["x", "not today"],
+  ["l", "later"],
   ["esc", "leave"],
 ];
 
@@ -88,32 +53,18 @@ const HABITS_HINTS: Array<[string, string]> = [
 ];
 
 export function StatusBar({
-  reckoning,
-  board = false,
-  shutdown,
+  review,
   habits = false,
   view,
-  shutdownHabits = false,
 }: {
-  reckoning: boolean;
-  /** The reckoning is showing as the planning board. */
-  board?: boolean;
-  shutdown: boolean;
+  review: boolean;
   habits?: boolean;
   /** Only "projects" (the index, not a zoomed project) and "trash" change the hints. */
   view?: "projects" | "trash" | null;
-  /** Shutdown has reached its habit step. */
-  shutdownHabits?: boolean;
 }) {
-  const hints = reckoning
-    ? board
-      ? BOARD_HINTS
-      : RECKONING_HINTS
-    : shutdown
-      ? shutdownHabits
-        ? SHUTDOWN_HABIT_HINTS
-        : SHUTDOWN_HINTS
-      : habits
+  const hints = review
+    ? REVIEW_HINTS
+    : habits
         ? HABITS_HINTS
         : view === "projects"
           ? PROJECTS_HINTS
@@ -123,7 +74,7 @@ export function StatusBar({
   // One line, always. On a narrow window the hints that don't fit wrap onto a
   // second line that is clipped away, instead of growing the bar into the list
   // (Habits' nine took two lines at the default window size). The last hint is
-  // the way out or the way to the rest (? help, esc, v), so it is pinned right
+  // the way out or the way to the rest (? help, esc), so it is pinned right
   // and never the one that goes.
   const rest = hints.slice(0, -1);
   const last = hints[hints.length - 1];

@@ -67,7 +67,7 @@ describe("findBinding", () => {
     expect(findBinding(km, "x", "normal")?.action).toBe("n");
   });
   it("falls back to global when no exact match", () => {
-    expect(findBinding(keymap, "Escape", "reckoning")?.action).toBe("dismiss");
+    expect(findBinding(keymap, "Escape", "review")?.action).toBe("dismiss");
   });
   it("disambiguates the same key across contexts", () => {
     expect(findBinding(keymap, "Enter", "normal")?.action).toBe("open");
@@ -90,10 +90,7 @@ describe("getActiveContext", () => {
     showCalendar: false,
     showRepeat: false,
     showConfirm: false,
-    reckoningActive: false,
-    boardMode: false,
-    shutdownActive: false,
-    planActive: false,
+    reviewActive: false,
     habitsActive: false,
     trashActive: false,
     showLookBack: false,
@@ -102,36 +99,25 @@ describe("getActiveContext", () => {
   it("defaults to normal", () => {
     expect(getActiveContext(base)).toBe("normal");
   });
-  it("the Habits view has its own keys, but rituals and typing outrank it", () => {
+  it("the Habits view has its own keys, but the review and typing outrank it", () => {
     expect(getActiveContext({ ...base, habitsActive: true })).toBe("habits");
-    expect(getActiveContext({ ...base, habitsActive: true, reckoningActive: true })).toBe("reckoning");
+    expect(getActiveContext({ ...base, habitsActive: true, reviewActive: true })).toBe("review");
     expect(getActiveContext({ ...base, habitsActive: true, showPalette: true })).toBe("palette");
   });
-  it("Trash has its own keys, but rituals and dialogs outrank it", () => {
+  it("Trash has its own keys, but the review and dialogs outrank it", () => {
     expect(getActiveContext({ ...base, trashActive: true })).toBe("trash");
-    expect(getActiveContext({ ...base, trashActive: true, reckoningActive: true })).toBe("reckoning");
+    expect(getActiveContext({ ...base, trashActive: true, reviewActive: true })).toBe("review");
     expect(getActiveContext({ ...base, trashActive: true, showConfirm: true })).toBe("confirm");
   });
-  it("shutdown owns the keyboard when it's open", () => {
-    expect(getActiveContext({ ...base, shutdownActive: true })).toBe("shutdown");
+  it("the task review owns the keyboard when it's open", () => {
+    expect(getActiveContext({ ...base, reviewActive: true })).toBe("review");
   });
-  it("the gate outranks shutdown — clear yesterday before closing tonight", () => {
-    expect(
-      getActiveContext({ ...base, shutdownActive: true, reckoningActive: true })
-    ).toBe("reckoning");
-  });
-  it("typing still beats shutdown, so a breakdown step isn't eaten by its verbs", () => {
+  it("typing still beats the review, so a reason or a breakdown step isn't eaten by its verbs", () => {
     const input = document.createElement("input");
     document.body.appendChild(input);
     input.focus();
-    expect(getActiveContext({ ...base, shutdownActive: true })).toBe("editing");
+    expect(getActiveContext({ ...base, reviewActive: true })).toBe("editing");
     input.remove();
-  });
-  it("reckoning shows the board when boardMode is on", () => {
-    expect(getActiveContext({ ...base, reckoningActive: true, boardMode: true })).toBe("board");
-  });
-  it("reckoning shows cards when boardMode is off", () => {
-    expect(getActiveContext({ ...base, reckoningActive: true, boardMode: false })).toBe("reckoning");
   });
   it("estimate picker owns the keyboard", () => {
     expect(getActiveContext({ ...base, showEstimate: true })).toBe("estimate");
@@ -149,13 +135,10 @@ describe("getActiveContext", () => {
       getActiveContext({ ...base, showHelp: true, showPalette: true })
     ).toBe("help");
   });
-  it("palette beats reckoning", () => {
+  it("palette beats the review", () => {
     expect(
-      getActiveContext({ ...base, showPalette: true, reckoningActive: true })
+      getActiveContext({ ...base, showPalette: true, reviewActive: true })
     ).toBe("palette");
-  });
-  it("reckoning beats normal", () => {
-    expect(getActiveContext({ ...base, reckoningActive: true })).toBe("reckoning");
   });
 });
 
@@ -171,10 +154,7 @@ describe("getActiveContext — focus zones", () => {
     showCalendar: false,
     showRepeat: false,
     showConfirm: false,
-    reckoningActive: false,
-    boardMode: false,
-    shutdownActive: false,
-    planActive: false,
+    reviewActive: false,
     habitsActive: false,
     trashActive: false,
     showLookBack: false,

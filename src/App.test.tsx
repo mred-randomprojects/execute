@@ -15,7 +15,8 @@ import {
   trashTask,
 } from "./store/store";
 import { addDays, formatLong, monthKeyOffset, todayISO, weekKey } from "./store/dates";
-import type { AppState } from "./types";
+import type { AppState, Task } from "./types";
+import { walk } from "./store/tasks";
 
 afterEach(() => {
   cleanup();
@@ -129,67 +130,6 @@ describe("App integration", () => {
   });
 });
 
-describe("The morning plan", () => {
-  const openPlan = async () => {
-    await runCommand(CMD.plan);
-  };
-
-  it("offers this week's undated work, and commits it with one key", async () => {
-    render(<App />);
-    await addTask("draft the memo");
-    blurActive();
-    // Push it to "this week" — chosen for the week, but given no day.
-    await runCommand(CMD.schedOpen);
-    const when = await screen.findByLabelText("When");
-    fireEvent.change(when, { target: { value: "this week" } });
-    fireEvent.keyDown(when, { key: "Enter" });
-    await waitFor(() => expect(screen.queryByLabelText("When")).toBeNull());
-
-    await openPlan();
-    expect(await screen.findByText("What is today?")).toBeTruthy();
-    expect(screen.getByText("draft the memo")).toBeTruthy();
-
-    fireEvent.keyDown(document.body, { key: "t" }); // take it on
-    expect(await screen.findByText("Nothing waiting to be planned.")).toBeTruthy();
-
-    fireEvent.keyDown(document.body, { key: "Escape" });
-    expect(await screen.findByText("1 to go · 0/1 done")).toBeTruthy();
-  });
-
-  it("shows the cost of the next yes while you're saying it", async () => {
-    render(<App />);
-    await addTask("draft the memo");
-    blurActive();
-    await runCommand(CMD.schedOpen);
-    const when = await screen.findByLabelText("When");
-    fireEvent.change(when, { target: { value: "this week" } });
-    fireEvent.keyDown(when, { key: "Enter" });
-    await waitFor(() => expect(screen.queryByLabelText("When")).toBeNull());
-
-    await openPlan();
-    // The meter is the point of the ritual, so it's above the list.
-    expect(await screen.findByText(/0 \/ 12 blocks/)).toBeTruthy();
-  });
-
-  it("doesn't re-offer work you already gave a day to", async () => {
-    render(<App />);
-    await addTask("already chosen"); // capture lands it on today
-    await openPlan();
-    expect(await screen.findByText("Nothing waiting to be planned.")).toBeTruthy();
-  });
-
-  it("refuses to open while the gate is up — clear yesterday before choosing today", async () => {
-    render(<App />);
-    await addTask("yesterday's problem");
-    act(() => setDevDateOverride(addDays(todayISO(null), 1)));
-    await screen.findByText("Unfinished from before today");
-
-    await openPlan();
-    expect(screen.getByText("Unfinished from before today")).toBeTruthy();
-    expect(screen.queryByText("What is today?")).toBeNull();
-  });
-});
-
 describe("The weekly look-back", () => {
   it("reads back the reasons it has been collecting all along", async () => {
     render(<App />);
@@ -214,11 +154,11 @@ describe("The weekly look-back", () => {
     // Two rounds of keeping it for today → carried 2×.
     for (const day of [1, 2]) {
       act(() => setDevDateOverride(addDays(todayISO(null), day)));
-      await screen.findByText("Unfinished from before today");
-      fireEvent.click(screen.getByLabelText("Keep for today"));
-      await waitFor(() =>
-        expect(screen.queryByText("Unfinished from before today")).toBeNull()
-      );
+      fireEvent.click(await screen.findByText(/1 overdue\./));
+      fireEvent.click(await screen.findByLabelText("Keep for today"));
+      await waitFor(() => expect(screen.queryByLabelText("Keep for today")).toBeNull());
+      fireEvent.keyDown(document.body, { key: "Escape" });
+      await waitFor(() => expect(screen.queryByText("Task review")).toBeNull());
     }
 
     fireEvent.click(screen.getByTitle("Weekly look-back"));
@@ -252,7 +192,7 @@ describe("Waiting on someone else", () => {
     expect(await screen.findByText("1 day running")).toBeTruthy();
   });
 
-  it("never holds the morning gate shut", async () => {
+  it("isn't counted overdue the next day", async () => {
     // The whole point: being blocked on someone else must not become a debt the
     // app collects from you tomorrow.
     render(<App />);
@@ -263,9 +203,7 @@ describe("Waiting on someone else", () => {
     await screen.findByText(/waiting/);
 
     act(() => setDevDateOverride(addDays(todayISO(null), 1)));
-    await waitFor(() =>
-      expect(screen.queryByText("Unfinished from before today")).toBeNull()
-    );
+    await waitFor(() => expect(screen.queryByText(/overdue\./)).toBeNull());
     // Still there, still unresolved — visible, not forgotten.
     expect(await screen.findByText("hear back from legal")).toBeTruthy();
   });
@@ -293,47 +231,6 @@ describe("Waiting on someone else", () => {
 
     fireEvent.click(screen.getByLabelText("Mark complete"));
     await waitFor(() => expect(screen.queryByText(/waiting/)).toBeNull());
-  });
-});
-
-describe("Coming back to a wall", () => {
-  async function seedOverdue(n: number) {
-    render(<App />);
-    for (let i = 0; i < n; i++) await addTask(`overdue ${i}`);
-    act(() => setDevDateOverride(addDays(todayISO(null), 1)));
-    await screen.findByText("Unfinished from before today");
-  }
-
-  it("offers no amnesty for a pile you can just work through", async () => {
-    await seedOverdue(2);
-    expect(screen.queryByLabelText("Move them all to the Inbox")).toBeNull();
-  });
-
-  it("offers a way out once the pile is a wall", async () => {
-    await seedOverdue(10);
-    expect(screen.getByText(/10 commitments went past/)).toBeTruthy();
-
-    fireEvent.click(screen.getByLabelText("Move them all to the Inbox"));
-    // Bulk and irreversible-feeling, so it asks — and defaults to *not* doing it.
-    expect(await screen.findByText("Move 10 overdue tasks to the Inbox?")).toBeTruthy();
-    fireEvent.click(screen.getByText("Move them"));
-
-    await waitFor(() =>
-      expect(screen.queryByText("Unfinished from before today")).toBeNull()
-    );
-  });
-
-  it("keeps every task's history — an amnesty, not a leak", async () => {
-    await seedOverdue(10);
-    fireEvent.click(screen.getByLabelText("Move them all to the Inbox"));
-    fireEvent.click(await screen.findByText("Move them"));
-    await waitFor(() =>
-      expect(screen.queryByText("Unfinished from before today")).toBeNull()
-    );
-
-    // They're in the Inbox, not gone, and the deferral is on the record.
-    fireEvent.keyDown(document.body, { key: "2" });
-    expect(await screen.findByText("overdue 0")).toBeTruthy();
   });
 });
 
@@ -369,92 +266,6 @@ describe("Over-commitment", () => {
     await estimateCursor(3);
 
     expect(screen.queryByText(/blocks committed/)).toBeNull();
-  });
-});
-
-describe("The evening shutdown", () => {
-  const openShutdown = async () => {
-    await runCommand(CMD.shutdown);
-  };
-
-  it("carries an unfinished task to tomorrow, closing today", async () => {
-    render(<App />);
-    await addTask("finish the deck");
-    await openShutdown();
-    expect(await screen.findByText("Close the day")).toBeTruthy();
-
-    fireEvent.keyDown(document.body, { key: "t" }); // → tomorrow
-    expect(await screen.findByText("The day is closed.")).toBeTruthy();
-
-    // Today is closed, so the run starts…
-    fireEvent.keyDown(document.body, { key: "Escape" });
-    expect(await screen.findByText("1 day running")).toBeTruthy();
-    // …and the task is waiting on tomorrow, not overdue.
-    fireEvent.keyDown(document.body, { key: "]" });
-    expect(await screen.findByText("finish the deck")).toBeTruthy();
-  });
-
-  it("means the morning gate has nothing left to catch", async () => {
-    // The whole bargain: the Reckoning doesn't go away, you earn your way past
-    // it the night before.
-    render(<App />);
-    await addTask("write the memo");
-    await openShutdown();
-    fireEvent.keyDown(document.body, { key: "t" });
-    await screen.findByText("The day is closed.");
-    fireEvent.keyDown(document.body, { key: "Escape" });
-
-    act(() => setDevDateOverride(addDays(todayISO(null), 1)));
-    await waitFor(() =>
-      expect(screen.queryByText("Unfinished from before today")).toBeNull()
-    );
-    expect(await screen.findByText("write the memo")).toBeTruthy();
-  });
-
-  it("counts a carry to tomorrow the same as a carry to today", async () => {
-    // Facing it at 6pm is better behaviour, and it's rewarded by closing the day
-    // — but the task really has been promised twice, whichever hour you admit it.
-    render(<App />);
-    await addTask("chase the quote");
-    await openShutdown();
-    fireEvent.keyDown(document.body, { key: "t" });
-    await screen.findByText("The day is closed.");
-    fireEvent.keyDown(document.body, { key: "Escape" });
-
-    fireEvent.keyDown(document.body, { key: "]" }); // tomorrow's tab
-    expect(await screen.findByText(/carried 1×/)).toBeTruthy();
-  });
-
-  it("declines a task outright with w — a decision, not a failure", async () => {
-    render(<App />);
-    await addTask("that thing I never wanted");
-    await openShutdown();
-    fireEvent.keyDown(document.body, { key: "w" });
-    expect(await screen.findByText("The day is closed.")).toBeTruthy();
-  });
-
-  it("refuses to open while the gate is up — clear yesterday first", async () => {
-    render(<App />);
-    await addTask("yesterday's problem");
-    act(() => setDevDateOverride(addDays(todayISO(null), 1)));
-    await screen.findByText("Unfinished from before today");
-
-    await openShutdown();
-    // Still the gate: two full-screen rituals fighting over the keyboard is
-    // worse than either.
-    expect(screen.getByText("Unfinished from before today")).toBeTruthy();
-    expect(screen.queryByText("Close the day")).toBeNull();
-  });
-
-  it("carries everything left in one move", async () => {
-    render(<App />);
-    await addTask("one");
-    await addTask("two");
-    await openShutdown();
-    await screen.findByText("Close the day");
-
-    fireEvent.keyDown(document.body, { key: "T", shiftKey: true }); // ⇧t — carry all
-    expect(await screen.findByText("The day is closed.")).toBeTruthy();
   });
 });
 
@@ -563,283 +374,6 @@ describe("Presence (the desktop shell)", () => {
   });
 });
 
-describe("The Reckoning (rollover ritual)", () => {
-  async function seedTodayTaskThenRollOver(text: string) {
-    render(<App />);
-    const input = await screen.findByPlaceholderText("Add a task for today…");
-    fireEvent.change(input, { target: { value: text } });
-    fireEvent.keyDown(input, { key: "Enter" });
-    await screen.findByText(text);
-    // Advance a day → yesterday's unfinished task is now a leftover.
-    act(() => setDevDateOverride(addDays(todayISO(null), 1)));
-    expect(await screen.findByText("Unfinished from before today")).toBeTruthy();
-  }
-
-  it("stands in front of Today even when the day turns over in another view", async () => {
-    render(<App />);
-    await addTask("left on the desk");
-    blurActive();
-    fireEvent.keyDown(document.body, { key: "7" }); // Trash
-    await screen.findByText("Trash is empty.");
-
-    act(() => setDevDateOverride(addDays(todayISO(null), 1)));
-    expect(await screen.findByText("Unfinished from before today")).toBeTruthy();
-    // The sidebar says Today, not the view that happened to be open.
-    expect(screen.getByRole("button", { name: /Today/, current: "page" })).toBeTruthy();
-
-    fireEvent.click(screen.getByLabelText("Done"));
-    await waitFor(() =>
-      expect(screen.queryByText("Unfinished from before today")).toBeNull()
-    );
-    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Today");
-  });
-
-  it("blocks Today with the gate until the leftover is completed", async () => {
-    await seedTodayTaskThenRollOver("ship the thing");
-    expect(screen.getByText("ship the thing")).toBeTruthy();
-
-    fireEvent.click(screen.getByLabelText("Done"));
-
-    await waitFor(() =>
-      expect(screen.queryByText("Unfinished from before today")).toBeNull()
-    );
-  });
-
-  it("resolves a leftover by breaking it into a smaller step for today", async () => {
-    await seedTodayTaskThenRollOver("write the book");
-
-    fireEvent.click(screen.getByLabelText("Break down"));
-    const stepInput = await screen.findByPlaceholderText(
-      "A small step you'll finish today…"
-    );
-    fireEvent.change(stepInput, { target: { value: "write chapter 1 outline" } });
-    fireEvent.keyDown(stepInput, { key: "Enter" }); // add step
-    fireEvent.keyDown(stepInput, { key: "Enter" }); // empty → finish
-
-    await waitFor(() =>
-      expect(screen.queryByText("Unfinished from before today")).toBeNull()
-    );
-    // The smaller step now lives in Today.
-    expect(await screen.findByText("write chapter 1 outline")).toBeTruthy();
-  });
-
-  it("postponing a leftover makes you name a day rather than dropping it in a void", async () => {
-    await seedTodayTaskThenRollOver("maybe later task");
-    fireEvent.click(screen.getByLabelText("Postpone…"));
-
-    // `s` used to unplan the task in one keystroke, uncounted. Now it asks when.
-    const when = await screen.findByLabelText("When");
-    fireEvent.change(when, { target: { value: "next week" } });
-    fireEvent.keyDown(when, { key: "Enter" });
-
-    await waitFor(() =>
-      expect(screen.queryByText("Unfinished from before today")).toBeNull()
-    );
-    // …and it landed on the named rung, not in the undated backlog.
-    fireEvent.keyDown(document.body, { key: "2" });
-    expect(await screen.findByText("Next week")).toBeTruthy();
-  });
-
-  it("the undated backlog is still reachable — as a named choice", async () => {
-    await seedTodayTaskThenRollOver("someday maybe");
-    fireEvent.click(screen.getByLabelText("Postpone…"));
-    const when = await screen.findByLabelText("When");
-    fireEvent.change(when, { target: { value: "inbox" } });
-    fireEvent.keyDown(when, { key: "Enter" });
-    await waitFor(() =>
-      expect(screen.queryByText("Unfinished from before today")).toBeNull()
-    );
-  });
-
-  it("does not let a stale `s ↵` reflex quietly mean 'keep for today'", async () => {
-    // `s` used to be a one-key backlog. It's a picker now, so whatever sits
-    // under Enter inherits that reflex — and "Today" must not be it.
-    await seedTodayTaskThenRollOver("old reflex");
-    fireEvent.click(screen.getByLabelText("Postpone…"));
-    const when = await screen.findByLabelText("When");
-    fireEvent.keyDown(when, { key: "Enter" });
-
-    await waitFor(() =>
-      expect(screen.queryByText("Unfinished from before today")).toBeNull()
-    );
-    // Landed on Tomorrow: out of Today, and not counted as a carry.
-    expect(screen.queryByText("old reflex")).toBeNull();
-    expect(screen.queryByText(/carried/)).toBeNull();
-  });
-
-  it("postponing to Today is recorded as a carry, not a postponement", async () => {
-    // Otherwise `s → Today` would launder a keep: same outcome as `t`, but with
-    // the carry counter left untouched.
-    await seedTodayTaskThenRollOver("sneaky keep");
-    fireEvent.click(screen.getByLabelText("Postpone…"));
-    const when = await screen.findByLabelText("When");
-    fireEvent.change(when, { target: { value: "today" } });
-    fireEvent.keyDown(when, { key: "Enter" });
-    await waitFor(() =>
-      expect(screen.queryByText("Unfinished from before today")).toBeNull()
-    );
-    expect(await screen.findByText(/carried 1×/)).toBeTruthy();
-  });
-
-  it("asks you to break a task down once it has been kept twice already", async () => {
-    await seedTodayTaskThenRollOver("vague big thing");
-    fireEvent.click(screen.getByLabelText("Keep for today"));
-    await waitFor(() =>
-      expect(screen.queryByText("Unfinished from before today")).toBeNull()
-    );
-
-    act(() => setDevDateOverride(addDays(todayISO(null), 2)));
-    await screen.findByText("Unfinished from before today");
-    fireEvent.click(screen.getByLabelText("Keep for today"));
-    await waitFor(() =>
-      expect(screen.queryByText("Unfinished from before today")).toBeNull()
-    );
-
-    // Third time: the bare keep is no longer free.
-    act(() => setDevDateOverride(addDays(todayISO(null), 3)));
-    await screen.findByText("Unfinished from before today");
-    fireEvent.click(screen.getByLabelText("Keep for today"));
-    expect(await screen.findByText("Kept for today 2 times already")).toBeTruthy();
-
-    // …but it's a prompt, never a block: declining keeps it anyway.
-    fireEvent.click(screen.getByText("Keep it anyway"));
-    await waitFor(() =>
-      expect(screen.queryByText("Unfinished from before today")).toBeNull()
-    );
-    expect(await screen.findByText(/carried 3×/)).toBeTruthy();
-  });
-
-  it("asks whether it's ever happening once a task has been postponed three times", async () => {
-    await seedTodayTaskThenRollOver("chase the invoice");
-    const postponeToTomorrow = async () => {
-      fireEvent.click(screen.getByLabelText("Postpone…"));
-      const when = await screen.findByLabelText("When");
-      fireEvent.change(when, { target: { value: "tomorrow" } });
-      fireEvent.keyDown(when, { key: "Enter" });
-      await waitFor(() =>
-        expect(screen.queryByText("Unfinished from before today")).toBeNull()
-      );
-    };
-    // Each round: postpone to tomorrow, then let that day pass unfinished.
-    for (const day of [1, 3, 5]) {
-      if (day > 1) {
-        act(() => setDevDateOverride(addDays(todayISO(null), day)));
-        await screen.findByText("Unfinished from before today");
-      }
-      await postponeToTomorrow();
-    }
-
-    act(() => setDevDateOverride(addDays(todayISO(null), 7)));
-    await screen.findByText("Unfinished from before today");
-    expect(screen.getByText(/postponed 3×/)).toBeTruthy();
-
-    fireEvent.click(screen.getByLabelText("Postpone…"));
-    expect(await screen.findByText("Postponed 3 times already")).toBeTruthy();
-
-    // Accepting resolves it as "won't do" — a decision, and a reversible one.
-    fireEvent.click(screen.getByText("Won’t do"));
-    await waitFor(() =>
-      expect(screen.queryByText("Unfinished from before today")).toBeNull()
-    );
-  });
-
-  it("keeps a leftover for today, clearing the gate and re-listing it in Today", async () => {
-    await seedTodayTaskThenRollOver("revise the draft");
-    fireEvent.click(screen.getByLabelText("Keep for today"));
-    await waitFor(() =>
-      expect(screen.queryByText("Unfinished from before today")).toBeNull()
-    );
-    expect(await screen.findByText("revise the draft")).toBeTruthy();
-  });
-
-  it("a kept leftover returns tagged 'carried' if still unfinished the next day", async () => {
-    await seedTodayTaskThenRollOver("revise the draft");
-    fireEvent.click(screen.getByLabelText("Keep for today"));
-    await waitFor(() =>
-      expect(screen.queryByText("Unfinished from before today")).toBeNull()
-    );
-    // Advance another day without finishing → it reckons again, now carried once.
-    act(() => setDevDateOverride(addDays(todayISO(null), 2)));
-    expect(await screen.findByText("Unfinished from before today")).toBeTruthy();
-    expect(screen.getByText(/carried 1×/)).toBeTruthy();
-  });
-
-  it("keeps the capture front door open during the gate (new task → today)", async () => {
-    await seedTodayTaskThenRollOver("ship the thing");
-    blurActive();
-
-    // '/' focuses the always-present capture bar, even mid-Reckoning.
-    fireEvent.keyDown(document.body, { key: "/" });
-    const capture = screen.getByPlaceholderText("Add a task for today…");
-    expect(document.activeElement).toBe(capture);
-
-    fireEvent.change(capture, { target: { value: "remembered errand" } });
-    fireEvent.keyDown(capture, { key: "Enter" });
-
-    // Capturing neither cleared nor lengthened the gate.
-    expect(screen.getByText("Unfinished from before today")).toBeTruthy();
-    expect(screen.getByText("ship the thing")).toBeTruthy();
-
-    // Clear the gate → the dump is waiting in Today.
-    fireEvent.click(screen.getByLabelText("Done"));
-    await waitFor(() =>
-      expect(screen.queryByText("Unfinished from before today")).toBeNull()
-    );
-    expect(await screen.findByText("remembered errand")).toBeTruthy();
-  });
-
-  it("shows a stranded subtask under its top-level parent in the card", async () => {
-    render(<App />);
-    await addTask("kitchen reno");
-    await addTask("order tiles");
-    blurActive();
-    fireEvent.keyDown(document.body, { key: "Tab" }); // nest "order tiles" under "kitchen reno"
-    act(() => setDevDateOverride(addDays(todayISO(null), 1)));
-    expect(await screen.findByText("Unfinished from before today")).toBeTruthy();
-
-    // The card surfaces both the parent (context) and the stranded child.
-    expect(screen.getByText("kitchen reno")).toBeTruthy();
-    expect(screen.getByText("order tiles")).toBeTruthy();
-
-    // Resolving the only leftover leaf clears the whole card.
-    fireEvent.click(screen.getByLabelText("Done"));
-    await waitFor(() =>
-      expect(screen.queryByText("Unfinished from before today")).toBeNull()
-    );
-  });
-
-  it("postpones a whole over-committed group in one move", async () => {
-    render(<App />);
-    await addTask("trip");
-    await addTask("book flights");
-    blurActive();
-    fireEvent.keyDown(document.body, { key: "Tab" }); // book flights → under trip
-    fireEvent.keyDown(document.body, { key: "n" }); // new sibling under trip
-    const sub = await screen.findByPlaceholderText("Task…");
-    fireEvent.change(sub, { target: { value: "reserve hotel" } });
-    fireEvent.keyDown(sub, { key: "Escape" });
-    await screen.findByText("reserve hotel");
-
-    act(() => setDevDateOverride(addDays(todayISO(null), 1)));
-    expect(await screen.findByText("Unfinished from before today")).toBeTruthy();
-
-    // Both stranded subtasks show, with a one-shot group action.
-    expect(screen.getByText("book flights")).toBeTruthy();
-    expect(screen.getByText("reserve hotel")).toBeTruthy();
-
-    // The bulk escape still exists — it just can't be an unnamed dump any more.
-    fireEvent.click(screen.getByLabelText("Postpone all…"));
-    const when = await screen.findByLabelText("When");
-    expect(within(screen.getByRole("dialog")).getByText(/2 tasks/)).toBeTruthy();
-    fireEvent.change(when, { target: { value: "next week" } });
-    fireEvent.keyDown(when, { key: "Enter" });
-
-    await waitFor(() =>
-      expect(screen.queryByText("Unfinished from before today")).toBeNull()
-    );
-  });
-});
-
 async function addTask(text: string) {
   const input = await screen.findByPlaceholderText("Add a task for today…");
   fireEvent.change(input, { target: { value: text } });
@@ -883,9 +417,162 @@ const CMD = {
   project: /^File under a project…$/,
   repeat: /^Set repeat \(recurring\)…$/,
   laterLayout: /^Later: group by date \/ project$/,
-  plan: /^Plan the day…$/,
-  shutdown: /^Close the day \(shutdown\)…$/,
+  review: /^Review tasks…$/,
+  breakDown: /^Break it down…$/,
 };
+
+describe("Overdue work and the task review", () => {
+  const today = () => todayISO(getState().devDateOverride);
+  async function leaveOvernight(...texts: string[]) {
+    render(<App />);
+    for (const t of texts) await addTask(t);
+    act(() => setDevDateOverride(addDays(todayISO(null), 1)));
+    await screen.findByText(new RegExp(`${texts.length} overdue\\.`));
+    blurActive();
+  }
+  const task = (text: string): Task | undefined => {
+    let found: Task | undefined;
+    walk(getState().tasks, (t) => {
+      if (t.text === text) found = t;
+    });
+    return found;
+  };
+
+  it("nothing blocks Today: overdue work stays in the list, marked with how late it is", async () => {
+    await leaveOvernight("ship the thing");
+    expect(screen.getByText("ship the thing")).toBeTruthy();
+    expect(screen.getByText("yesterday")).toBeTruthy();
+    expect(screen.getByPlaceholderText("Add a task for today…")).toBeTruthy();
+    expect(screen.queryByText("Task review")).toBeNull();
+
+    // Moving it from the list is a deferral, counted like the review's keep.
+    fireEvent.keyDown(document.body, { key: "ArrowDown" });
+    await runCommand(/^Schedule: Today$/);
+    await waitFor(() => expect(task("ship the thing")?.carriedCount).toBe(1));
+    expect(task("ship the thing")?.plannedFor).toBe(today());
+    await waitFor(() => expect(screen.queryByText(/overdue\./)).toBeNull());
+  });
+
+  it("the review lists overdue, today's and the week's undated work, and its verbs count", async () => {
+    await leaveOvernight("old one");
+    await addTask("fresh one");
+    act(() => {
+      addTaskAfter(null, "this week thing");
+    });
+    const weekId = task("this week thing")?.id;
+    if (weekId == null) throw new Error("no week task");
+    act(() => setHorizonMany([weekId], { unit: "week", anchor: null }));
+
+    await runCommand(CMD.review);
+    expect(await screen.findByText("Task review")).toBeTruthy();
+    expect(screen.getByRole("region", { name: "Overdue" })).toBeTruthy();
+    expect(screen.getByRole("region", { name: "Today" })).toBeTruthy();
+    expect(screen.getByRole("region", { name: "This week, no day yet" })).toBeTruthy();
+
+    fireEvent.keyDown(document.body, { key: "t" }); // old one: keep for today
+    await waitFor(() => expect(task("old one")?.carriedCount).toBe(1));
+    expect(getState().log[0]).toMatchObject({ taskText: "old one", action: "kept" });
+
+    // The cursor walked on to today's: → carries it to tomorrow, counted.
+    fireEvent.keyDown(document.body, { key: "ArrowRight" });
+    await waitFor(() => expect(task("fresh one")?.plannedFor).toBe(addDays(today(), 1)));
+    expect(task("fresh one")?.carriedCount).toBe(1);
+
+    // The week's: t takes it on, a fresh commitment — nothing counted.
+    fireEvent.keyDown(document.body, { key: "t" });
+    await waitFor(() => expect(task("this week thing")?.plannedFor).toBe(today()));
+    expect(task("this week thing")?.carriedCount).toBe(0);
+  });
+
+  it("l sets a task aside for this pass; w, d and e decide", async () => {
+    await leaveOvernight("aside", "decline", "drop", "finish");
+    await runCommand(CMD.review);
+    await screen.findByText("Task review");
+    fireEvent.keyDown(document.body, { key: "l" }); // the first row, set aside
+    // Whatever order they're in, three verbs leave one task: the one set aside.
+    fireEvent.keyDown(document.body, { key: "w" });
+    fireEvent.keyDown(document.body, { key: "d" });
+    fireEvent.keyDown(document.body, { key: "e" });
+    await waitFor(() => expect(screen.getByText("Done for now")).toBeTruthy());
+    expect(getState().log.map((l) => l.action).sort()).toEqual(["completed", "dropped", "skipped"]);
+    const overdue = getState().tasks.filter((t) => t.plannedFor != null && t.plannedFor < today() && !t.completed && t.wontDo == null);
+    expect(overdue).toHaveLength(1); // the one set aside: untouched, uncounted
+    expect(overdue[0]).toMatchObject({ carriedCount: 0, postponedCount: 0 });
+  });
+
+  it("s on overdue work makes you name a day, and counts it", async () => {
+    await leaveOvernight("maybe later task");
+    await runCommand(CMD.review);
+    fireEvent.click(await screen.findByLabelText("Postpone…"));
+    const when = await screen.findByLabelText("When");
+    fireEvent.change(when, { target: { value: "next week" } });
+    fireEvent.keyDown(when, { key: "Enter" });
+    await waitFor(() => expect(task("maybe later task")?.postponedCount).toBe(1));
+    expect(task("maybe later task")?.horizon?.unit).toBe("week");
+  });
+
+  it("asks you to break a task down once you've kept it twice already", async () => {
+    render(<App />);
+    await addTask("vague task");
+    for (const day of [1, 2, 3]) {
+      act(() => setDevDateOverride(addDays(todayISO(null), day)));
+      await runCommand(CMD.review);
+      fireEvent.click(await screen.findByLabelText("Keep for today"));
+      if (day < 3) {
+        await waitFor(() => expect(task("vague task")?.carriedCount).toBe(day));
+        fireEvent.keyDown(document.body, { key: "Escape" });
+      }
+    }
+    expect(await screen.findByText("Kept for today 2 times already")).toBeTruthy();
+    fireEvent.click(screen.getByText("Break it down"));
+    const step = await screen.findByPlaceholderText("A small step you'll finish today…");
+    fireEvent.change(step, { target: { value: "outline it" } });
+    fireEvent.keyDown(step, { key: "Enter" });
+    fireEvent.keyDown(step, { key: "Enter" }); // empty → finish
+    await waitFor(() => expect(getState().log[0]).toMatchObject({ action: "brokeDown" }));
+    expect(task("outline it")?.plannedFor).toBe(today());
+  });
+
+  it("break down is in ⌘k too, from the list", async () => {
+    render(<App />);
+    await addTask("write the book");
+    blurActive();
+    fireEvent.keyDown(document.body, { key: "ArrowDown" });
+    await runCommand(CMD.breakDown);
+    const step = await screen.findByPlaceholderText("A small step you'll finish today…");
+    fireEvent.change(step, { target: { value: "chapter 1 outline" } });
+    fireEvent.keyDown(step, { key: "Enter" });
+    fireEvent.keyDown(step, { key: "Escape" });
+    expect(await screen.findByText("chapter 1 outline")).toBeTruthy();
+    expect(getState().log[0]).toMatchObject({ action: "brokeDown", taskText: "write the book" });
+  });
+
+  it("offers to move a big overdue pile to the Inbox, keeping each task's history", async () => {
+    render(<App />);
+    await screen.findByPlaceholderText("Add a task for today…");
+    for (let i = 0; i < 10; i++) {
+      act(() => {
+        addTaskAfter(null, `pile ${i}`, todayISO(null));
+      });
+    }
+    act(() => setDevDateOverride(addDays(todayISO(null), 1)));
+    await runCommand(CMD.review);
+    await screen.findByText("Task review");
+    fireEvent.click(await screen.findByLabelText("Move all 10 to the Inbox"));
+    fireEvent.click(await screen.findByText("Move them"));
+    await waitFor(() =>
+      expect(getState().tasks.filter((t) => t.text.startsWith("pile")).every((t) => t.plannedFor == null && t.postponedCount === 1)).toBe(true),
+    );
+  });
+
+  it("closes the day once the overdue work is decided by hand, no ritual needed", async () => {
+    await leaveOvernight("left over");
+    fireEvent.keyDown(document.body, { key: "ArrowDown" });
+    fireEvent.keyDown(document.body, { key: "Enter", metaKey: true }); // done, from the list
+    await waitFor(() => expect(task("left over")?.completed).toBe(true));
+    await waitFor(() => expect(screen.queryByText(/overdue\./)).toBeNull());
+  });
+});
 
 describe("Cursor after a task leaves the view", () => {
   it("lands on the row above when `t` unplans the focused task (not the top)", async () => {
@@ -2825,58 +2512,6 @@ describe("Estimates & the planning board", () => {
     );
   });
 
-  it("switches the reckoning to the board and pulls leftovers into today", async () => {
-    render(<App />);
-    await addTask("overdue one");
-    await addTask("overdue two");
-    blurActive();
-
-    // Roll the day forward → both become leftovers → the reckoning gate opens.
-    act(() => setDevDateOverride(addDays(todayISO(null), 1)));
-    expect(await screen.findByText("Unfinished from before today")).toBeTruthy();
-
-    // Flip to the board skin (persisted preference), then pull both in.
-    fireEvent.keyDown(document.body, { key: "v" });
-    expect(await screen.findByText("Pull what you can into today")).toBeTruthy();
-    expect(screen.getByText("Today's load")).toBeTruthy();
-
-    fireEvent.keyDown(document.body, { key: "ArrowRight" }); // pull the first
-    fireEvent.keyDown(document.body, { key: "ArrowRight" }); // pull the second
-
-    // Both triaged → the gate clears and we're back in the normal Today view.
-    await waitFor(() =>
-      expect(screen.queryByText("Pull what you can into today")).toBeNull()
-    );
-    expect(screen.getByText("overdue one")).toBeTruthy();
-    expect(screen.getByText("overdue two")).toBeTruthy();
-  });
-
-  it("sends an over-pulled task back off today (Tab to Today, then ←)", async () => {
-    render(<App />);
-    await addTask("alpha");
-    await addTask("bravo");
-    blurActive();
-
-    act(() => setDevDateOverride(addDays(todayISO(null), 1)));
-    await screen.findByText("Unfinished from before today");
-    fireEvent.keyDown(document.body, { key: "v" });
-    await screen.findByText("Pull what you can into today");
-
-    // Today starts empty (both are overdue leftovers).
-    expect(screen.getByText(/Nothing committed yet/)).toBeTruthy();
-
-    // Pull the first leftover into today → the empty-state goes away.
-    fireEvent.keyDown(document.body, { key: "ArrowRight" });
-    await waitFor(() => expect(screen.queryByText(/Nothing committed yet/)).toBeNull());
-
-    // Tab into the Today column, then ← to send it back off today.
-    fireEvent.keyDown(document.body, { key: "Tab" });
-    fireEvent.keyDown(document.body, { key: "ArrowLeft" });
-
-    // Today is empty again, and the gate is still open (bravo remains).
-    await waitFor(() => expect(screen.getByText(/Nothing committed yet/)).toBeTruthy());
-    expect(screen.getByText("Pull what you can into today")).toBeTruthy();
-  });
 });
 
 describe("Undo, redo and the history panel", () => {
@@ -3088,26 +2723,6 @@ describe("KPIs", () => {
     expect(getState().habits[0].name).toBe("Dizzy spells");
   });
 
-  it("shutdown asks a KPI for its number after the habits, and closes once it's in", async () => {
-    render(<App />);
-    await screen.findByPlaceholderText("Add a task for today…");
-    act(() => {
-      createHabit("Meditate");
-    });
-    act(() => {
-      createHabit("Worst dizzy spell", 7, { min: 0, max: 10, openTop: false, every: "day" });
-    });
-    await runCommand(CMD.shutdown);
-    expect(await screen.findByText("And your habits")).toBeTruthy();
-    fireEvent.keyDown(document.body, { key: "y" }); // Meditate; the cursor moves to the KPI
-    const field = await screen.findByLabelText("Value, 0–10");
-    await waitFor(() => expect(document.activeElement).toBe(field));
-    fireEvent.change(field, { target: { value: "4" } });
-    fireEvent.keyDown(field, { key: "Enter" });
-    await waitFor(() => expect(getState().habits.find((h) => h.measure != null)?.values[today()]).toBe(4));
-    expect(await screen.findByText("The day is closed.")).toBeTruthy();
-  });
-
   it("the log panel puts a KPI's field under the cursor straight away", async () => {
     render(<App />);
     await screen.findByPlaceholderText("Add a task for today…");
@@ -3133,109 +2748,6 @@ describe("Not forgetting to log habits", () => {
     await screen.findByPlaceholderText("Add a task for today…");
     act(seed);
   };
-
-  it("shutdown ends with today's habits: y / r / x, the cursor walking on by itself", async () => {
-    await mount(() => {
-      createHabit("Meditate");
-      createHabit("Run");
-      createHabit("Read");
-    });
-    await runCommand(CMD.shutdown);
-    expect(await screen.findByText("And your habits")).toBeTruthy();
-
-    // Same-millisecond habits sort by id, so read the order the list shows.
-    const [first, second, third] = getState().habits.map((h) => h.name);
-    fireEvent.keyDown(document.body, { key: "y" });
-    fireEvent.keyDown(document.body, { key: "r" });
-    fireEvent.keyDown(document.body, { key: "x" });
-    await waitFor(() => expect(mark(third, today())).toBe("missed"));
-    expect(mark(first, today())).toBe("done");
-    expect(mark(second, today())).toBe("skip");
-    expect(await screen.findByText("The day is closed.")).toBeTruthy();
-    expect(getState().tasks).toEqual([]);
-  });
-
-  it("one list: ↓ walks from the tasks into the habits, and each row takes its own keys", async () => {
-    await mount(() => createHabit("Meditate"));
-    await addTask("finish the deck");
-    await runCommand(CMD.shutdown);
-    expect(await screen.findByText("Close the day")).toBeTruthy();
-    fireEvent.keyDown(document.body, { key: "y" }); // a habit key, on a task: nothing
-    expect(mark("Meditate", today())).toBeUndefined();
-
-    fireEvent.keyDown(document.body, { key: "ArrowDown" }); // into the habits
-    fireEvent.keyDown(document.body, { key: "e" }); // a task key, on a habit: nothing
-    expect(getState().tasks[0].completed).toBe(false);
-    fireEvent.keyDown(document.body, { key: "y" });
-    await waitFor(() => expect(mark("Meditate", today())).toBe("done"));
-
-    fireEvent.keyDown(document.body, { key: "ArrowUp" });
-    fireEvent.keyDown(document.body, { key: "e" });
-    expect(await screen.findByText("The day is closed.")).toBeTruthy();
-  });
-
-  it("“later today” lets a mid-afternoon shutdown move on without deciding", async () => {
-    await mount(() => createHabit("Meditate"));
-    await addTask("finish the deck");
-    await runCommand(CMD.shutdown);
-    await screen.findByText("Close the day");
-
-    fireEvent.keyDown(document.body, { key: "l" }); // the task: still today
-    fireEvent.keyDown(document.body, { key: "l" }); // the cursor moved on to the habit: later too
-    expect(await screen.findByText("Done for now")).toBeTruthy();
-    expect(screen.getByText("1 task later today")).toBeTruthy();
-    expect(screen.getByText("1 habit later today")).toBeTruthy();
-    const task = getState().tasks[0];
-    expect(task.completed).toBe(false);
-    expect(task.plannedFor).toBe(today()); // still today's…
-    expect(task.carriedCount).toBe(0); // …and not counted as a carry
-    expect(mark("Meditate", today())).toBeUndefined();
-
-    fireEvent.keyDown(document.body, { key: "ArrowUp" });
-    fireEvent.keyDown(document.body, { key: "l" }); // "ask me now" — back in the queue
-    expect(await screen.findByText("Close the day")).toBeTruthy();
-  });
-
-  it("a task shows where it lives: project › parent", async () => {
-    render(<App />);
-    await addTask("Ship the release");
-    await addTask("write the changelog");
-    blurActive();
-    fireEvent.keyDown(document.body, { key: "Tab" }); // a subtask of "Ship the release"
-    await runCommand(CMD.shutdown);
-    await screen.findByText("Close the day");
-    const row = screen.getByText("write the changelog").closest("div.relative");
-    expect(row).not.toBeNull();
-    expect(within(row as HTMLElement).getByText("Ship the release")).toBeTruthy();
-    expect(within(row as HTMLElement).getByText("Inbox")).toBeTruthy();
-  });
-
-  it("the morning band asks about yesterday, and the panel answers it", async () => {
-    await mount(() => {
-      createHabit("Stretch");
-      setDevDateOverride(addDays(todayISO(null), 2)); // yesterday is now inside the habit's life
-    });
-    const band = await screen.findByText("Yesterday’s habits?");
-    fireEvent.click(band);
-    const dialog = await screen.findByRole("dialog", { name: "Yesterday’s habits" });
-    fireEvent.keyDown(dialog, { key: "y" });
-    const yesterday = addDays(today(), -1);
-    await waitFor(() => expect(mark("Stretch", yesterday)).toBe("done"));
-    fireEvent.keyDown(dialog, { key: "Enter" }); // all logged → close
-    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Yesterday’s habits" })).toBeNull());
-    expect(screen.queryByText("Yesterday’s habits?")).toBeNull();
-  });
-
-  it("the band can be put away for the day without answering", async () => {
-    await mount(() => {
-      createHabit("Stretch");
-      setDevDateOverride(addDays(todayISO(null), 2));
-    });
-    await screen.findByText("Yesterday’s habits?");
-    fireEvent.click(screen.getByLabelText("Not now"));
-    await waitFor(() => expect(screen.queryByText("Yesterday’s habits?")).toBeNull());
-    expect(localStorage.getItem("execute.habitPromptDismissed")).toBe(addDays(today(), -1));
-  });
 
   it("checks in from ⌘k anywhere, and from the strip on Today", async () => {
     await mount(() => {

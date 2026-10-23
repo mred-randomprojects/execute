@@ -6,7 +6,7 @@ import { walk } from "./tasks";
 
 // The weekly look-back: everything the app already knew and never told you.
 //
-// Execute has been recording a reason on every Reckoning choice since long
+// Execute has been recording a reason on every review choice since long
 // before this file existed — and reading them back exactly nowhere except one
 // task's own history panel. Reasons are the most interesting data here and the
 // least looked at: individually they're a shrug, in aggregate they're a

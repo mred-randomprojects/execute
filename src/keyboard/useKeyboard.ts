@@ -3,10 +3,10 @@ import type { KeyBinding, KeyContext, ContextState } from "./types";
 import { toCombo, findBinding } from "./types";
 
 // ─── Context resolver ────────────────────────────────────────────────
-// Priority: help > palette > editing > reckoning > normal.
-// `editing` beats `reckoning` so typing a breakdown subtask doesn't trigger
-// reckoning shortcuts; `palette` beats `editing` so the palette's own input
-// still responds to arrows/enter.
+// Priority: help > palette > editing > review > normal.
+// `editing` beats `review` so typing a breakdown step or a reason doesn't
+// trigger the review's letters; `palette` beats `editing` so the palette's own
+// input still responds to arrows/enter.
 
 // True when focus sits somewhere that should own the keyboard, so the global
 // outline shortcuts stay dormant and native behavior is preserved. Two cases:
@@ -54,14 +54,9 @@ export function getActiveContext(state: ContextState): KeyContext {
   // Likewise the repeat picker.
   if (state.showRepeat) return "repeat";
   if (isInteractiveElementFocused()) return "editing";
-  // The reckoning gate owns the keyboard while any leftover remains. Its two
-  // presentations share the gate but bind keys differently: the spatial board
-  // has its own context ("board"), the card review the classic one.
-  if (state.reckoningActive) return state.boardMode ? "board" : "reckoning";
-  // Shutdown sits *below* the gate on purpose: you can't close tonight while
-  // yesterday is still unresolved, so the Reckoning always wins the keyboard.
-  if (state.shutdownActive) return "shutdown";
-  if (state.planActive) return "plan";
+  // The task review owns the screen while it's open, and prints each letter on
+  // the chip it fires.
+  if (state.reviewActive) return "review";
   // Habits has keys of its own (space checks in, ←/→ walk the days), so it gets
   // its own context rather than borrowing the outline's.
   if (state.habitsActive) return "habits";

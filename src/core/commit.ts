@@ -284,8 +284,8 @@ export function commit(prev: AppState, produced: AppState, now: number): AppStat
   // went stale overnight without the user touching anything.)
   //
   // Work settles here for the same reason: completing, declining or blocking a
-  // task has a dozen doors (the outline, the Reckoning, Shutdown, the board,
-  // the palette, the phone), and every one of them has to stop its timer.
+  // task has a dozen doors (the outline, the task review, the palette, the
+  // phone), and every one of them has to stop its timer.
   const settled = withSettledWork(prev, withBoundedParents(produced, now), now);
   if (settled === prev) return prev;
   return withTombstones(prev, withSyncStamps(prev, stampTasks(prev, settled, now), now), now);

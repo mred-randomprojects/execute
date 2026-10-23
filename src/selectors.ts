@@ -68,9 +68,9 @@ export function filterTree(tasks: Task[], pred: TaskPredicate): Task[] {
 // membership questions — which tab shows it, which counts include it. A task
 // with its own plannedFor or horizon always speaks for itself (it blocks
 // inheritance from above), and rendering reads the real fields, so no phantom
-// dates appear on rows. The Reckoning deliberately does NOT inherit yet: a
-// backlogged child would just re-inherit its parent's stale date and the gate
-// could never clear — that needs its own design (see leftoverLeaves).
+// dates appear on rows. Being overdue deliberately does NOT inherit yet: a
+// backlogged child would just re-inherit its parent's stale date and could
+// never stop being overdue — that needs its own design (see leftoverLeaves).
 
 type ScheduleCarry = { plannedFor: ISODate | null; horizon: Horizon | null } | null;
 
@@ -463,7 +463,7 @@ export function todayProgress(tasks: Task[], today: ISODate): TodayProgress {
   return { done, total: leaves.length, remaining: leaves.length - done };
 }
 
-// ─── Daily capacity (the planning board's soft meter) ───────────────
+// ─── Daily capacity (the over-commit strip's soft meter) ────────────
 
 export interface CapacityLoad {
   /** Sum of estimates over the open work planned for today, in minutes. */
@@ -513,13 +513,14 @@ export function backlogCount(tasks: Task[]): number {
 }
 
 /**
- * Open leaves planned strictly before today — the Reckoning's input.
+ * Open leaves planned strictly before today — the overdue work Today keeps
+ * showing and the task review lists first.
  *
  * Deliberately reads each leaf's OWN date, not the inherited one: if children
  * inherited an overdue parent's date, "send to backlog" (plannedFor → null)
- * would just re-inherit it and the gate could never clear. Extending the
- * Reckoning to inherited deadlines needs resolutions that touch the parent's
- * date — an open design question, not a filter tweak.
+ * would just re-inherit it and it could never stop being overdue. Extending
+ * this to inherited deadlines needs resolutions that touch the parent's date —
+ * an open design question, not a filter tweak.
  */
 export function leftoverLeaves(tasks: Task[], today: ISODate): Task[] {
   // `isLive`, not `isOpen`: a task blocked on someone else didn't get done
@@ -531,57 +532,6 @@ export function leftoverLeaves(tasks: Task[], today: ISODate): Task[] {
     tasks,
     (t) => isLive(t) && t.plannedFor != null && t.plannedFor < today
   );
-}
-
-/**
- * The leftover leaves as a tree — each with the ancestors that give it context.
- * The same set the Reckoning resolves, for surfaces that can't run the Reckoning
- * (the web companion): until the desktop carries them forward, they're planned
- * for a day that's gone, and no date-keyed view would show them at all.
- */
-export function leftoverTree(tasks: Task[], today: ISODate): Task[] {
-  return filterTree(
-    tasks,
-    (t) => t.children.length === 0 && isLive(t) && t.plannedFor != null && t.plannedFor < today
-  );
-}
-
-/** A leftover leaf together with the ancestor chain that gives it context. */
-export interface ReckoningLeaf {
-  task: Task;
-  /** Tasks between the card root and this leaf, exclusive of both (nearest-last). */
-  parents: Task[];
-}
-
-/**
- * One Reckoning "card": a top-level ancestor and the unfinished leftover leaves
- * beneath it. Restores the hierarchy the flat list threw away — you review a
- * whole top-level commitment and its stranded subtasks together.
- *
- * `root` is the top-level ancestor; for a leftover that is itself top-level,
- * `root` is that task and its single leaf has no `parents`. Cards (and the
- * leaves within them) preserve tree order.
- */
-export interface ReckoningCard {
-  root: Task;
-  leaves: ReckoningLeaf[];
-}
-
-export function reckoningCards(tasks: Task[], today: ISODate): ReckoningCard[] {
-  const cards: ReckoningCard[] = [];
-  const indexByRoot = new Map<TaskId, number>();
-  for (const leaf of leftoverLeaves(tasks, today)) {
-    const path = getAncestorPath(tasks, leaf.id);
-    const root = path[0] ?? leaf;
-    let idx = indexByRoot.get(root.id);
-    if (idx == null) {
-      idx = cards.length;
-      indexByRoot.set(root.id, idx);
-      cards.push({ root, leaves: [] });
-    }
-    cards[idx].leaves.push({ task: leaf, parents: path.slice(1, -1) });
-  }
-  return cards;
 }
 
 export function isActionableLeaf(t: Task): boolean {
@@ -790,55 +740,6 @@ export function recurringForToday(
   return recurrences.filter((r) => !suppressed.has(r.id) && ruleFiresOn(r.rule, today));
 }
 
-// ─── The morning plan: what's asking for today ──────────────────────
-
-/** One thing on offer in the plan ritual, and where it came from. */
-export interface PlanCandidate {
-  id: TaskId;
-  task: Task;
-  source: "week" | "suggested" | "recurring";
-  /** Set for a recurrence — accepting materializes the template. */
-  recurrence: Recurrence | null;
-}
-
-/**
- * Everything asking to be today, in one place: work you put on *this week* but
- * never gave a day, and the recurrences firing today.
- *
- * Both already existed — the week's work behind a period tab, recurrences as a
- * passive strip at the foot of Today — which meant choosing your day happened by
- * scrolling past things, or not at all. A day nobody chose is the day that
- * over-commits, because one more yes costs nothing when you can't see the total.
- *
- * Already-dated work is excluded: it has been chosen, and re-offering a decision
- * you made is how a ritual becomes a chore. Tasks the engine projects onto today
- * are tagged `suggested` — same list, stronger nudge.
- */
-export function planCandidates(
-  tasks: Task[],
-  recurrences: Recurrence[],
-  today: ISODate
-): PlanCandidate[] {
-  const out: PlanCandidate[] = [];
-  walk(tasks, (t) => {
-    if (!isLeaf(t) || !isLive(t) || t.plannedFor != null) return;
-    if (taskBucket(t, today) !== "thisWeek") return;
-    out.push({
-      id: t.id,
-      task: t,
-      source: suggestedDayFor(t, today) === today ? "suggested" : "week",
-      recurrence: null,
-    });
-  });
-  // Suggested first — the engine already thinks today is their day.
-  out.sort((a, b) => (a.source === b.source ? 0 : a.source === "suggested" ? -1 : 1));
-  for (const rec of recurringForToday(recurrences, tasks, today)) {
-    out.push({ id: rec.template.id, task: rec.template, source: "recurring", recurrence: rec });
-  }
-  return out;
-}
-
-/** Short chip label for a task's horizon (for the by-project layout). `null` for Inbox/dated. */
 export function horizonLabel(task: Task, today: ISODate): string | null {
   if (task.horizon == null) return null;
   return horizonWords(task.horizon, today);

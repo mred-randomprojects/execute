@@ -5,8 +5,8 @@ import { deferralBadges } from "../store/deferral";
  * "carried 3×" / "postponed 5×" chips — a task's deferral ledger, rendered
  * wherever the task is.
  *
- * Deliberately not confined to the Reckoning. The counters existed before this
- * component and were only ever shown *inside the gate*, which is the one moment
+ * Deliberately not confined to the task review. The counters existed before this
+ * component and were only ever shown *inside the old morning gate*, the one moment
  * you already know the task is overdue; seeing "postponed 6×" in the middle of
  * an ordinary Today list is what actually changes a decision. See
  * {@link deferralBadges} for which counts qualify and when the tone escalates.

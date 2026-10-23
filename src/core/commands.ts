@@ -96,7 +96,6 @@ export type Command =
   | { type: "markOpened"; date: ISODate }
   | { type: "recordDay"; date: ISODate; tally: DayTally; closed: boolean }
   | { type: "setDailyCapacityBlocks"; blocks: number }
-  | { type: "setBoardPreferred"; preferred: boolean }
   | { type: "setWrapAll"; on: boolean }
   | { type: "setHideCompleted"; on: boolean }
   | { type: "setPresence"; patch: Partial<Presence> }
@@ -433,8 +432,6 @@ export function applyCommand(s: AppState, cmd: Command, ctx: CommandContext): Ap
     }
     case "setDailyCapacityBlocks":
       return { ...s, dailyCapacityBlocks: Math.max(1, Math.round(cmd.blocks)) };
-    case "setBoardPreferred":
-      return { ...s, boardPreferred: cmd.preferred };
     case "setWrapAll":
       return { ...s, wrapAll: cmd.on };
     case "setHideCompleted":
@@ -638,7 +635,7 @@ export function applyCommand(s: AppState, cmd: Command, ctx: CommandContext): Ap
       return { ...s, tasks, log: [...logs, ...s.log] };
     }
     case "carryMany": {
-      // Re-committed unchanged — the Reckoning's "Keep for today", Shutdown's
+      // Re-committed unchanged — the task review's "Keep for today" and
       // "→ Tomorrow": counted (carriedCount) and logged.
       const { tasks, logs } = eachLogged(
         s,
@@ -945,7 +942,6 @@ export function describeCommand(s: AppState, cmd: Command, now: number): string 
     case "markOpened":
     case "recordDay":
     case "setDailyCapacityBlocks":
-    case "setBoardPreferred":
     case "setWrapAll":
     case "setHideCompleted":
     case "setPresence":

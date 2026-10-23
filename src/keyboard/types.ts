@@ -19,10 +19,7 @@ export type KeyContext =
   | "calendar"
   | "repeat"
   | "confirm"
-  | "reckoning"
-  | "board"
-  | "shutdown"
-  | "plan"
+  | "review"
   | "habits"
   | "trash"
   | "editing"
@@ -41,16 +38,11 @@ export interface ContextState {
   showCalendar: boolean;
   showRepeat: boolean;
   showConfirm: boolean;
-  reckoningActive: boolean;
-  /** During a reckoning, render the two-panel planning board instead of cards. */
-  boardMode: boolean;
-  /** The evening shutdown ritual is open (never while the gate is up). */
-  shutdownActive: boolean;
-  /** The morning plan ritual is open (never while the gate is up). */
-  planActive: boolean;
-  /** The Habits view is showing (and no ritual is covering it). */
+  /** The task review is open. */
+  reviewActive: boolean;
+  /** The Habits view is showing (and the review isn't covering it). */
   habitsActive: boolean;
-  /** The Trash view is showing (and no ritual is covering it). */
+  /** The Trash view is showing (and the review isn't covering it). */
   trashActive: boolean;
 }
 

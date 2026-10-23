@@ -8,7 +8,7 @@ import { addDays, isoWeekday } from "./dates";
 // demoralises — and since a bad day is guaranteed eventually, it teaches you to
 // stop looking. So the streak counts days you **closed**: every commitment the
 // day carried ended with an outcome. Finishing counts. Consciously declining
-// counts. Facing a leftover in the Reckoning and moving it on purpose counts.
+// counts. Facing an overdue task and moving it on purpose counts.
 // Only leaving something unresolved doesn't.
 //
 // Two traps this has to avoid, both of which would make the number worse than no

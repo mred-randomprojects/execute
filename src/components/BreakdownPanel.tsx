@@ -6,9 +6,8 @@ import { NO_SPELLCHECK } from "../ui/noSpellcheck";
  * "What is the smallest piece you can actually finish?" — the one move that
  * turns a task you keep failing into one you'll do.
  *
- * Shared by both rituals, which differ only in *when* the small step lands: the
- * Reckoning plans it for today (the day is ahead of you), the evening shutdown
- * for tomorrow (today is spent). Everything else about the act is identical.
+ * Opened from the task review (`b`) or from ⌘k on any task; each step lands
+ * in Today, as a child of the task it breaks down.
  */
 export function BreakdownPanel({
   task,

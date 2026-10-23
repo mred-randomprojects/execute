@@ -6,14 +6,14 @@ import type { Task } from "../types";
 // that to be true the two ways of not doing something today have to cost
 // something, and until now only one of them did:
 //
-//   • KEEP (`t` in the Reckoning) re-commits the task to today unchanged. It
+//   • KEEP (`t` in the task review) re-commits the task to today unchanged. It
 //     bumps `carriedCount` and has always shown a "carried N×" badge.
 //   • POSTPONE (`s`) pushes it to another day — or, before v12, into an undated
 //     void. It was one keystroke, uncounted and unbadged, which made it the
 //     cheapest possible exit and therefore the one a tired person reaches for.
 //
 // Both are now counted, both are badged, and past a threshold both stop being
-// free: the Reckoning interrupts with a question whose *default* is the honest
+// free: the task review interrupts with a question whose *default* is the honest
 // answer (break it down / decide you won't do it) and whose escape is one extra
 // deliberate key. That asymmetry is the entire design — never a block, because a
 // gate you can't pass just pushes the dodge somewhere the app can't see.
@@ -22,7 +22,7 @@ import type { Task } from "../types";
 // judgement, and this is the one file to argue with when they need to change.
 
 /**
- * Keep this many times without finishing and the Reckoning stops taking a bare
+ * Keep this many times without finishing and the task review stops taking a bare
  * "keep for today". Three is the point where a task has demonstrated it is not
  * a task: you have now committed to it on three separate days and finished it on
  * none of them, which is what a project looks like from the inside.
@@ -30,7 +30,7 @@ import type { Task } from "../types";
 export const CARRY_PROMPT_AT = 3;
 
 /**
- * Postpone this many times and the Reckoning asks whether it is ever happening.
+ * Postpone this many times and the task review asks whether it is ever happening.
  * Set higher than the carry threshold because pushing a date is a legitimate,
  * common act — plans really do change — and the prompt should read as a fair
  * observation rather than nagging. Four separate deferrals is past that line.
@@ -60,7 +60,7 @@ const times = (n: number): string => `${n} time${n === 1 ? "" : "s"}`;
  * away) and collapsing them would hide which one is happening.
  *
  * Carried shows from the first time, matching the badge's long-standing
- * behaviour in the Reckoning. Postponed waits for the second: one "not today" is
+ * behaviour. Postponed waits for the second: one "not today" is
  * ordinary, and a badge on it would cry wolf.
  */
 export function deferralBadges(task: Task): DeferralBadge[] {

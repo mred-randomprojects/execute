@@ -714,7 +714,6 @@ export function coerceState(raw: unknown): AppState {
     // v8: soft daily-capacity budget. Pre-v8 data has none → the default.
     dailyCapacityBlocks: Math.max(1, Math.trunc(num(raw.dailyCapacityBlocks, DEFAULT_CAPACITY_BLOCKS))),
     // v8: planning-board preference. Pre-v8 → classic card review.
-    boardPreferred: bool(raw.boardPreferred, false),
     // Wrap-all view preference. Absent in older data → off.
     wrapAll: bool(raw.wrapAll, false),
     // Absent in older data → shown, as the in-memory default always was.

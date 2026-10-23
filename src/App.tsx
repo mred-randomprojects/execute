@@ -27,7 +27,6 @@ import {
   emptyTrash,
   indent,
   indentRecurrenceNode,
-  dropManyWithLog,
   flushPendingSave,
   initStore,
   carryManyTo,
@@ -56,7 +55,6 @@ import {
   restoreFromTrash,
   restoreBackup,
   getState as getStoreState,
-  setBoardPreferred,
   setWrapAll,
   setHideCompleted,
   setCompleted,
@@ -111,7 +109,6 @@ import {
 } from "./store/store";
 import {
   DEFAULT_MEASURE,
-  answeredOn,
   cadenceLabel,
   everyLabel,
   formatValue,
@@ -131,9 +128,7 @@ function withoutId(set: ReadonlySet<string>, id: string): ReadonlySet<string> {
   return next;
 }
 
-/** Per device: the last "yesterday" whose unlogged-habits band was dismissed. */
-const HABIT_PROMPT_KEY = "execute.habitPromptDismissed";
-import { findById, findParentId, getAncestorPath, isOpen, walk } from "./store/tasks";
+import { findById, findParentId, getAncestorPath, isLeaf, isLive, isOpen, walk } from "./store/tasks";
 import {
   addDays,
   daysBetween,
@@ -157,7 +152,6 @@ import {
   leftoverLeaves,
   prevVisibleSiblingId,
   projectSummaries,
-  reckoningCards,
   groupTasksByDay,
   PERIOD_LABELS,
   PERIODS,
@@ -165,7 +159,6 @@ import {
   resolveZoom,
   scheduleStep,
   stepSchedule,
-  planCandidates,
   suggestedForToday,
   waitingOnOthers,
   taskBucket,
@@ -178,19 +171,16 @@ import {
   VIEW_TITLES,
   zoomParent,
   type Period,
-  type PlanCandidate,
-  type ReckoningCard,
   type ScheduleStep,
   type ViewKind,
   type ZoomTarget,
 } from "./selectors";
-import { minutesFromBlocks } from "./store/estimate";
 import { willPromptOnKeep, willPromptOnPostpone } from "./store/deferral";
 import { presenceSnapshot } from "./store/presence";
 import { isRunning, workingOn } from "./store/work";
 import { useWorkAwake } from "./ui/useWorkAwake";
 import { SidebarWork } from "./components/WorkClock";
-import { isShutdownTime, parseClock, shutdownScheduleLabel, shutdownTimeOn } from "./store/shutdownTime";
+import { parseClock, shutdownScheduleLabel } from "./store/shutdownTime";
 import { currentRun } from "./store/streak";
 import { suggestedCapacityBlocks } from "./store/capacity";
 import { DayStreak } from "./components/DayStreak";
@@ -208,7 +198,7 @@ import {
 import { keymap } from "./keyboard/keymap";
 import { useKeyboard } from "./keyboard/useKeyboard";
 import type { ContextState } from "./keyboard/types";
-import type { Habit, HabitId, HabitMark, HabitMeasure, ISODate, KpiEvery } from "./types";
+import type { Habit, HabitId, HabitMeasure, ISODate, KpiEvery } from "./types";
 import { EditorProvider, type Editor } from "./ui/editor";
 import { copyText } from "./ui/clipboard";
 import { Sidebar } from "./components/Sidebar";
@@ -217,10 +207,8 @@ import { initAutoSync } from "./sync/desktopSync";
 import { OutlineView } from "./views/OutlineView";
 import { ProjectsView } from "./views/ProjectsView";
 import { RecurringView } from "./views/RecurringView";
-import { ReckoningView } from "./views/ReckoningView";
-import { ReckoningBoard, type BoardLeftover } from "./views/ReckoningBoard";
-import { ShutdownView, type ShutRow } from "./views/ShutdownView";
-import { PlanView } from "./views/PlanView";
+import { TaskReviewView, type ReviewRow } from "./views/TaskReviewView";
+import { BreakdownPanel } from "./components/BreakdownPanel";
 import { TrashView } from "./views/TrashView";
 import { HABIT_STRIP_DAYS, HabitsView, type HabitEditing, type HabitField } from "./views/HabitsView";
 import { RepeatPicker } from "./components/RepeatPicker";
@@ -248,16 +236,16 @@ import { coerceState, type BackupFile } from "./store/persistence";
 
 const THEMES: ThemeName[] = ["slate", "ivory", "carbon", "bordeaux"];
 
-/**
- * When the Reckoning offers an amnesty instead of just a wall: a pile this big,
- * or this many days unopened. Either alone is enough — ten overdue tasks is
- * daunting whether you earned them by being away or by over-committing while
- * you were here.
- */
 // What the folds read as while the view filter is on: nothing folded.
 const NOTHING_COLLAPSED: Set<TaskId> = new Set();
 const NO_PROJECTS_COLLAPSED: Set<ProjectId> = new Set();
 
+/**
+ * When the task review offers to move the whole overdue pile to the Inbox: a
+ * pile this big, or this many days unopened. Either alone is enough — ten
+ * overdue tasks is daunting whether you earned them by being away or by
+ * over-committing while you were here.
+ */
 const CATCH_UP_PILE = 10;
 const CATCH_UP_DAYS = 3;
 
@@ -363,21 +351,11 @@ export function App() {
   // silently (vs. opening a prefilled Google Calendar link). Drives the picker's
   // hint and which path `onConfirm` takes.
   const [calendarConnected, setCalendarConnected] = useState(false);
-  // The reckoning gate's two-panel skin (leftovers ↔ today + capacity). Opt-in
-  // and persisted (state.boardPreferred); `v` toggles it and the card review.
-  const boardMode = state.boardPreferred;
-  // A pending *postponement*: the schedule picker opened from the Reckoning (`s`
-  // / ⇧s) or the board's "push to later". Distinct from the ordinary `s` picker
-  // because these tasks already came due and didn't get done — picking a day here
-  // bumps postponedCount and logs it, where plain rescheduling doesn't. `card` is
-  // set for a whole-group postpone, so the cursor jumps to the next card after.
-  const [postponeReq, setPostponeReq] = useState<
-    { ids: TaskId[]; card: ReckoningCard | null } | null
-  >(null);
-  // Which board column the cursor is in, and the cursor within the Today column
-  // (the leftovers column reuses reckCursorId). Lets → pull and ← send back.
-  const [boardColumn, setBoardColumn] = useState<"left" | "right">("left");
-  const [todayCursorId, setTodayCursorId] = useState<TaskId | null>(null);
+  // A pending *postponement*: the schedule picker opened from the task review
+  // (`s`). On a task that came due (overdue or today's) picking a day bumps
+  // postponedCount and logs it, where plain rescheduling doesn't; on a week
+  // task it is plain rescheduling.
+  const [postponeReq, setPostponeReq] = useState<{ ids: TaskId[]; counted: boolean } | null>(null);
   const [repeatTarget, setRepeatTarget] = useState<{ recId: RecurrenceId; taskId: TaskId } | null>(
     null
   );
@@ -395,26 +373,19 @@ export function App() {
   const [workNoteSignal, setWorkNoteSignal] = useState(0);
   // Read by DetailPanel only when it mounts: whether that open was a → dive.
   const [panelEditOnOpen, setPanelEditOnOpen] = useState(false);
-  const [reckCursorId, setReckCursorId] = useState<TaskId | null>(null);
   const [breakingDownId, setBreakingDownId] = useState<TaskId | null>(null);
-  const [reckReason, setReckReason] = useState("");
-  // The evening shutdown ritual. Opened deliberately (`q`, the palette, or the
-  // evening nudge) — never sprung on you, unlike the gate.
-  const [shutdownOpen, setShutdownOpen] = useState(false);
-  // One cursor over Shutdown's whole list — today's open tasks, then today's
-  // habits. Ids are nanoids either way, so they never collide.
-  const [shutCursorId, setShutCursorId] = useState<string | null>(null);
-  // "Later today": still today, just not done yet — for a shutdown at 14:15
-  // that is most of the afternoon. Not a decision the app records anywhere
-  // (no carried count, no log line): it only lets this pass move on. Lives as
-  // long as this shutdown does; the next one asks again, because by then
-  // "later" has usually arrived.
-  const [shutLater, setShutLater] = useState<ReadonlySet<string>>(() => new Set());
+  // The task review: every task waiting on a decision, opened from ⌘k or the
+  // overdue banner — never on its own.
+  const [reviewOpen, setReviewOpen] = useState(false);
+  const [reviewCursorId, setReviewCursorId] = useState<TaskId | null>(null);
+  // An optional "why", attached to whichever verb comes next.
+  const [reviewReason, setReviewReason] = useState("");
+  // Set aside in this pass ("later"): not a decision the app records anywhere
+  // (no count, no log line), it only lets the pass move on. Lives as long as
+  // this review does.
+  const [reviewLater, setReviewLater] = useState<ReadonlySet<string>>(() => new Set());
   // Bumped to ask the focused row to open (and focus) its optional reason field.
-  const [shutReasonTick, setShutReasonTick] = useState(0);
-  // The morning half of the pair: shutdown closes the day, this opens it.
-  const [planOpen, setPlanOpen] = useState(false);
-  const [planCursorId, setPlanCursorId] = useState<TaskId | null>(null);
+  const [reviewReasonTick, setReviewReasonTick] = useState(0);
 
   const captureRef = useRef<HTMLInputElement>(null);
   const focusedId = selection.focusedId;
@@ -468,37 +439,21 @@ export function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loaded, today]);
 
-  // ── Reckoning (the hard gate) ─────────────────────────────────────
+  // ── Overdue ───────────────────────────────────────────────────────
+  // Work left on an earlier day. Nothing gates on it any more: it stays in
+  // Today, marked with how late it is, and the banner over Today offers the
+  // task review.
   const leftovers = useMemo(
     () => leftoverLeaves(state.tasks, today),
     [state.tasks, today]
   );
-  // Same leftovers, grouped by top-level ancestor for the card-by-card review.
-  const reckCards = useMemo(
-    () => reckoningCards(state.tasks, today),
-    [state.tasks, today]
-  );
-  const reckoningActive = ready && leftovers.length > 0;
-  // The gate stands in front of Today, whatever was on screen when it came up
-  // (a day can turn over with Trash or a zoomed project open). Go there, so the
-  // sidebar says where you are and Today is what you see once it's clear.
-  useEffect(() => {
-    if (!reckoningActive) return;
-    setView("today");
-    setPeriod("today");
-    setZoom(null);
-  }, [reckoningActive]);
   const breakdownTask =
     breakingDownId != null ? findById(state.tasks, breakingDownId) ?? null : null;
-  const leftoverKey = leftovers.map((t) => t.id).join(",");
 
-  // ── Coming back to a wall ─────────────────────────────────────────
-  // The gate exists to stop work carrying forward *silently*, not to punish
-  // absence — but after a week away that's exactly what it does, with twenty
-  // overdue commitments standing between you and starting, at the moment
-  // motivation is lowest. That's where people quit, and a strict app you've
-  // stopped opening enforces nothing at all. So past either threshold there's a
-  // door: one recorded decision that clears the pile into the Inbox.
+  // ── Coming back to a pile ─────────────────────────────────────────
+  // After a week away the overdue pile is exactly what makes people quit, at
+  // the moment motivation is lowest. So past either threshold the review
+  // offers one recorded decision that clears the pile into the Inbox.
   const lapseOffered = leftovers.length >= CATCH_UP_PILE || daysAway >= CATCH_UP_DAYS;
   const catchUp = () => {
     const ids = leftovers.map((t) => t.id);
@@ -511,7 +466,6 @@ export function App() {
       tone: "neutral",
       enterAction: "cancel",
       onConfirm: () => {
-        setReckCursorId(null);
         postponeManyTo(
           ids,
           { plannedFor: null, horizon: null },
@@ -521,53 +475,15 @@ export function App() {
     });
   };
 
-  // ── Planning board (the reckoning's opt-in board skin) ────────────
   const capacity = useMemo(
     () => todayCapacity(state.tasks, today, state.dailyCapacityBlocks),
     [state.tasks, today, state.dailyCapacityBlocks]
   );
-  // Open work already committed to today — the board's right column.
+  // Open work committed to today — the menu bar's count and the review's list.
   const todayOpenLeaves = useMemo(
     () => todayLeaves(state.tasks, today).filter(isOpen),
     [state.tasks, today]
   );
-  // The leftovers as board rows, each tagged with its nearest ancestor's text
-  // for context. Ordered to match `leftovers` so the cursor lines up 1:1.
-  const boardLeftovers = useMemo<BoardLeftover[]>(() => {
-    const parentText = new Map<TaskId, string | null>();
-    for (const card of reckCards) {
-      for (const leaf of card.leaves) {
-        const nearest = leaf.parents[leaf.parents.length - 1] ?? (card.root.id !== leaf.task.id ? card.root : null);
-        parentText.set(leaf.task.id, nearest?.text ?? null);
-      }
-    }
-    return leftovers.map((task) => ({ task, parentText: parentText.get(task.id) ?? null }));
-  }, [leftovers, reckCards]);
-
-  // Keep the Today-column cursor pointing at a real row; when Today empties, fall
-  // back to the leftovers column so the cursor never strands on nothing.
-  useEffect(() => {
-    const ids = todayOpenLeaves.map((t) => t.id);
-    if (todayCursorId != null && !ids.includes(todayCursorId)) {
-      setTodayCursorId(ids[0] ?? null);
-    } else if (todayCursorId == null && boardColumn === "right" && ids[0] != null) {
-      setTodayCursorId(ids[0]);
-    }
-  }, [todayOpenLeaves, todayCursorId, boardColumn]);
-  useEffect(() => {
-    if (boardColumn === "right" && todayOpenLeaves.length === 0) setBoardColumn("left");
-  }, [boardColumn, todayOpenLeaves.length]);
-
-  useEffect(() => {
-    if (!reckoningActive) {
-      if (reckCursorId !== null) setReckCursorId(null);
-      return;
-    }
-    const ids = leftovers.map((t) => t.id);
-    if (reckCursorId === null || !ids.includes(reckCursorId)) setReckCursorId(ids[0]);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [leftoverKey, reckoningActive]);
-  useEffect(() => setReckReason(""), [reckCursorId]);
   useEffect(() => {
     if (breakingDownId != null && findById(state.tasks, breakingDownId) == null) {
       setBreakingDownId(null);
@@ -645,7 +561,7 @@ export function App() {
     };
   }, [zoom, state.tasks, state.projects, view, hideCompleted, filtering, filterQuery, editingId]);
   // Soft-horizon tasks the engine projects onto today — shown as a passive,
-  // non-reckoning "Suggested for today" group at the foot of Today. They join the
+  // passive "Suggested for today" group at the foot of Today. They join the
   // outline flow so ↑/↓ reach them and `t` (accept) / `s` (reschedule) just work.
   const suggestedTasks = useMemo(
     () =>
@@ -802,19 +718,15 @@ export function App() {
   // promised to today.
   const tally = useMemo(() => todayTally(state.tasks, today), [state.tasks, today]);
   const tomorrow = addDays(today, 1);
-  const tomorrowCount = useMemo(
-    () => todayLeaves(state.tasks, tomorrow).filter(isOpen).length,
-    [state.tasks, tomorrow]
-  );
   // "Did today ask anything of you" has to read the *recorded* high-water mark,
-  // not the live tally: shutdown's whole job is to move the day's remaining work
+  // not the live tally: deciding the day's remaining work moves it
   // off today, which empties the live count. Reading it live would mean the more
   // thoroughly you closed the day, the less it looked like you'd had one.
   const everCommitted = Math.max(
     tally.committed,
     state.days.find((d) => d.date === today)?.committed ?? 0
   );
-  const dayClosed = !reckoningActive && everCommitted > 0 && tally.open === 0;
+  const dayClosed = leftovers.length === 0 && everCommitted > 0 && tally.open === 0;
   useEffect(() => {
     // recordDay is a no-op when nothing moved — which is what keeps this effect
     // from re-triggering itself forever through the store.
@@ -828,150 +740,68 @@ export function App() {
     [state.days, today, state.dailyCapacityBlocks]
   );
 
-  // ── Shutdown (the evening ritual) ─────────────────────────────────
-  // Never while the gate is up: you can't close tonight with yesterday still
-  // unresolved, and two full-screen rituals fighting over the keyboard is worse
-  // than either. It reviews exactly what the Reckoning would catch tomorrow.
-  const shutdownActive = shutdownOpen && !reckoningActive;
-  const shutdownBreakdownTask = shutdownActive ? breakdownTask : null;
-  // Habits still unanswered for today — the sidebar badge, the shutdown step,
-  // the closing-time banner and the evening nudge all count the same thing.
+  // ── Task review ───────────────────────────────────────────────────
+  const reviewActive = reviewOpen;
+  // One list, in the order you'd want to decide it: what's overdue, what's
+  // still open today, then the week's work that never got a day.
+  const reviewRows = useMemo<ReviewRow[]>(() => {
+    if (!reviewActive) return [];
+    const week: ReviewRow[] = [];
+    walk(state.tasks, (t) => {
+      if (isLeaf(t) && isLive(t) && t.plannedFor == null && taskBucket(t, today) === "thisWeek") {
+        week.push({ id: t.id, task: t, section: "week" });
+      }
+    });
+    return [
+      ...leftovers.map((task): ReviewRow => ({ id: task.id, task, section: "overdue" })),
+      ...todayOpenLeaves.filter(isLive).map((task): ReviewRow => ({ id: task.id, task, section: "today" })),
+      ...week,
+    ];
+  }, [reviewActive, state.tasks, leftovers, todayOpenLeaves, today]);
+  /** The next row after `fromId` (wrapping) not yet set aside, `fromId` itself counted as decided. */
+  const nextReviewRow = (fromId: TaskId): TaskId | null => {
+    const i = reviewRows.findIndex((r) => r.id === fromId);
+    for (let k = 1; k < reviewRows.length; k++) {
+      const r = reviewRows[(i + k + reviewRows.length) % reviewRows.length];
+      if (r != null && r.id !== fromId && !reviewLater.has(r.id)) return r.id;
+    }
+    return null;
+  };
+  const advanceReviewPast = (id: TaskId) => setReviewCursorId(nextReviewRow(id));
+  useEffect(() => {
+    if (!reviewActive) {
+      if (reviewCursorId !== null) setReviewCursorId(null);
+      if (reviewLater.size > 0) setReviewLater(new Set());
+      return;
+    }
+    if (reviewCursorId === null || !reviewRows.some((r) => r.id === reviewCursorId)) {
+      const first = reviewRows.find((r) => !reviewLater.has(r.id)) ?? reviewRows[0] ?? null;
+      setReviewCursorId(first?.id ?? null);
+    }
+  }, [reviewActive, reviewRows, reviewCursorId, reviewLater]);
+  useEffect(() => setReviewReason(""), [reviewCursorId]);
+  /** Set aside for this pass ↔ back in the queue. */
+  const toggleReviewLater = (id: TaskId | null) => {
+    if (id == null) return;
+    if (reviewLater.has(id)) {
+      setReviewLater((prev) => withoutId(prev, id));
+      return;
+    }
+    setReviewLater((prev) => new Set([...prev, id]));
+    advanceReviewPast(id);
+  };
+
+  // Habits still unanswered for today — the sidebar badge and the menu bar
+  // count the same thing.
   const habitsLeftToday = useMemo(
     () => state.habits.filter((h) => pendingOn(h, today)),
     [state.habits, today]
   );
-  const habitsPending = habitsLeftToday.length;
-  // Past the evening hour with work still open — the in-app twin of the nudge,
-  // for when notifications are off (or there's no desktop shell at all).
-  const closingTime =
-    !shutdownActive &&
-    !reckoningActive &&
-    (tally.open > 0 || habitsPending > 0) &&
-    isShutdownTime(state.presence, today, new Date());
-  // The morning half: habits nobody answered yesterday (no shutdown that
-  // night). A dismissible band on Today, and a small panel to answer them —
-  // never a gate. Dismissal is per device and per day.
   const yesterday = addDays(today, -1);
   const [habitLogDate, setHabitLogDate] = useState<ISODate | null>(null);
-  const [habitPromptDismissed, setHabitPromptDismissed] = useState<string | null>(() => {
-    try {
-      return localStorage.getItem(HABIT_PROMPT_KEY);
-    } catch {
-      return null;
-    }
-  });
-  const yesterdayUnlogged = useMemo(
-    () => state.habits.filter((h) => pendingOn(h, yesterday)),
-    [state.habits, yesterday]
-  );
-  const dismissHabitPrompt = () => {
-    setHabitPromptDismissed(yesterday);
-    try {
-      localStorage.setItem(HABIT_PROMPT_KEY, yesterday);
-    } catch {
-      /* private window etc. — the band just comes back next launch */
-    }
-  };
   // Today's habits still in play (pending, or already answered today) — the
   // strip under Today's header and the ⌘k check-ins.
   const habitsTodayList = useMemo(() => habitsToLog(state.habits, today), [state.habits, today]);
-  const habitPrompt =
-    yesterdayUnlogged.length > 0 && habitPromptDismissed !== yesterday
-      ? {
-          names: yesterdayUnlogged.map((h) => h.name || "Untitled habit"),
-          onOpen: () => setHabitLogDate(yesterday),
-          onDismiss: dismissHabitPrompt,
-        }
-      : null;
-
-  // Shutdown's list: today's open tasks, then today's habits (answered ones
-  // stay, so an answer doesn't pull a row out from under the cursor).
-  const shutHabits = useMemo(
-    () => (shutdownActive ? habitsToLog(state.habits, today) : []),
-    [shutdownActive, state.habits, today]
-  );
-  const shutRows = useMemo<ShutRow[]>(
-    () =>
-      shutdownActive
-        ? [
-            ...todayOpenLeaves.map((task): ShutRow => ({ kind: "task", id: task.id, task })),
-            ...shutHabits.map((habit): ShutRow => ({ kind: "habit", id: habit.id, habit })),
-          ]
-        : [],
-    [shutdownActive, todayOpenLeaves, shutHabits]
-  );
-  /** Still waiting for an answer in this pass. */
-  const shutNeeds = (r: ShutRow): boolean =>
-    !shutLater.has(r.id) && (r.kind === "task" || !answeredOn(r.habit, today));
-  const shutRow = shutRows.find((r) => r.id === shutCursorId) ?? null;
-  const shutTaskId = shutRow?.kind === "task" ? shutRow.id : null;
-  const shutHabitId = shutRow?.kind === "habit" ? shutRow.id : null;
-  /** The next row after `fromId` (wrapping) still needing an answer, `fromId` itself counted as answered. */
-  const nextShutRow = (fromId: string): string | null => {
-    const i = shutRows.findIndex((r) => r.id === fromId);
-    for (let k = 1; k < shutRows.length; k++) {
-      const r = shutRows[(i + k + shutRows.length) % shutRows.length];
-      if (r != null && r.id !== fromId && shutNeeds(r)) return r.id;
-    }
-    return null;
-  };
-  const advanceShutCursorPast = (id: string) => setShutCursorId(nextShutRow(id));
-  useEffect(() => {
-    if (!shutdownActive) {
-      if (shutCursorId !== null) setShutCursorId(null);
-      if (shutLater.size > 0) setShutLater(new Set());
-      return;
-    }
-    if (shutCursorId === null || !shutRows.some((r) => r.id === shutCursorId)) {
-      const first = shutRows.find(shutNeeds) ?? shutRows[0] ?? null;
-      setShutCursorId(first?.id ?? null);
-    }
-  }, [shutdownActive, shutRows, shutCursorId, shutLater]);
-  const answerShutHabit = (id: HabitId | null, mark: HabitMark) => {
-    const h = shutHabits.find((x) => x.id === id);
-    if (h == null) return;
-    const next = h.checks[today] === mark ? null : mark;
-    markHabit(h.id, today, next);
-    if (shutLater.has(h.id)) setShutLater((prev) => withoutId(prev, h.id));
-    if (next != null) advanceShutCursorPast(h.id);
-  };
-  const logShutKpi = (id: HabitId, value: number | null) => {
-    setKpiValue(id, today, value);
-    if (shutLater.has(id)) setShutLater((prev) => withoutId(prev, id));
-    if (value != null) advanceShutCursorPast(id);
-  };
-  /** Later today ↔ back in the queue, for a task or a habit. */
-  const toggleShutLater = (id: string | null) => {
-    if (id == null) return;
-    if (shutLater.has(id)) {
-      setShutLater((prev) => withoutId(prev, id));
-      return;
-    }
-    setShutLater((prev) => new Set([...prev, id]));
-    advanceShutCursorPast(id);
-  };
-  useEffect(() => setReckReason(""), [shutCursorId]);
-  // The desktop's evening notification opens straight into the ritual — a nudge
-  // that only says "you should" wastes the interruption it just spent.
-  useEffect(() => window.execute?.onOpenShutdown?.(() => setShutdownOpen(true)), []);
-
-  // ── Plan (the morning ritual) ─────────────────────────────────────
-  // Same rule as shutdown: never while the gate is up. Everything asking for
-  // today in one place, with the capacity meter filling as you accept — the
-  // point being that the cost of the next "yes" is visible when you say it.
-  const planActive = planOpen && !reckoningActive && !shutdownActive;
-  const planList = useMemo(
-    () => (planActive ? planCandidates(state.tasks, state.recurrences, today) : []),
-    [planActive, state.tasks, state.recurrences, today]
-  );
-  useEffect(() => {
-    if (!planActive) {
-      if (planCursorId !== null) setPlanCursorId(null);
-      return;
-    }
-    const ids = planList.map((c) => c.id);
-    if (planCursorId === null || !ids.includes(planCursorId)) setPlanCursorId(ids[0] ?? null);
-  }, [planActive, planList, planCursorId]);
 
   // ── Habits ────────────────────────────────────────────────────────
   // Its own list, cursor and keys: nothing here is a task, so none of the
@@ -981,7 +811,7 @@ export function App() {
   // so ↑/↓ keep the column — checking a week of backfill down a list is fast.
   const [habitDayOffset, setHabitDayOffset] = useState(0);
   const [habitEditing, setHabitEditing] = useState<HabitEditing | null>(null);
-  const habitsActive = view === "habits" && !reckoningActive && !shutdownActive && !planActive;
+  const habitsActive = view === "habits" && !reviewActive;
   // The order the view shows them in: habits, then KPIs, then the archive.
   const habitList = useMemo(
     () => [
@@ -1068,7 +898,7 @@ export function App() {
   // ── Trash ─────────────────────────────────────────────────────────
   // A cursor of its own, like Habits: deleted tasks aren't outline rows, so the
   // outline's selection can't point at them.
-  const trashActive = view === "trash" && !reckoningActive && !shutdownActive && !planActive;
+  const trashActive = view === "trash" && !reviewActive;
   const [trashCursorId, setTrashCursorId] = useState<TaskId | null>(null);
   // Where the cursor last stood, so restoring or deleting a row leaves it on the
   // row that slid into its place instead of jumping back to the top.
@@ -1211,12 +1041,6 @@ export function App() {
   useEffect(() => {
     if (zoom != null && zoomFocus == null) setZoom(null);
   }, [zoom, zoomFocus]);
-  // Closing the day closes the clock: the timer pauses when Shutdown opens,
-  // and the task stays in progress for tomorrow (s picks it back up).
-  const workRunning = activeCurrentTask != null && isRunning(activeCurrentTask);
-  useEffect(() => {
-    if (shutdownActive && workRunning) pauseWorkAt(Date.now());
-  }, [shutdownActive, workRunning]);
   // Time nobody was there for — the Mac asleep or locked, the app quit — comes
   // off the clock: the running session closes where that began, paused.
   useWorkAwake(loaded, state.tasks, pauseWorkAt);
@@ -1456,9 +1280,9 @@ export function App() {
   };
 
   /**
-   * The same choice, applied as a *postponement* — the Reckoning's `s` and the
-   * board's "push to later". These tasks already came due and didn't get done, so
-   * the move is counted (postponedCount) and logged, unlike ordinary rescheduling.
+   * The same choice, applied as a *postponement* — the task review's `s` on a
+   * task that came due (overdue, or today's) and didn't get done, so the move is
+   * counted (postponedCount) and logged, unlike rescheduling work never due.
    *
    * Picking "Today" here is not a postponement at all: it's the same
    * re-commitment `t` makes, so it routes to the carry counter instead. Otherwise
@@ -1468,8 +1292,8 @@ export function App() {
   const applyPostponeTo = (ids: TaskId[], choice: ScheduleChoice) => {
     if (ids.length === 0) return;
     const target = scheduleFieldsFor(choice);
-    if (target.plannedFor === today) keepManyForToday(ids, reckReason || null);
-    else postponeManyTo(ids, target, reckReason || null);
+    if (target.plannedFor === today) keepManyForToday(ids, reviewReason || null);
+    else postponeManyTo(ids, target, reviewReason || null);
   };
 
   // Deliberate schedule sets (picker, palette, panel) on a task with subtasks
@@ -1561,9 +1385,9 @@ export function App() {
     postponeReq != null
       ? postponeReq.ids.filter((id) => findById(state.tasks, id) != null)
       : actionTargets();
-  const openPostponePicker = (ids: TaskId[], card: ReckoningCard | null = null) => {
+  const openPostponePicker = (ids: TaskId[], counted: boolean) => {
     if (ids.length === 0) return;
-    setPostponeReq({ ids, card });
+    setPostponeReq({ ids, counted });
     setShowSchedule(true);
   };
 
@@ -1588,66 +1412,16 @@ export function App() {
   };
 
   // ── Commands ──────────────────────────────────────────────────────
-  const moveReckCursor = (dir: "up" | "down") => {
-    const ids = leftovers.map((t) => t.id);
-    if (ids.length === 0) return;
-    const i = reckCursorId == null ? -1 : ids.indexOf(reckCursorId);
-    const next = i < 0 ? 0 : Math.min(Math.max(i + (dir === "down" ? 1 : -1), 0), ids.length - 1);
-    setReckCursorId(ids[next]);
-  };
-
-  // Resolving a leftover removes it; land the cursor on the next remaining one
-  // (or the previous, if it was last) so the review flows forward on its own.
-  const advanceReckCursorPast = (resolvedId: TaskId) => {
-    const ids = leftovers.map((t) => t.id);
-    const i = ids.indexOf(resolvedId);
-    if (i === -1) return;
-    setReckCursorId(ids[i + 1] ?? ids[i - 1] ?? null);
-  };
-  const advanceReckCursorPastCard = (card: ReckoningCard) => {
-    const idx = reckCards.findIndex((c) => c.root.id === card.root.id);
-    const nextCard = reckCards[idx + 1] ?? reckCards[idx - 1] ?? null;
-    setReckCursorId(nextCard?.leaves[0]?.task.id ?? null);
-  };
-  const movePlanCursor = (dir: "up" | "down") => {
-    const ids = planList.map((c) => c.id);
-    if (ids.length === 0) return;
-    const i = planCursorId == null ? -1 : ids.indexOf(planCursorId);
-    const next = i < 0 ? 0 : Math.min(Math.max(i + (dir === "down" ? 1 : -1), 0), ids.length - 1);
-    setPlanCursorId(ids[next]);
-  };
-  const advancePlanCursorPast = (id: TaskId) => {
-    const ids = planList.map((c) => c.id);
-    const i = ids.indexOf(id);
-    if (i === -1) return;
-    setPlanCursorId(ids[i + 1] ?? ids[i - 1] ?? null);
-  };
-  const moveShutCursor = (dir: "up" | "down") => {
-    if (shutRows.length === 0) return;
-    const i = shutRows.findIndex((r) => r.id === shutCursorId);
-    const next = i < 0 ? 0 : Math.min(Math.max(i + (dir === "down" ? 1 : -1), 0), shutRows.length - 1);
-    setShutCursorId(shutRows[next]?.id ?? null);
-  };
-
-  const currentReckCard = (): ReckoningCard | null =>
-    reckCards.find((c) => c.leaves.some((l) => l.task.id === reckCursorId)) ??
-    reckCards[0] ??
-    null;
-  const moveReckCard = (dir: "prev" | "next") => {
-    if (reckCards.length === 0) return;
-    const idx = Math.max(
-      0,
-      reckCards.findIndex((c) => c.leaves.some((l) => l.task.id === reckCursorId))
-    );
-    const target = dir === "next" ? reckCards[idx + 1] : reckCards[idx - 1];
-    if (target != null) setReckCursorId(target.leaves[0]?.task.id ?? null);
+  const moveReviewCursor = (dir: "up" | "down") => {
+    if (reviewRows.length === 0) return;
+    const i = reviewRows.findIndex((r) => r.id === reviewCursorId);
+    const next = i < 0 ? 0 : Math.min(Math.max(i + (dir === "down" ? 1 : -1), 0), reviewRows.length - 1);
+    setReviewCursorId(reviewRows[next]?.id ?? null);
   };
 
   const cmd = {
     cursorDown: () => {
-      if (reckoningActive) return moveReckCursor("down");
-      if (shutdownActive) return moveShutCursor("down");
-      if (planActive) return movePlanCursor("down");
+      if (reviewActive) return moveReviewCursor("down");
       if (
         view !== "projects" &&
         focusedProjectId != null &&
@@ -1666,9 +1440,7 @@ export function App() {
       setSelection((s) => moveSelection(s, flatIds, "down", false));
     },
     cursorUp: () => {
-      if (reckoningActive) return moveReckCursor("up");
-      if (shutdownActive) return moveShutCursor("up");
-      if (planActive) return movePlanCursor("up");
+      if (reviewActive) return moveReviewCursor("up");
       const i = focusedId == null ? -1 : flatIds.indexOf(focusedId);
       if (i <= 0) {
         captureRef.current?.focus(); // at the top → jump up to the capture bar
@@ -1837,7 +1609,7 @@ export function App() {
       }
       // With the detail panel open (preview), Tab dives into the notes editor
       // instead of indenting — focus leaves the list and lands in the panel.
-      if (showPanel && focusedTaskId != null && !reckoningActive && view !== "trash") {
+      if (showPanel && focusedTaskId != null && !reviewActive && view !== "trash") {
         setEditNotesSignal((n) => n + 1);
         return;
       }
@@ -2027,9 +1799,8 @@ export function App() {
       else if (showCalendar) {
         setShowCalendar(false);
         setCalendarTargetId(null);
-      } else if (breakingDownId != null && shutdownActive) setBreakingDownId(null);
-      else if (shutdownOpen) setShutdownOpen(false);
-      else if (planOpen) setPlanOpen(false);
+      } else if (breakingDownId != null) setBreakingDownId(null);
+      else if (reviewOpen) setReviewOpen(false);
       else if (waitingEditId != null) setWaitingEditId(null);
       else if (reasonEditId != null) setReasonEditId(null);
       else if (editingProjectId != null) setEditingProjectId(null);
@@ -2044,215 +1815,95 @@ export function App() {
         if (prevRootId != null) setFocus(prevRootId);
       }
     },
-    reckComplete: (id?: TaskId) => {
-      const target = id ?? reckCursorId;
+    // ── Task review ───────────────────────────────────────────────
+    // One set of verbs on every row. On a task that came due (overdue, or
+    // today's) a move is a deferral and is counted on the task; on the week's
+    // undated work it's a fresh commitment or plain rescheduling.
+    reviewOpen: () => setReviewOpen(true),
+    reviewComplete: (id?: TaskId) => {
+      const target = id ?? reviewCursorId;
       if (target == null) return;
-      advanceReckCursorPast(target);
-      setCompleted(target, true, reckReason || null);
+      advanceReviewPast(target);
+      setCompleted(target, true, reviewReason || null);
     },
-    // Keeping a task for today is legitimate — until it becomes the answer every
-    // day. Past the threshold the gate interrupts with the honest alternative as
-    // the *default* (Enter breaks it down) and the keep one deliberate key away.
-    // Never a block: a gate you can't pass just moves the dodge out of sight.
-    reckKeep: (id?: TaskId) => {
-      const target = id ?? reckCursorId;
-      if (target == null) return;
+    // Keeping an overdue task for today is legitimate — until it becomes the
+    // answer every day. Past the threshold the review offers the honest
+    // alternative as the *default* (Enter breaks it down), the keep one
+    // deliberate key away.
+    reviewToday: (id?: TaskId) => {
+      const target = id ?? reviewCursorId;
+      const row = reviewRows.find((r) => r.id === target);
+      if (target == null || row == null || row.section === "today") return;
+      if (row.section === "week") {
+        advanceReviewPast(target);
+        setPlannedForMany([target], today);
+        return;
+      }
       const doKeep = () => {
-        advanceReckCursorPast(target);
-        keepManyForToday([target], reckReason || null);
+        advanceReviewPast(target);
+        keepManyForToday([target], reviewReason || null);
       };
-      const t = findById(state.tasks, target);
-      if (t == null || !willPromptOnKeep(t)) return doKeep();
+      if (!willPromptOnKeep(row.task)) return doKeep();
       setConfirm({
-        title: `Kept for today ${t.carriedCount} times already`,
+        title: `Kept for today ${row.task.carriedCount} times already`,
         body: "Re-committing to it unchanged hasn't worked yet. Break it into the smallest piece you'd actually finish today.",
         confirmLabel: "Break it down",
         cancelLabel: "Keep it anyway",
         tone: "neutral",
-        onConfirm: () => cmd.reckBreakdown(target),
+        onConfirm: () => setBreakingDownId(target),
         onCancel: doKeep,
       });
     },
-    // `s` no longer drops the task into an undated void — it opens the picker, so
-    // a postponement has to name a day. Past the threshold it first asks whether
-    // this is ever happening, with "won't do" as the default answer (reversible,
-    // and a decision either way beats a fifth silent deferral).
-    reckPostpone: (id?: TaskId) => {
-      const target = id ?? reckCursorId;
-      if (target == null) return;
-      const t = findById(state.tasks, target);
-      if (t == null || !willPromptOnPostpone(t)) return openPostponePicker([target]);
+    reviewTomorrow: (id?: TaskId) => {
+      const target = id ?? reviewCursorId;
+      const row = reviewRows.find((r) => r.id === target);
+      if (target == null || row == null) return;
+      advanceReviewPast(target);
+      if (row.section === "week") setPlannedForMany([target], tomorrow);
+      else carryManyTo([target], tomorrow, reviewReason || null);
+    },
+    // `s` opens the picker, so a postponement has to name a day. Past the
+    // threshold it first asks whether this is ever happening, with "won't do"
+    // as the default answer (reversible, and a decision either way beats a
+    // fifth silent deferral).
+    reviewPostpone: (id?: TaskId) => {
+      const target = id ?? reviewCursorId;
+      const row = reviewRows.find((r) => r.id === target);
+      if (target == null || row == null) return;
+      const counted = row.section !== "week";
+      if (!counted || !willPromptOnPostpone(row.task)) return openPostponePicker([target], counted);
       setConfirm({
-        title: `Postponed ${t.postponedCount} times already`,
+        title: `Postponed ${row.task.postponedCount} times already`,
         body: "Pushing the date again is a decision too. If it isn't going to happen, saying so is the honest version — you can always reopen it.",
         confirmLabel: "Won’t do",
         cancelLabel: "Postpone anyway",
         tone: "neutral",
         onConfirm: () => {
-          advanceReckCursorPast(target);
-          markWontDo(target, reckReason || null);
+          advanceReviewPast(target);
+          markWontDo(target, reviewReason || null);
         },
-        onCancel: () => openPostponePicker([target]),
+        onCancel: () => openPostponePicker([target], counted),
       });
     },
-    reckDrop: (id?: TaskId) => {
-      const target = id ?? reckCursorId;
+    reviewWontDo: (id?: TaskId) => {
+      const target = id ?? reviewCursorId;
       if (target == null) return;
-      advanceReckCursorPast(target);
-      trashTask(target, { reason: reckReason || null, log: true });
+      advanceReviewPast(target);
+      markWontDo(target, reviewReason || null);
     },
-    reckBreakdown: (id?: TaskId) => {
-      const target = id ?? reckCursorId;
+    reviewDrop: (id?: TaskId) => {
+      const target = id ?? reviewCursorId;
+      if (target == null) return;
+      advanceReviewPast(target);
+      trashTask(target, { reason: reviewReason || null, log: true });
+    },
+    // Also reachable from the list (⌘k → "Break it down…"): the same panel.
+    breakDown: (id?: TaskId) => {
+      const target = id ?? (reviewActive ? reviewCursorId : focusedTaskId);
       if (target != null) setBreakingDownId(target);
     },
-    reckPostponeAll: (card: ReckoningCard) => {
-      openPostponePicker(card.leaves.map((l) => l.task.id), card);
-    },
-
-    // ── Shutdown ──────────────────────────────────────────────────
-    // Same verbs as the gate, pointed at tomorrow instead of today. `t` carries
-    // (and bumps the same carry counter — the task really has been promised
-    // twice, whichever hour you admit it); `w` declines, which the Reckoning
-    // never had an explicit key for and which is now how most days end.
-    planOpen: () => {
-      if (reckoningActive) return; // clear yesterday before choosing today
-      setPlanOpen(true);
-    },
-    planAccept: (c?: PlanCandidate) => {
-      const target = c ?? planList.find((x) => x.id === planCursorId) ?? null;
-      if (target == null) return;
-      advancePlanCursorPast(target.id);
-      // A fresh commitment, not a carry: this work was never due, so nothing is
-      // being dodged and no counter moves.
-      if (target.recurrence != null) acceptRecurrence(target.recurrence.id, today);
-      else setPlannedForMany([target.id], today);
-    },
-    planPush: (c?: PlanCandidate) => {
-      const target = c ?? planList.find((x) => x.id === planCursorId) ?? null;
-      if (target == null || target.recurrence != null) return; // a rule isn't rescheduled here
-      setFocus(target.id);
-      setShowSchedule(true);
-    },
-    shutOpen: () => {
-      if (reckoningActive) return; // clear yesterday before closing tonight
-      setShutdownOpen(true);
-    },
-    shutComplete: (id?: TaskId) => {
-      const target = id ?? shutTaskId;
-      if (target == null) return;
-      advanceShutCursorPast(target);
-      setCompleted(target, true, reckReason || null);
-    },
-    shutCarry: (id?: TaskId) => {
-      const target = id ?? shutTaskId;
-      if (target == null) return;
-      advanceShutCursorPast(target);
-      carryManyTo([target], tomorrow, reckReason || null);
-    },
-    shutPostpone: (id?: TaskId) => {
-      const target = id ?? shutTaskId;
-      if (target == null) return;
-      openPostponePicker([target]);
-    },
-    shutWontDo: (id?: TaskId) => {
-      const target = id ?? shutTaskId;
-      if (target == null) return;
-      advanceShutCursorPast(target);
-      markWontDo(target, reckReason || null);
-    },
-    shutDrop: (id?: TaskId) => {
-      const target = id ?? shutTaskId;
-      if (target == null) return;
-      advanceShutCursorPast(target);
-      trashTask(target, { reason: reckReason || null, log: true });
-    },
-    shutBreakdown: (id?: TaskId) => {
-      const target = id ?? shutTaskId;
-      if (target != null) setBreakingDownId(target);
-    },
-    shutCarryAll: () => {
-      // Everything still waiting — not what you've said you'll do later today.
-      const ids = todayOpenLeaves.map((t) => t.id).filter((tid) => !shutLater.has(tid));
-      if (ids.length === 0) return;
-      setShutCursorId(null);
-      carryManyTo(ids, tomorrow, reckReason || null);
-    },
-    reckDropAll: (card: ReckoningCard) => {
-      advanceReckCursorPastCard(card);
-      dropManyWithLog(card.leaves.map((l) => l.task.id), reckReason || null);
-    },
   };
 
-  // ── Planning board (the reckoning's board skin) ───────────────────
-  // The board is a two-way triage: `→` pulls a leftover into today, `←` sends a
-  // today task back to the leftovers, and `Tab` switches columns. The shared
-  // verbs (later / done / drop / estimate) act on whichever column is active.
-  const boardActiveId = (): TaskId | null =>
-    boardColumn === "left" ? reckCursorId : todayCursorId;
-  // Move the cursor forward past a just-resolved task, in whichever column it sat.
-  const advanceBoardCursorPast = (id: TaskId) => {
-    if (leftovers.some((t) => t.id === id)) {
-      advanceReckCursorPast(id);
-    } else {
-      const ids = todayOpenLeaves.map((t) => t.id);
-      const i = ids.indexOf(id);
-      setTodayCursorId(ids[i + 1] ?? ids[i - 1] ?? null);
-    }
-  };
-  const boardPull = (id: TaskId) => {
-    advanceBoardCursorPast(id);
-    keepManyForToday([id], reckReason || null); // → today (bumps carried, logs "kept")
-  };
-  const boardSendBack = (id: TaskId) => {
-    advanceBoardCursorPast(id);
-    // Back to the leftovers pile: a day overdue is enough to make it a leftover
-    // again (its exact past date is already water under the bridge).
-    setPlannedForMany([id], addDays(today, -1));
-  };
-  const boardComplete = (id: TaskId) => {
-    advanceBoardCursorPast(id);
-    setCompleted(id, true, reckReason || null);
-  };
-  const boardDrop = (id: TaskId) => {
-    advanceBoardCursorPast(id);
-    trashTask(id, { reason: reckReason || null, log: true });
-  };
-  // The board's "push to later" is a postponement like the card review's `s` —
-  // same picker, same counter. (Both columns qualify: a today task pushed away
-  // is still a commitment being deferred.)
-  const boardPushToLater = (id: TaskId) => openPostponePicker([id]);
-  const boardSetEstimate = (id: TaskId, blocks: number) =>
-    setEstimatedMinutesMany([id], minutesFromBlocks(blocks));
-
-  const moveBoardCursor = (dir: "up" | "down") => {
-    if (boardColumn === "left") return moveReckCursor(dir);
-    const ids = todayOpenLeaves.map((t) => t.id);
-    if (ids.length === 0) return;
-    const i = todayCursorId == null ? -1 : ids.indexOf(todayCursorId);
-    const next = i < 0 ? 0 : Math.min(Math.max(i + (dir === "down" ? 1 : -1), 0), ids.length - 1);
-    setTodayCursorId(ids[next]);
-  };
-  const switchBoardColumn = () => {
-    if (boardColumn === "left") {
-      if (todayOpenLeaves.length === 0) return; // nothing to switch to
-      if (todayCursorId == null || !todayOpenLeaves.some((t) => t.id === todayCursorId)) {
-        setTodayCursorId(todayOpenLeaves[0].id);
-      }
-      setBoardColumn("right");
-    } else {
-      if (leftovers.length === 0) return;
-      setBoardColumn("left");
-    }
-  };
-  // Keyboard verbs act on the active column's cursor (mouse chips pass a row id).
-  const boardKey = (fn: (id: TaskId) => void) => () => {
-    const id = boardActiveId();
-    if (id != null) fn(id);
-  };
-  const setCursorEstimateBlocks = (blocks: number) => {
-    const id = boardActiveId();
-    if (id != null) boardSetEstimate(id, blocks);
-  };
   const openEstimatePicker = () => {
     if (actionTargets().length > 0) setShowEstimate(true);
   };
@@ -2351,7 +2002,7 @@ export function App() {
   // The views the filter has rows to narrow. Habits and Trash have none of its
   // kind; the rituals own the screen.
   const filterable =
-    !reckoningActive && !shutdownActive && !planActive && view !== "habits" && view !== "trash";
+    !reviewActive && view !== "habits" && view !== "trash";
   const openFilter = () => {
     if (!filterable) return openSearch(); // nothing here to narrow: find instead
     if (viewFilter == null) setViewFilter("");
@@ -2381,7 +2032,7 @@ export function App() {
     // Only from a settled outline: the rituals own the screen, and a jump would
     // land in a view they'd immediately paint over. (In "normal" none of these
     // hold; the guard is for the ⌘⇧f-while-editing binding.)
-    if (reckoningActive || shutdownActive || planActive) return;
+    if (reviewActive) return;
     setShowSearch(true);
   };
   // Jump to any task from the finder: leave focus mode, show it in All (which
@@ -2425,10 +2076,7 @@ export function App() {
     // The habit log panel and the backup list are modal like a confirm:
     // nothing fires beneath them.
     showConfirm: confirm != null || habitLogDate != null || backupList != null,
-    reckoningActive,
-    boardMode,
-    shutdownActive,
-    planActive,
+    reviewActive,
     habitsActive,
     trashActive,
   };
@@ -2517,63 +2165,17 @@ export function App() {
     "dismiss": cmd.dismiss,
     // Arg-less wrappers: the keyboard engine calls handlers with the dispatch
     // state, so these must ignore it and act on the cursor (not a stray object).
-    "reck.complete": () => cmd.reckComplete(),
-    "reck.keep": () => cmd.reckKeep(),
-    "reck.breakdown": () => cmd.reckBreakdown(),
-    "reck.postpone": () => cmd.reckPostpone(),
-    "reck.drop": () => cmd.reckDrop(),
-    "reck.nextCard": () => moveReckCard("next"),
-    "reck.prevCard": () => moveReckCard("prev"),
-    "reck.postponeAll": () => {
-      const c = currentReckCard();
-      if (c != null) cmd.reckPostponeAll(c);
+    "review.complete": () => cmd.reviewComplete(),
+    "review.today": () => cmd.reviewToday(),
+    "review.tomorrow": () => cmd.reviewTomorrow(),
+    "review.postpone": () => cmd.reviewPostpone(),
+    "review.wontDo": () => cmd.reviewWontDo(),
+    "review.drop": () => cmd.reviewDrop(),
+    "review.breakdown": () => cmd.breakDown(),
+    "review.later": () => toggleReviewLater(reviewCursorId),
+    "review.reason": () => {
+      if (reviewCursorId != null) setReviewReasonTick((n) => n + 1);
     },
-    "plan.accept": () => cmd.planAccept(),
-    "plan.push": () => cmd.planPush(),
-    "shut.complete": () => cmd.shutComplete(),
-    "shut.carry": () => cmd.shutCarry(),
-    "shut.postpone": () => cmd.shutPostpone(),
-    "shut.wontDo": () => cmd.shutWontDo(),
-    "shut.drop": () => cmd.shutDrop(),
-    "shut.breakdown": () => cmd.shutBreakdown(),
-    "shut.carryAll": cmd.shutCarryAll,
-    "shut.habitDone": () => answerShutHabit(shutHabitId, "done"),
-    "shut.habitRest": () => answerShutHabit(shutHabitId, "skip"),
-    "shut.habitNo": () => answerShutHabit(shutHabitId, "missed"),
-    "shut.later": () => toggleShutLater(shutCursorId),
-    "shut.reason": () => {
-      if (shutTaskId != null) setShutReasonTick((n) => n + 1);
-    },
-    "reck.dropAll": () => {
-      const c = currentReckCard();
-      if (c != null) cmd.reckDropAll(c);
-    },
-    // Planning board (context "board").
-    "board.toggle": () => setBoardPreferred(!boardMode),
-    "board.cursorDown": () => moveBoardCursor("down"),
-    "board.cursorUp": () => moveBoardCursor("up"),
-    "board.switchColumn": switchBoardColumn,
-    "board.pull": () => {
-      if (boardColumn === "left" && reckCursorId != null) boardPull(reckCursorId);
-    },
-    "board.sendBack": () => {
-      if (boardColumn === "right" && todayCursorId != null) boardSendBack(todayCursorId);
-    },
-    "board.push": boardKey(boardPushToLater),
-    "board.complete": boardKey(boardComplete),
-    "board.breakdown": () => {
-      if (boardColumn === "left") cmd.reckBreakdown(); // breakdown is a leftovers action
-    },
-    "board.drop": boardKey(boardDrop),
-    "board.estimate1": () => setCursorEstimateBlocks(1),
-    "board.estimate2": () => setCursorEstimateBlocks(2),
-    "board.estimate3": () => setCursorEstimateBlocks(3),
-    "board.estimate4": () => setCursorEstimateBlocks(4),
-    "board.estimate5": () => setCursorEstimateBlocks(5),
-    "board.estimate6": () => setCursorEstimateBlocks(6),
-    "board.estimate7": () => setCursorEstimateBlocks(7),
-    "board.estimate8": () => setCursorEstimateBlocks(8),
-    "board.estimateClear": () => setCursorEstimateBlocks(0),
   };
   useKeyboard(keymap, actionMap, dispatchState);
 
@@ -2837,17 +2439,6 @@ export function App() {
     }
     if (p.completed) setCompleted(id, true);
     setFocus(id);
-  };
-
-  // Capture during the Reckoning: the gate must never block the front door. A
-  // dump lands in the Inbox project planned for today (the user's choice — new
-  // tasks are for today), and since it's not planned *before* today it never
-  // joins the leftovers, so the pile to clear can't grow. Cursor stays put.
-  const onReckCapture = (raw: string) => {
-    const p = parseCapture(raw);
-    if (p.text === "") return;
-    const id = addTaskAtProjectStart(DEFAULT_PROJECT_ID, p.text, today);
-    if (p.completed) setCompleted(id, true);
   };
 
   // Breadcrumb navigation: null exits zoom; a project row / task id re-roots.
@@ -3363,10 +2954,13 @@ export function App() {
       run: () => copyView(true),
     },
     {
-      id: "plan",
-      label: "Plan the day…",
-      aliases: ["plan", "plan today", "morning", "commit", "start the day"],
-      run: cmd.planOpen,
+      id: "task-review",
+      label: "Review tasks…",
+      aliases: [
+        "review", "task review", "triage", "plan", "plan the day", "morning", "shutdown",
+        "close the day", "end of day", "overdue", "leftovers", "what stays",
+      ],
+      run: cmd.reviewOpen,
     },
     {
       id: "look-back",
@@ -3374,12 +2968,14 @@ export function App() {
       aliases: ["look back", "week", "weekly", "digest", "reasons", "why", "stats", "report"],
       run: () => setShowLookBack(true),
     },
-    {
-      id: "shutdown",
-      label: "Close the day (shutdown)…",
-      aliases: ["shutdown", "start shutdown", "close the day", "end of day", "evening", "wrap up", "eod"],
-      run: cmd.shutOpen,
-    },
+    ...(focusedTask != null && !reviewActive && view !== "trash"
+      ? [{
+          id: "break-down",
+          label: "Break it down…",
+          aliases: ["break down", "breakdown", "split", "smaller", "steps", "subtasks"],
+          run: () => cmd.breakDown(focusedTask.id),
+        }]
+      : []),
     { id: "zoom", label: "Zoom in / focus", hint: "⌥↵", run: cmd.zoomIn },
     {
       id: "waiting",
@@ -3552,7 +3148,7 @@ export function App() {
 
   const panelTaskLog =
     focusedTask != null ? state.log.filter((l) => l.taskId === focusedTask.id) : [];
-  const panelOpen = showPanel && focusedTask != null && !reckoningActive && view !== "trash";
+  const panelOpen = showPanel && focusedTask != null && !reviewActive && view !== "trash";
 
   return (
     <div className="relative flex h-full overflow-hidden bg-bg text-ink" spellCheck={false}>
@@ -3564,7 +3160,7 @@ export function App() {
         backlog={backlog}
         projectCount={state.projects.length}
         recurring={state.recurrences.length}
-        habitsPending={habitsPending}
+        habitsPending={habitsLeftToday.length}
         trash={state.trash.length}
         onSelect={setView}
         onOpenHelp={() => setShowHelp(true)}
@@ -3638,129 +3234,47 @@ export function App() {
               />
             )}
             <div className="min-h-0 flex-1">
-            {reckoningActive ? (
-              boardMode && breakdownTask == null ? (
-                <ReckoningBoard
-                  leftovers={boardLeftovers}
-                  todayOpen={todayOpenLeaves}
-                  capacity={capacity}
-                  column={boardColumn}
-                  cursorId={reckCursorId}
-                  todayCursorId={todayCursorId}
-                  today={today}
-                  projects={state.projects}
-                  onSelect={(id) => {
-                    setBoardColumn("left");
-                    setReckCursorId(id);
-                  }}
-                  onSelectToday={(id) => {
-                    setBoardColumn("right");
-                    setTodayCursorId(id);
-                  }}
-                  onPull={boardPull}
-                  onSendBack={boardSendBack}
-                  onPush={boardPushToLater}
-                  onComplete={boardComplete}
-                  onDrop={boardDrop}
-                  onSetEstimate={boardSetEstimate}
-                  onCapacityDelta={(d) => setDailyCapacityBlocks(state.dailyCapacityBlocks + d)}
-                  onSwitchToCards={() => setBoardPreferred(false)}
-                  lapse={lapseOffered ? { daysAway, onCatchUp: catchUp } : null}
-                  captureRef={captureRef}
-                  onCapture={onReckCapture}
-                  onCaptureArrowDown={() => {
-                    if (reckCursorId == null && leftovers[0] != null) {
-                      setReckCursorId(leftovers[0].id);
-                    }
+            {breakdownTask != null ? (
+              <div className="mx-auto flex h-full w-full page-width flex-col px-10 py-10">
+                <BreakdownPanel
+                  task={breakdownTask}
+                  stepDate={today}
+                  when="today"
+                  onAddStep={(text) => addChild(breakdownTask.id, parseCapture(text).text, today)}
+                  onFinish={() => {
+                    // Only a breakdown that produced a step is one; esc on an
+                    // empty panel just backs out.
+                    if (breakdownTask.children.some((c) => c.plannedFor === today)) logBreakdown(breakdownTask.id);
+                    setBreakingDownId(null);
                   }}
                 />
-              ) : (
-              <ReckoningView
-                cards={reckCards}
-                cursorId={reckCursorId}
+              </div>
+            ) : reviewActive ? (
+              <TaskReviewView
+                rows={reviewRows}
+                cursorId={reviewCursorId}
+                later={reviewLater}
                 today={today}
-                projects={state.projects}
-                breakdownTask={breakdownTask}
-                reason={reckReason}
-                onReasonChange={setReckReason}
-                onSelect={setReckCursorId}
-                onComplete={cmd.reckComplete}
-                onKeep={cmd.reckKeep}
-                onPostpone={cmd.reckPostpone}
-                onDrop={cmd.reckDrop}
-                onStartBreakdown={cmd.reckBreakdown}
-                onPostponeAll={cmd.reckPostponeAll}
-                onDropAll={cmd.reckDropAll}
-                onPrevCard={() => moveReckCard("prev")}
-                onNextCard={() => moveReckCard("next")}
-                onAddStep={(parentId, text) => addChild(parentId, parseCapture(text).text, today)}
-                onFinishBreakdown={() => {
-                  if (breakingDownId != null) logBreakdown(breakingDownId);
-                  setBreakingDownId(null);
-                }}
-                onSwitchToBoard={() => setBoardPreferred(true)}
-                lapse={lapseOffered ? { daysAway, onCatchUp: catchUp } : null}
-                captureRef={captureRef}
-                onCapture={onReckCapture}
-                onCaptureArrowDown={() => {
-                  if (reckCursorId == null && leftovers[0] != null) {
-                    setReckCursorId(leftovers[0].id);
-                  }
-                }}
-              />
-              )
-            ) : planActive ? (
-              <PlanView
-                candidates={planList}
-                cursorId={planCursorId}
-                committed={tally.open}
-                capacity={capacity}
-                projects={state.projects}
-                onSelect={setPlanCursorId}
-                onAccept={cmd.planAccept}
-                onPush={cmd.planPush}
-                onDone={() => setPlanOpen(false)}
-              />
-            ) : shutdownActive ? (
-              <ShutdownView
-                rows={shutRows}
-                cursorId={shutCursorId}
-                later={shutLater}
-                today={today}
-                shutdownAt={shutdownTimeOn(state.presence, today)}
                 contextOf={(id) => {
                   const path = getAncestorPath(state.tasks, id).slice(0, -1).map((t) => t.text || "Untitled");
                   const task = findById(state.tasks, id);
                   const project = state.projects.find((p) => p.id === task?.projectId) ?? null;
                   return { project, path };
                 }}
-                tally={tally}
-                tomorrowCount={tomorrowCount}
-                breakdownTask={shutdownBreakdownTask}
-                tomorrow={tomorrow}
-                reason={reckReason}
-                reasonTick={shutReasonTick}
-                onReasonChange={setReckReason}
-                onSelect={setShutCursorId}
-                onComplete={cmd.shutComplete}
-                onCarry={cmd.shutCarry}
-                onPostpone={cmd.shutPostpone}
-                onWontDo={cmd.shutWontDo}
-                onDrop={cmd.shutDrop}
-                onStartBreakdown={cmd.shutBreakdown}
-                onCarryAll={cmd.shutCarryAll}
-                onLater={toggleShutLater}
-                onHabitAnswer={answerShutHabit}
-                onKpiValue={logShutKpi}
-                onMove={(dir) => moveShutCursor(dir === 1 ? "down" : "up")}
-                onAddStep={(parentId, text) =>
-                  addChild(parentId, parseCapture(text).text, tomorrow)
-                }
-                onFinishBreakdown={() => {
-                  if (breakingDownId != null) logBreakdown(breakingDownId);
-                  setBreakingDownId(null);
-                }}
-                onExit={() => setShutdownOpen(false)}
+                catchUp={lapseOffered ? { count: leftovers.length, onCatchUp: catchUp } : null}
+                reason={reviewReason}
+                reasonTick={reviewReasonTick}
+                onReasonChange={setReviewReason}
+                onSelect={setReviewCursorId}
+                onComplete={cmd.reviewComplete}
+                onToday={cmd.reviewToday}
+                onTomorrow={cmd.reviewTomorrow}
+                onPostpone={cmd.reviewPostpone}
+                onWontDo={cmd.reviewWontDo}
+                onDrop={cmd.reviewDrop}
+                onStartBreakdown={cmd.breakDown}
+                onLater={toggleReviewLater}
+                onExit={() => setReviewOpen(false)}
               />
             ) : view === "habits" ? (
               <HabitsView
@@ -3874,10 +3388,7 @@ export function App() {
                   progress={progress}
                   run={run}
                   capacity={capacity}
-                  closingTime={closingTime}
-                  onShutdown={cmd.shutOpen}
-                  closingAt={shutdownTimeOn(state.presence, today)}
-                  habitPrompt={habitPrompt}
+                  overdue={leftovers.length > 0 ? { count: leftovers.length, onReview: cmd.reviewOpen } : null}
                   habitStrip={{
                     habits: habitsTodayList,
                     today,
@@ -3924,12 +3435,9 @@ export function App() {
           )}
         </div>
         <StatusBar
-          reckoning={reckoningActive}
-          board={boardMode && breakdownTask == null}
-          shutdown={shutdownActive}
+          review={reviewActive}
           habits={habitsActive}
           view={view === "trash" ? "trash" : view === "projects" && zoomFocus == null ? "projects" : null}
-          shutdownHabits={shutRow?.kind === "habit"}
         />
       </main>
 
@@ -3965,7 +3473,7 @@ export function App() {
           onResetRanking={resetCommandRanking}
           onClose={() => setShowPalette(false)}
           subject={
-            reckoningActive || shutdownActive || habitsActive
+            reviewActive || habitsActive
               ? undefined
               : selection.selectedIds.length > 1
                 ? `${selection.selectedIds.length} selected`
@@ -3991,13 +3499,13 @@ export function App() {
           verb={postponeReq != null ? "Postpone" : "Schedule"}
           onPick={(choice) => {
             if (postponeReq == null) return applySchedule(choice);
-            // A postponement: move the cursor forward first (past the whole card
-            // for a group postpone, else past the one task) so the triage keeps
-            // flowing, then apply — counted and logged, unlike plain scheduling.
-            const { ids, card } = postponeReq;
-            if (card != null) advanceReckCursorPastCard(card);
-            else advanceBoardCursorPast(ids[0]);
-            applyPostponeTo(ids, choice);
+            // From the review: move the cursor forward first so the pass keeps
+            // flowing, then apply — counted and logged on a task that came
+            // due, plain rescheduling on the week's undated work.
+            const { ids, counted } = postponeReq;
+            if (ids[0] != null) advanceReviewPast(ids[0]);
+            if (counted) applyPostponeTo(ids, choice);
+            else applyScheduleTo(ids, choice);
             setPostponeReq(null);
           }}
           onClose={() => {

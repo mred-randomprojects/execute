@@ -790,10 +790,7 @@ export function OutlineView({
   progress,
   run,
   capacity,
-  closingTime,
-  closingAt = null,
-  onShutdown,
-  habitPrompt = null,
+  overdue = null,
   habitStrip = null,
   captureRef,
   onAdd,
@@ -847,13 +844,8 @@ export function OutlineView({
   run: Run;
   /** Today's committed load against the daily budget — drives the over-commit strip. */
   capacity: CapacityLoad;
-  /** Past the evening hour with work still open — offer the shutdown ritual. */
-  closingTime: boolean;
-  /** Today's shutdown time, for the banner. */
-  closingAt?: string | null;
-  onShutdown: () => void;
-  /** Habits left unlogged yesterday — the morning band. Null = nothing to ask. */
-  habitPrompt?: { names: string[]; onOpen: () => void; onDismiss: () => void } | null;
+  /** Work left on an earlier day, still in Today — the banner offers the review. Null = none. */
+  overdue?: { count: number; onReview: () => void } | null;
   /** Today's habits as one-click check-ins under the header (Today tab only). */
   habitStrip?: { habits: Habit[]; today: ISODate; onToggle: (id: HabitId) => void; onOpen: () => void } | null;
   captureRef: RefObject<HTMLInputElement>;
@@ -979,7 +971,7 @@ export function OutlineView({
       )}
 
       {/* Over-commitment, said at the moment it happens rather than discovered
-          by the gate tomorrow morning. The Reckoning is the symptom; planning
+          as an overdue pile tomorrow morning. The pile is the symptom; planning
           more than a day holds is the cause, and this is where the cause is. */}
       {zoom == null && view === "today" && period === "today" && capacity.overBlocks > 0 && (
         <div className="mb-4 flex items-center justify-between gap-3 rounded border border-bad/40 bg-bad-soft px-4 py-2.5">
@@ -998,44 +990,18 @@ export function OutlineView({
         </div>
       )}
 
-      {zoom == null && view === "today" && period === "today" && habitPrompt != null && (
-        // Yesterday's unlogged habits. A band, never a gate: one click (or ⌘k
-        // "Log habits") answers them, × puts it away until tomorrow.
-        <div className="mb-3 flex w-full items-center gap-3 rounded border border-line bg-surface px-3 py-1.5">
-          <button onClick={habitPrompt.onOpen} className="min-w-0 flex-1 truncate text-left text-[12px] text-ink">
-            <span className="font-medium">Yesterday’s habits?</span>{" "}
-            <span className="text-ink-soft">
-              {habitPrompt.names.length === 1 ? "1 not logged" : `${habitPrompt.names.length} not logged`}:{" "}
-              {habitPrompt.names.join(", ")}
-            </span>
-          </button>
-          <button onClick={habitPrompt.onOpen} className="kbd shrink-0" title="Log them">
-            log
-          </button>
-          <button
-            onClick={habitPrompt.onDismiss}
-            aria-label="Not now"
-            title="Not now — leave them unlogged"
-            className="shrink-0 px-1 text-[14px] leading-none text-ink-faint hover:text-ink"
-          >
-            ×
-          </button>
-        </div>
-      )}
-      {/* The in-app twin of the evening notification, for when notifications are
-          off — or there's no desktop shell at all (the web companion). */}
-      {zoom == null && view === "today" && period === "today" && closingTime && (
+      {zoom == null && view === "today" && period === "today" && overdue != null && (
+        // Never a gate: the overdue tasks are right here in the list, marked
+        // with how late they are. The review is just the faster way through.
         <button
-          onClick={onShutdown}
-          className="mb-4 flex w-full items-center justify-between rounded border border-accent/40 bg-accent-soft px-4 py-2.5 text-left transition-colors hover:border-accent/70"
+          onClick={overdue.onReview}
+          className="mb-4 flex w-full items-center justify-between rounded border border-bad/30 bg-bad-soft px-4 py-2 text-left transition-colors hover:border-bad/60"
         >
           <span className="text-[13px] text-ink">
-            <span className="font-medium">Shutdown time{closingAt != null ? ` (${closingAt})` : ""}.</span>{" "}
-            <span className="text-ink-soft">
-              Decide the rest now, while you still remember why.
-            </span>
+            <span className="font-medium">{overdue.count} overdue.</span>{" "}
+            <span className="text-ink-soft">Decide what stays, here or in the task review.</span>
           </span>
-          <span className="kbd shrink-0">start</span>
+          <span className="kbd shrink-0">review</span>
         </button>
       )}
 
@@ -1127,7 +1093,7 @@ export function OutlineView({
         )}
 
         {/* Blocked work, kept in front of you. A task waiting on someone else
-            steps out of the gate and out of the day's maths — but if it also
+            never goes overdue and steps out of the day's maths — but if it also
             stepped off the screen it would be the very zombie this replaces, so
             it trails Today like the other passive groups, oldest wait first. */}
         {zoom == null && view === "today" && waiting.length > 0 && (

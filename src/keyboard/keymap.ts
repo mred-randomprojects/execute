@@ -8,8 +8,8 @@ import type { KeyBinding } from "./types";
 //
 // ── The bare-letter rule ────────────────────────────────────────────
 // A bare letter is only allowed where it CANNOT fire by accident: inside a
-// modal ritual (the Reckoning, Shutdown, Plan, the board) that owns the whole
-// screen and prints the letter on the action chip you're looking at. In the
+// screen that owns the whole view (the task review, the Habits view) and
+// prints the letter on the action chip you're looking at. In the
 // outline — where you're browsing, and a stray keypress lands on a real task —
 // bare letters are reserved for things that don't mutate anything: `n` (new),
 // `p` (peek), the view digits, and the period brackets. Everything else goes
@@ -30,9 +30,9 @@ export const keymap: KeyBinding[] = [
   { key: "Escape", action: "dismiss", context: "global", displayKey: "esc", description: "close / cancel", section: "General" },
   { key: "Meta+z", action: "undo", context: "global", displayKey: "⌘ z", description: "undo", section: "General" },
   { key: "Meta+Z", action: "redo", context: "global", displayKey: "⌘ ⇧ z", description: "redo", section: "General" },
-  { key: "Meta+y", action: "history.toggle", context: ["normal", "habits", "trash", "reckoning", "board"], displayKey: "⌘ y", description: "history — everything you just did", section: "General" },
-  { key: "?", action: "help.toggle", context: ["normal", "habits", "trash", "reckoning", "board"], displayKey: "?", description: "keyboard help", section: "General" },
-  { key: "Meta+k", action: "palette.open", context: ["normal", "habits", "trash", "reckoning", "board", "editing"], displayKey: "⌘ k", description: "command palette — everything lives here", section: "General" },
+  { key: "Meta+y", action: "history.toggle", context: ["normal", "habits", "trash", "review"], displayKey: "⌘ y", description: "history — everything you just did", section: "General" },
+  { key: "?", action: "help.toggle", context: ["normal", "habits", "trash", "review"], displayKey: "?", description: "keyboard help", section: "General" },
+  { key: "Meta+k", action: "palette.open", context: ["normal", "habits", "trash", "review", "editing"], displayKey: "⌘ k", description: "command palette — everything lives here", section: "General" },
   { key: "Meta+f", action: "filter.open", context: ["normal", "habits", "trash", "editing"], displayKey: "⌘ f", description: "filter this view — only the tasks that match (↵ / ↓ into the list, esc clears)", section: "General" },
   { key: "Meta+F", action: "search.open", context: ["normal", "habits", "trash", "editing"], displayKey: "⌘ ⇧ f", description: "find — search all tasks (subsequence: “byml” → “Buy milk”)", section: "General" },
 
@@ -68,7 +68,7 @@ export const keymap: KeyBinding[] = [
   // Bare keys here are non-mutating by design — see the rule at the top.
   { key: "Enter", action: "edit.start", context: "normal", displayKey: "↵", description: "edit task title", section: "Tasks" },
   { key: "n", action: "task.new", context: "normal", displayKey: "n", description: "new task below", section: "Tasks" },
-  { key: "/", action: "capture.focus", context: ["normal", "reckoning", "board"] },
+  { key: "/", action: "capture.focus", context: "normal" },
   { key: "Meta+Enter", action: "task.toggle", context: ["normal", "editing"], displayKey: "⌘ ↵", description: "complete / uncomplete", section: "Tasks" },
   { key: "Tab", action: "task.indent", context: "normal", displayKey: "tab", description: "indent (make subtask) · edit notes when the panel is open", section: "Tasks" },
   { key: "Shift+Tab", action: "task.outdent", context: "normal", displayKey: "⇧ tab", description: "outdent", section: "Tasks" },
@@ -107,64 +107,17 @@ export const keymap: KeyBinding[] = [
   { key: "Enter", action: "trash.restore", context: "trash", displayKey: "↵", description: "restore it to the outline", section: "Trash" },
   { key: "Backspace", action: "trash.purge", context: "trash", displayKey: "⌫", description: "delete it forever (asks first)", section: "Trash", noRepeat: true },
 
-  // ── plan (the morning ritual; shutdown's other half) ─────────────
-  // Modal: it owns the screen and prints these letters on its chips.
-  { key: "ArrowDown", action: "cursor.down", context: "plan", displayKey: "↑ / ↓", description: "next / previous", section: "Plan" },
-  { key: "ArrowUp", action: "cursor.up", context: "plan" },
-  { key: "t", action: "plan.accept", context: "plan", displayKey: "t / ↵", description: "take it on today", section: "Plan" },
-  { key: "Enter", action: "plan.accept", context: "plan" },
-  { key: "s", action: "plan.push", context: "plan", displayKey: "s", description: "not today — pick another day", section: "Plan" },
-
-  // ── shutdown (the evening ritual) ─────────────────────────────────
-  { key: "ArrowDown", action: "cursor.down", context: "shutdown", displayKey: "↑ / ↓", description: "next / previous — tasks, then habits", section: "Shutdown" },
-  { key: "ArrowUp", action: "cursor.up", context: "shutdown" },
-  { key: "e", action: "shut.complete", context: "shutdown", displayKey: "e", description: "mark it done", section: "Shutdown" },
-  { key: "t", action: "shut.carry", context: "shutdown", displayKey: "t", description: "carry it to tomorrow", section: "Shutdown" },
-  { key: "b", action: "shut.breakdown", context: "shutdown", displayKey: "b", description: "break it into something you'd actually do tomorrow", section: "Shutdown" },
-  { key: "s", action: "shut.postpone", context: "shutdown", displayKey: "s", description: "postpone — name the day", section: "Shutdown" },
-  { key: "w", action: "shut.wontDo", context: "shutdown", displayKey: "w", description: "won’t do — a decision, not a failure", section: "Shutdown" },
-  { key: "d", action: "shut.drop", context: "shutdown", displayKey: "d", description: "drop it", section: "Shutdown", noRepeat: true },
-  { key: "l", action: "shut.later", context: "shutdown", displayKey: "l", description: "later today — not done yet, still today (no carry counted)", section: "Shutdown" },
-  { key: "/", action: "shut.reason", context: "shutdown", displayKey: "/", description: "add why (optional) to the choice you make next", section: "Shutdown" },
-  { key: "y", action: "shut.habitDone", context: "shutdown", displayKey: "y / r / x", description: "on a habit: did it · rest day · not today", section: "Shutdown" },
-  { key: "r", action: "shut.habitRest", context: "shutdown" },
-  { key: "x", action: "shut.habitNo", context: "shutdown" },
-  { key: "T", action: "shut.carryAll", context: "shutdown", displayKey: "⇧ t", description: "carry everything left to tomorrow", section: "Shutdown" },
-
-  // ── reckoning gate ────────────────────────────────────────────────
-  { key: "ArrowDown", action: "cursor.down", context: "reckoning", displayKey: "↑ / ↓", description: "next / previous task", section: "The Reckoning" },
-  { key: "ArrowUp", action: "cursor.up", context: "reckoning" },
-  { key: "ArrowRight", action: "reck.nextCard", context: "reckoning", displayKey: "← / →", description: "previous / next group", section: "The Reckoning" },
-  { key: "ArrowLeft", action: "reck.prevCard", context: "reckoning" },
-  { key: "e", action: "reck.complete", context: "reckoning", displayKey: "e", description: "mark it done", section: "The Reckoning" },
-  { key: "t", action: "reck.keep", context: "reckoning", displayKey: "t", description: "keep it for today", section: "The Reckoning" },
-  { key: "b", action: "reck.breakdown", context: "reckoning", displayKey: "b", description: "break it down", section: "The Reckoning" },
-  { key: "s", action: "reck.postpone", context: "reckoning", displayKey: "s", description: "postpone — name the day you'll do it", section: "The Reckoning" },
-  { key: "d", action: "reck.drop", context: "reckoning", displayKey: "d", description: "drop it", section: "The Reckoning" },
-  { key: "S", action: "reck.postponeAll", context: "reckoning", displayKey: "⇧ s", description: "postpone the whole group", section: "The Reckoning" },
-  { key: "D", action: "reck.dropAll", context: "reckoning", displayKey: "⇧ d", description: "drop the whole group", section: "The Reckoning" },
-  { key: "v", action: "board.toggle", context: "reckoning", displayKey: "v", description: "switch to the planning board", section: "The Reckoning" },
-
-  // ── planning board (the reckoning's two-panel skin) ──────────────
-  { key: "ArrowDown", action: "board.cursorDown", context: "board", displayKey: "↑ / ↓", description: "move within a column", section: "Planning board" },
-  { key: "ArrowUp", action: "board.cursorUp", context: "board" },
-  { key: "Tab", action: "board.switchColumn", context: "board", displayKey: "tab", description: "switch column (leftovers ↔ today)", section: "Planning board" },
-  { key: "Shift+Tab", action: "board.switchColumn", context: "board" },
-  { key: "ArrowRight", action: "board.pull", context: "board", displayKey: "→ / ↵", description: "pull a leftover into today", section: "Planning board" },
-  { key: "Enter", action: "board.pull", context: "board" },
-  { key: "ArrowLeft", action: "board.sendBack", context: "board", displayKey: "←", description: "send a today task back to leftovers", section: "Planning board" },
-  { key: "s", action: "board.push", context: "board", displayKey: "s", description: "postpone — name the day you'll do it", section: "Planning board" },
-  { key: "e", action: "board.complete", context: "board", displayKey: "e", description: "mark it done", section: "Planning board" },
-  { key: "b", action: "board.breakdown", context: "board", displayKey: "b", description: "break it down", section: "Planning board" },
-  { key: "d", action: "board.drop", context: "board", displayKey: "d", description: "drop it", section: "Planning board", noRepeat: true },
-  { key: "1", action: "board.estimate1", context: "board", displayKey: "1 – 8", description: "estimate: N blocks of ~20m", section: "Planning board" },
-  { key: "2", action: "board.estimate2", context: "board" },
-  { key: "3", action: "board.estimate3", context: "board" },
-  { key: "4", action: "board.estimate4", context: "board" },
-  { key: "5", action: "board.estimate5", context: "board" },
-  { key: "6", action: "board.estimate6", context: "board" },
-  { key: "7", action: "board.estimate7", context: "board" },
-  { key: "8", action: "board.estimate8", context: "board" },
-  { key: "0", action: "board.estimateClear", context: "board", displayKey: "0", description: "clear the estimate", section: "Planning board" },
-  { key: "v", action: "board.toggle", context: "board", displayKey: "v", description: "back to the card review", section: "Planning board" },
+  // ── task review ───────────────────────────────────────────────────
+  // It owns the screen while open and prints each letter on its chip.
+  { key: "ArrowDown", action: "cursor.down", context: "review", displayKey: "↑ / ↓", description: "next / previous — overdue, today, then the week", section: "Task review" },
+  { key: "ArrowUp", action: "cursor.up", context: "review" },
+  { key: "e", action: "review.complete", context: "review", displayKey: "e", description: "mark it done", section: "Task review" },
+  { key: "t", action: "review.today", context: "review", displayKey: "t", description: "today — keep an overdue one, take on a week one", section: "Task review" },
+  { key: "ArrowRight", action: "review.tomorrow", context: "review", displayKey: "→", description: "tomorrow", section: "Task review" },
+  { key: "b", action: "review.breakdown", context: "review", displayKey: "b", description: "break it into something you'd actually do today", section: "Task review" },
+  { key: "s", action: "review.postpone", context: "review", displayKey: "s", description: "postpone — name the day", section: "Task review" },
+  { key: "w", action: "review.wontDo", context: "review", displayKey: "w", description: "won’t do — a decision, not a failure", section: "Task review" },
+  { key: "d", action: "review.drop", context: "review", displayKey: "d", description: "drop it", section: "Task review", noRepeat: true },
+  { key: "l", action: "review.later", context: "review", displayKey: "l", description: "later — set it aside for this pass (nothing counted)", section: "Task review" },
+  { key: "/", action: "review.reason", context: "review", displayKey: "/", description: "add why (optional) to the choice you make next", section: "Task review" },
 ];

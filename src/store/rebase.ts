@@ -65,7 +65,6 @@ const SCALARS: Record<ScalarKey, true> = {
   lastOpenedDate: true,
   devDateOverride: true,
   dailyCapacityBlocks: true,
-  boardPreferred: true,
   wrapAll: true,
   hideCompleted: true,
   commandUsage: true,

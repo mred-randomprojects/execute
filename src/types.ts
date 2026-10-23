@@ -17,7 +17,7 @@ export type TaskPriority = 1 | 2 | 3 | 4;
  * A soft, fuzzy sense of "when" — distinct from a concrete `plannedFor` date.
  * Week/month horizons are anchored to a real period (`anchor` is a week key
  * "YYYY-Www" or month key "YYYY-MM"); "someday" has no anchor. Horizons never
- * feed the Reckoning — only concrete dates do.
+ * go overdue — only concrete dates do.
  */
 export type HorizonUnit = "week" | "month" | "someday";
 
@@ -28,10 +28,10 @@ export interface Horizon {
 
 /**
  * A deliberate "won't do" / intentionally-skipped resolution. Distinct from
- * `completed`: the task is *resolved* (out of the Reckoning, off the counts) but
+ * `completed`: the task is *resolved* (never overdue, off the counts) but
  * consciously declined rather than accomplished. Mutually exclusive with
  * `completed` — setters clear one when setting the other. `reason` is optional
- * (captured inline, like the Reckoning's reasons); `at` is when it was skipped.
+ * (captured inline, like the review’s reasons); `at` is when it was skipped.
  */
 export interface WontDo {
   reason: string | null;
@@ -46,7 +46,7 @@ export interface WontDo {
  * couldn't be finished, so it failed the day; it couldn't be declined, because
  * you still want it; so it got postponed, again and again, until it was a zombie
  * in the backlog with a postpone count that blamed you for someone else's
- * silence. A blocked task now steps out of the Reckoning and out of the day's
+ * silence. A blocked task now never goes overdue and steps out of the day's
  * tally without being resolved, because holding you to a deadline you don't
  * control teaches you to ignore deadlines.
  *
@@ -137,7 +137,7 @@ export interface Recurrence {
 // A habit is not a task. A task is finished once; a habit is never finished —
 // it is *kept*, a day at a time, and what matters is the pattern, not any one
 // day. So habits live in their own array, outside `tasks`, for the same reason
-// recurrences do: nothing in here can trip the Reckoning or touch the day's
+// recurrences do: nothing in here can go overdue or touch the day's
 // counts. A missed habit is information, not a debt the app makes you settle.
 // The design and the lessons behind it: docs/habits.md.
 
@@ -297,7 +297,7 @@ export interface Task {
    * The day this task is committed to. `null` = no concrete date.
    * "Today" = an incomplete *leaf* whose plannedFor === today's date.
    * A task with incomplete children is a container, never itself "today".
-   * A concrete date is what the Reckoning gates on.
+   * A concrete date is what makes a task overdue once the day passes.
    */
   plannedFor: ISODate | null;
   /**
@@ -308,14 +308,16 @@ export interface Task {
   labels: string[];
   estimatedMinutes: number | null;
   /**
-   * How many times this task has been deliberately *kept for today* out of the
-   * Reckoning (re-committed unchanged rather than finished, deferred, or dropped).
+   * How many times this task has been deliberately *re-committed unchanged* after
+   * it came due — kept for today or carried to tomorrow, in the task review or by
+   * moving an overdue task in the list (rather than finished, deferred, or dropped).
    * Drives the "carried N×" badge so chronic dodging stays visible. Never reset.
    */
   carriedCount: number;
   /**
-   * How many times this task has been deliberately *pushed to another day* — the
-   * Reckoning's postpone, and the board's "push to later".
+   * How many times this task has been deliberately *pushed to another day* after
+   * it came due — the task review's postpone, or moving an overdue task anywhere
+   * but today.
    *
    * The counterpart to {@link carriedCount}, and the more important of the two:
    * keeping a task for today at least keeps the commitment, while postponing is
@@ -432,8 +434,8 @@ export const DEFAULT_CAPACITY_BLOCKS = 12;
  * promised to a Thursday in March.
  *
  * `closedAt` is the whole point. A day is **closed** when every commitment it
- * carried has an outcome — finished, consciously declined, or faced in the
- * Reckoning and moved on purpose. Not "you did everything": that is unreachable
+ * carried has an outcome — finished, consciously declined, or faced
+ * as an overdue task and moved on purpose. Not "you did everything": that is unreachable
  * on a bad day, and a target you can miss by having a bad day is a target that
  * teaches you to stop looking. Closing is achievable every single day, and it
  * rewards exactly what the app is for — a mindful postpone over a silent overrun.
@@ -465,7 +467,7 @@ export const MAX_DAY_RECORDS = 400;
 /**
  * How present the app is while its window isn't.
  *
- * The Reckoning, the capacity meter and the deferral ledger all assume the app
+ * Overdue work, the capacity meter and the deferral ledger all assume the app
  * gets opened. Nothing in the product made that happen: closed, Execute had no
  * menu-bar item, no badge, no way to be reached — the entire ritual was
  * conditional on remembering a thing whose job is to be remembered *for* you.
@@ -680,16 +682,10 @@ export interface AppState {
   devDateOverride: ISODate | null;
   /**
    * How many 20-minute {@link BLOCK_MINUTES} blocks the user reckons they can
-   * take on in a day. Drives the soft capacity meter on the planning board — a
+   * take on in a day. Drives the over-commit strip over Today — a
    * gauge, never a hard cap. A per-user setting (writer-wins on cloud merge).
    */
   dailyCapacityBlocks: number;
-  /**
-   * Whether the reckoning renders as the two-panel planning board (true) or the
-   * classic card review (false). A per-user preference, toggled with `v`;
-   * persisted so a multi-day experiment sticks. Writer-wins on cloud merge.
-   */
-  boardPreferred: boolean;
   /**
    * "Wrap all": every task row renders as if peeked (`p`) — full title
    * unwrapped, notes inline below. Toggled from ⌘K. A per-device preference;
@@ -777,7 +773,6 @@ export function emptyState(): AppState {
     lastOpenedDate: null,
     devDateOverride: null,
     dailyCapacityBlocks: DEFAULT_CAPACITY_BLOCKS,
-    boardPreferred: false,
     wrapAll: false,
     hideCompleted: false,
     commandUsage: {},

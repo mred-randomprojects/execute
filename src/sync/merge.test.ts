@@ -50,7 +50,6 @@ function state(over: Partial<AppState> = {}): AppState {
     lastOpenedDate: null,
     devDateOverride: null,
     dailyCapacityBlocks: 12,
-    boardPreferred: false,
     wrapAll: false,
     hideCompleted: false,
     commandUsage: {},

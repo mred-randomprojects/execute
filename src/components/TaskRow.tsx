@@ -371,7 +371,7 @@ export function TaskRow({ task, depth }: { task: Task; depth: number }) {
         </span>
       )}
 
-      {/* The deferral ledger, in the ordinary list — not just inside the gate.
+      {/* The deferral ledger, in the ordinary list — not just inside the review.
           Only while the task is still open: once it's resolved the history is
           a curiosity, and the row has enough on it already. */}
       {isOpen(task) && !editing && <DeferralBadges task={task} />}

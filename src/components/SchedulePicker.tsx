@@ -27,8 +27,8 @@ export function SchedulePicker({
   /** The task's present rung, dotted in the list. Null for a concrete date. */
   current: string | null;
   /**
-   * What picking a day *means* here. "Postpone" when the Reckoning (or the
-   * board) opened it, because that path counts the deferral — the header and
+   * What picking a day *means* here. "Postpone" when the task review opened it
+   * on a task that came due, because that path counts the deferral — the header and
    * footer say so, so the extra weight isn't a silent side effect.
    */
   verb?: "Schedule" | "Postpone";

@@ -93,7 +93,6 @@ type DeviceField =
   | "theme"
   | "devDateOverride"
   | "dailyCapacityBlocks"
-  | "boardPreferred"
   | "wrapAll"
   | "hideCompleted"
   | "commandUsage"
@@ -300,7 +299,6 @@ export function fromDocs(raw: RawDocs, base: AppState): AppState {
     theme: base.theme,
     devDateOverride: base.devDateOverride,
     dailyCapacityBlocks: base.dailyCapacityBlocks,
-    boardPreferred: base.boardPreferred,
     wrapAll: base.wrapAll,
     hideCompleted: base.hideCompleted,
     commandUsage: base.commandUsage,
