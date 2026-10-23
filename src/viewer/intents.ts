@@ -1,6 +1,8 @@
 import type { Habit, HabitId, HabitMark, ISODate, ProjectId, Task, TaskId } from "../types";
 import { markStamped } from "../store/habits";
+import { deferralOf } from "../core/commands";
 import { stampTask } from "../store/clocks";
+import { todayISO } from "../store/dates";
 import { findById, mapById } from "../store/tasks";
 import type { TaskPatch } from "./TaskSheet";
 
@@ -40,8 +42,19 @@ function assignProjectStamped(t: Task, projectId: ProjectId, now: number): Task 
  * Set some of a task's fields (an idempotent intent: re-applying it after a
  * conflict changes nothing twice). A concrete day clears a fuzzy horizon —
  * the two never coexist.
+ *
+ * Moving a task that came due is a deferral here too, counted the way the
+ * desktop counts it (core/commands' deferralOf): back to today bumps
+ * carriedCount, anywhere else postponedCount. Counted, not logged — the phone
+ * writes only task and habit documents — and the counters merge by max, so a
+ * retry can't count twice.
  */
-export function updateTask(tasks: Task[], id: TaskId, patch: TaskPatch): Task[] {
+export function updateTask(
+  tasks: Task[],
+  id: TaskId,
+  patch: TaskPatch,
+  today: ISODate = todayISO(null),
+): Task[] {
   const t = findById(tasks, id);
   if (t == null) return tasks;
   const same =
@@ -55,9 +68,12 @@ export function updateTask(tasks: Task[], id: TaskId, patch: TaskPatch): Task[] 
     let next: Task = { ...cur };
     if (patch.text !== undefined) next.text = patch.text;
     if (patch.notes !== undefined) next.notes = patch.notes;
-    if (patch.plannedFor !== undefined) {
+    if (patch.plannedFor !== undefined && patch.plannedFor !== cur.plannedFor) {
+      const deferral = deferralOf(cur, patch.plannedFor, today);
       next.plannedFor = patch.plannedFor;
       if (patch.plannedFor != null) next.horizon = null;
+      if (deferral === "kept") next.carriedCount = cur.carriedCount + 1;
+      if (deferral === "postponed") next.postponedCount = cur.postponedCount + 1;
     }
     if (patch.projectId !== undefined && patch.projectId !== cur.projectId) {
       const projectId = patch.projectId;
@@ -92,3 +108,4 @@ export function setHabitMark(
   });
   return changed ? next : habits;
 }
+

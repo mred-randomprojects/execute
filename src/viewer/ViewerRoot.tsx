@@ -195,7 +195,7 @@ function AuthedViewer({ user, onSignOut }: { user: User; onSignOut: () => void }
   };
 
   const onUpdate = (taskId: TaskId, patch: TaskPatch) => {
-    run((s) => ({ ...s, tasks: updateTask(s.tasks, taskId, patch) }));
+    run((s) => ({ ...s, tasks: updateTask(s.tasks, taskId, patch, todayISO(s.devDateOverride)) }));
   };
 
   const onHabit = (id: HabitId, date: ISODate, mark: HabitMark | null) => {

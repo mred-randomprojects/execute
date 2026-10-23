@@ -36,4 +36,25 @@ describe("phone edit intents", () => {
     expect(edited.children[0].projectId).toBe("life");
     expect(edited.children[0].updatedAt).toBeGreaterThan(50);
   });
+
+  it("moving a task that came due counts it, like the desktop: today is a keep, elsewhere a postponement", () => {
+    const today = "2026-10-23";
+    const late = [task({ plannedFor: "2026-10-21" })];
+    const [kept] = updateTask(late, late[0].id, { plannedFor: today }, today);
+    expect(kept).toMatchObject({ plannedFor: today, carriedCount: 1, postponedCount: 0 });
+    const [later] = updateTask(late, late[0].id, { plannedFor: "2026-10-30" }, today);
+    expect(later).toMatchObject({ carriedCount: 0, postponedCount: 1 });
+    const [undated] = updateTask(late, late[0].id, { plannedFor: null }, today);
+    expect(undated.postponedCount).toBe(1);
+
+    // Never came due, already done, or a rename: nothing counted.
+    const fresh = [task({ plannedFor: "2026-10-25" })];
+    expect(updateTask(fresh, fresh[0].id, { plannedFor: "2026-10-28" }, today)[0].postponedCount).toBe(0);
+    const done = [task({ plannedFor: "2026-10-21", completed: true })];
+    expect(updateTask(done, done[0].id, { plannedFor: "2026-10-28" }, today)[0].postponedCount).toBe(0);
+    expect(updateTask(late, late[0].id, { text: "renamed" }, today)[0].postponedCount).toBe(0);
+    // A retry on the already-moved task is a no-op, so it can't count twice.
+    const moved = updateTask(late, late[0].id, { plannedFor: "2026-10-30" }, today);
+    expect(updateTask(moved, moved[0].id, { plannedFor: "2026-10-30" }, today)).toBe(moved);
+  });
 });

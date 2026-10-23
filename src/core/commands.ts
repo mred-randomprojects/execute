@@ -243,7 +243,7 @@ function makeLog(s: AppState, task: Task, action: LogAction, reason: string | nu
  * (postponedCount). A move to another past day decides nothing and isn't
  * counted.
  */
-function deferralOf(t: Task, plannedFor: ISODate | null, today: ISODate): "kept" | "postponed" | null {
+export function deferralOf(t: Task, plannedFor: ISODate | null, today: ISODate): "kept" | "postponed" | null {
   if (!isLive(t) || t.plannedFor == null || t.plannedFor >= today) return null;
   if (plannedFor != null && plannedFor < today) return null;
   return plannedFor === today ? "kept" : "postponed";
