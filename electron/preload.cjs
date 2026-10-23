@@ -18,7 +18,7 @@ contextBridge.exposeInMainWorld("execute", {
   calendarStatus: () => ipcRenderer.invoke("calendar:status"),
   createCalendarEvent: (input) => ipcRenderer.invoke("calendar:createEvent", input),
   // Presence: the renderer owns the counting, the main process owns the menu bar,
-  // the dock badge, the login item and the two daily nudges. This pushes a
+  // the dock badge and the login item. This pushes a
   // snapshot down whenever what's-left-today (or a setting) changes.
   updatePresence: (snapshot) => ipcRenderer.invoke("presence:update", snapshot),
   // Sync health, written to sync-status.json in the app-data folder: counts and
@@ -44,10 +44,4 @@ contextBridge.exposeInMainWorld("execute", {
   listBackups: () => ipcRenderer.invoke("backups:list"),
   readBackup: (name) => ipcRenderer.invoke("backups:read", name),
   keepCopyBeforeRestore: (data) => ipcRenderer.invoke("backups:keepCopy", data),
-  // Clicking the evening nudge opens the shutdown ritual itself, not just the app.
-  onOpenShutdown: (fn) => {
-    const handler = () => fn();
-    ipcRenderer.on("shutdown:open", handler);
-    return () => ipcRenderer.removeListener("shutdown:open", handler);
-  },
 });

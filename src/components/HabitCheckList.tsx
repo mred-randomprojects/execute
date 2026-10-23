@@ -4,10 +4,8 @@ import { answeredOn, formatValue, markOn, valueOn, withMark, withValue } from ".
 import { ActionChip } from "./ActionChip";
 import { KpiValueInput } from "./KpiValueInput";
 
-// "Did you…?" for one day, a habit at a time. Shared by the evening shutdown
-// (today) and the morning prompt (yesterday): the two moments the app already
-// owns, which is the whole trick to not forgetting to log — ask at a fixed
-// moment instead of hoping someone remembers to visit a view.
+// "Did you…?" for one day, a habit at a time — the panel ⌘k → Log habits and
+// the habit strip over Today open, for today or yesterday.
 
 const ANSWER_LABEL: Record<HabitMark, string> = {
   done: "did it",
@@ -198,8 +196,8 @@ function HabitAskRow({
 }
 
 /**
- * The same questions as a small modal, for a day the shutdown didn't cover —
- * opened from the morning band ("yesterday") or ⌘k. Owns its keys while open
+ * The same questions as a small modal, opened from ⌘k ("today" / "yesterday")
+ * or the habit strip. Owns its keys while open
  * (↑/↓, y/r/x, esc), like the confirm dialog, so nothing fires beneath it.
  */
 export function HabitLogPanel({

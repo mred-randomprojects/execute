@@ -426,8 +426,8 @@ export function nudge(h: Habit, today: ISODate): Nudge | null {
 /**
  * Still an open question on `date`: active, that day unlogged, and either daily
  * or with that week's target not yet met (a 2×-a-week habit already done twice
- * isn't asked about again). Drives the sidebar badge, the shutdown step, the
- * morning prompt and the evening nudge.
+ * isn't asked about again). Drives the sidebar badge, the menu bar's habit line
+ * and ⌘k → Log habits.
  */
 export function pendingOn(h: Habit, date: ISODate): boolean {
   if (h.archivedAt != null || habitStart(h) > date) return false;
@@ -489,7 +489,7 @@ export function notedDays(h: Habit): ISODate[] {
 // ─── KPIs ────────────────────────────────────────────────────────────
 //
 // A KPI is a habit with a `measure`: one number per day (or week, or month),
-// asked at the same moments as a habit — shutdown, the morning band, ⌘k — and
+// asked in the same places as a habit — the Habits view, ⌘k → Log habits — and
 // stored the same way, so it syncs per day on the same clock. Nothing is
 // scored: no strength, no streak, no target. The number is the point, and
 // whoever reads it (a person, an agent reading Firestore) does the analysis.

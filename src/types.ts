@@ -143,8 +143,8 @@ export interface Recurrence {
 
 /**
  * What a day says about a habit. A day with no mark is *unlogged* — scored as
- * a miss once it's over, but also what the shutdown step and the morning
- * prompt ask about, because forgetting to log is not the same as not doing.
+ * a miss once it's over, but also what the sidebar badge and ⌘k → Log habits
+ * ask about, because forgetting to log is not the same as not doing.
  *
  *   • `done` — kept.
  *   • `skip` — a deliberate rest day (sick, travelling, a planned day off). It
@@ -469,8 +469,9 @@ export const MAX_DAY_RECORDS = 400;
  *
  * Overdue work, the capacity meter and the deferral ledger all assume the app
  * gets opened. Nothing in the product made that happen: closed, Execute had no
- * menu-bar item, no badge, no way to be reached — the entire ritual was
- * conditional on remembering a thing whose job is to be remembered *for* you.
+ * menu-bar item, no badge, no way to be reached — all of it was conditional on
+ * remembering a thing whose job is to be remembered *for* you. Passive only:
+ * the morning and shutdown notifications are gone, nothing here interrupts.
  *
  * Desktop-only and per-device (writer wins on cloud merge): a menu bar and a
  * login item belong to a machine, not to an account.
@@ -480,25 +481,6 @@ export interface Presence {
   tray: boolean;
   /** Launch Execute at login. Off by default: it adds a system-level login item. */
   openAtLogin: boolean;
-  /**
-   * The two daily nudges — and only two. A notification you didn't need costs
-   * more than one you missed, because the third one gets the whole app muted.
-   */
-  nudges: boolean;
-  /** Local hour (0–23) for the morning "here's your day" nudge. */
-  morningHour: number;
-  /**
-   * When the day gets closed — the shutdown notification ("Start shutdown")
-   * and the in-app banner. A time per kind of day ("HH:MM"), each with its own
-   * switch so turning weekends off doesn't forget their time. Replaced the
-   * single `eveningHour` (an hour, every day): work stops at 14:15 on weekdays
-   * for some people, and an evening nudge four hours late is no nudge at all.
-   * The ritual itself is never gated on these: ⌘k and the menu bar run it any time.
-   */
-  shutdownWeekdayAt: string;
-  shutdownWeekdayOn: boolean;
-  shutdownWeekendAt: string;
-  shutdownWeekendOn: boolean;
 }
 
 export function defaultPresence(): Presence {
@@ -508,12 +490,6 @@ export function defaultPresence(): Presence {
     // flipping it back; a login item shows up in the OS's own settings, and
     // adding one uninvited is the kind of thing that gets an app deleted.
     openAtLogin: false,
-    nudges: true,
-    morningHour: 9,
-    shutdownWeekdayAt: "18:00",
-    shutdownWeekdayOn: true,
-    shutdownWeekendAt: "18:00",
-    shutdownWeekendOn: true,
   };
 }
 
@@ -712,7 +688,7 @@ export interface AppState {
    * across devices, so the log reads as one trail.
    */
   actionLog: ActionLogEntry[];
-  /** Menu bar / login item / daily nudges — see {@link Presence}. Per-device. */
+  /** Menu bar / login item — see {@link Presence}. Per-device. */
   presence: Presence;
   /**
    * One record per day the app has seen, oldest first, capped at

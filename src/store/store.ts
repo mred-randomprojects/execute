@@ -470,8 +470,8 @@ export function setHideCompleted(on: boolean): void {
 }
 
 /**
- * Change how present the app is when its window isn't (menu bar, login item,
- * nudges). A per-device preference like the theme — not undoable, and writer-wins
+ * Change how present the app is when its window isn't (menu bar, login item).
+ * A per-device preference like the theme — not undoable, and writer-wins
  * on cloud merge.
  */
 export function setPresence(patch: Partial<Presence>): void {

@@ -320,14 +320,14 @@ describe("Presence (the desktop shell)", () => {
    * in the browser — we're testing the wiring, not the shell.
    */
   function stubBridge() {
-    const updates: Array<{ remaining: number; titles: string[] }> = [];
+    const updates: Array<{ remaining: number }> = [];
     let fire: (() => void) | null = null;
     window.execute = {
       isElectron: false,
       loadStore: async () => null,
       saveStore: async () => true,
       updatePresence: async (snap) => {
-        updates.push({ remaining: snap.remaining, titles: snap.titles });
+        updates.push({ remaining: snap.remaining });
         return true;
       },
       onFocusCapture: (fn) => {
@@ -352,7 +352,6 @@ describe("Presence (the desktop shell)", () => {
     await waitFor(() => {
       const last = updates[updates.length - 1];
       expect(last.remaining).toBe(1);
-      expect(last.titles).toEqual(["water the plants"]);
     });
 
     // Finishing it is what makes the count fall — the whole point of the badge.
@@ -2777,33 +2776,6 @@ describe("Not forgetting to log habits", () => {
       await waitFor(() => expect(mark("Stretch", today())).toBe(want));
       expect(cell().getAttribute("aria-label")).toBe(`${formatLong(today())}: ${label}`);
     }
-  });
-});
-
-describe("Shutdown time", () => {
-  afterEach(() => {
-    delete window.execute;
-  });
-
-  it("typing “shutdown 14:15” in ⌘k sets the weekday time; a switch turns weekends off", async () => {
-    window.execute = {
-      isElectron: true,
-      loadStore: () => Promise.resolve({}),
-      saveStore: () => Promise.resolve(true),
-    };
-    render(<App />);
-    await screen.findByPlaceholderText("Add a task for today…");
-    blurActive();
-    fireEvent.keyDown(document.body, { key: "k", metaKey: true });
-    const input = await screen.findByPlaceholderText("Type a command…");
-    fireEvent.change(input, { target: { value: "shutdown 2:15pm" } });
-    const list = await screen.findByRole("listbox", { name: "Commands" });
-    fireEvent.click(await within(list).findByText("Shutdown time: weekdays at 14:15"));
-    await waitFor(() => expect(getState().presence.shutdownWeekdayAt).toBe("14:15"));
-    expect(getState().presence.shutdownWeekendAt).toBe("18:00");
-
-    await runCommand(/^Shutdown on weekends at 18:00: turn off$/);
-    await waitFor(() => expect(getState().presence.shutdownWeekendOn).toBe(false));
   });
 });
 

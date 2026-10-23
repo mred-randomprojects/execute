@@ -17,7 +17,7 @@ function chipValues(m: HabitMeasure): number[] {
  * One KPI's number for one day: type it and press ↵ (an empty ↵ clears a
  * logged value), or click a chip when the range is small. Owns its keys while
  * focused — digits never reach the view underneath — except ↑/↓, which move
- * on, and `l` in a shutdown, which sets the row aside for later.
+ * on.
  */
 export function KpiValueInput({
   measure,
@@ -25,7 +25,6 @@ export function KpiValueInput({
   autoFocus = false,
   onCommit,
   onMove,
-  onLater,
   onCancel,
 }: {
   measure: HabitMeasure;
@@ -33,7 +32,6 @@ export function KpiValueInput({
   autoFocus?: boolean;
   onCommit: (value: number | null) => void;
   onMove?: (dir: 1 | -1) => void;
-  onLater?: () => void;
   onCancel?: () => void;
 }) {
   const [text, setText] = useState(value == null ? "" : formatValue(measure, value));
@@ -81,9 +79,6 @@ export function KpiValueInput({
           } else if ((e.key === "ArrowDown" || e.key === "ArrowUp") && onMove != null) {
             e.preventDefault();
             onMove(e.key === "ArrowDown" ? 1 : -1);
-          } else if (e.key.toLowerCase() === "l" && onLater != null) {
-            e.preventDefault();
-            onLater();
           }
         }}
         className={[

@@ -79,7 +79,7 @@ interface ExecuteBridge {
     input: CalendarEventInput,
   ) => Promise<{ ok: boolean; htmlLink: string | null }>;
   // Presence (desktop only): push what's left today + the settings, so the shell
-  // can keep the menu bar, dock badge, login item and daily nudges honest.
+  // can keep the menu bar, dock badge and login item honest.
   updatePresence?: (snapshot: PresenceSnapshot) => Promise<boolean>;
   /** Write the sync health report (desktop only; counts and states, no content). */
   reportSyncStatus?: (report: object) => Promise<boolean>;
@@ -89,8 +89,6 @@ interface ExecuteBridge {
   workOffSince?: (since: number) => Promise<number | null>;
   /** Subscribe to the Mac waking or unlocking. Returns an unsubscribe. */
   onAwake?: (fn: () => void) => () => void;
-  /** Subscribe to "open the shutdown ritual" (the evening nudge was clicked). */
-  onOpenShutdown?: (fn: () => void) => () => void;
   /** The JSON files in backups/, newest first (desktop only). */
   listBackups?: () => Promise<BackupFile[]>;
   /** One backup, parsed (desktop only). */
@@ -578,36 +576,15 @@ function coerceDays(raw: unknown): DayRecord[] {
     .slice(-MAX_DAY_RECORDS);
 }
 
-/** Clamp an hour-of-day to 0–23, falling back when it's absent or nonsense. */
-function coerceHour(x: unknown, fallback: number): number {
-  const n = Math.trunc(num(x, fallback));
-  return n >= 0 && n <= 23 ? n : fallback;
-}
-
-// v13: menu bar / login item / nudges. Pre-v13 data has none → the defaults,
-// which deliberately leave `openAtLogin` off (see defaultPresence).
-function coerceClock(x: unknown): string | null {
-  return typeof x === "string" && /^([01]\d|2[0-3]):[0-5]\d$/.test(x) ? x : null;
-}
-
+// v13: menu bar / login item. Pre-v13 data has none → the defaults, which
+// deliberately leave `openAtLogin` off (see defaultPresence). The old nudge and
+// shutdown-time fields are dropped here.
 function coercePresence(raw: unknown): Presence {
   const d = defaultPresence();
   if (!isObject(raw)) return d;
-  const legacyEvening =
-    raw.eveningHour === undefined
-      ? d.shutdownWeekdayAt
-      : `${String(coerceHour(raw.eveningHour, 18)).padStart(2, "0")}:00`;
   return {
     tray: bool(raw.tray, d.tray),
     openAtLogin: bool(raw.openAtLogin, d.openAtLogin),
-    nudges: bool(raw.nudges, d.nudges),
-    morningHour: coerceHour(raw.morningHour, d.morningHour),
-    // Before the shutdown schedule there was one evening hour for every day:
-    // carry it over as both times, so nothing moves on upgrade.
-    shutdownWeekdayAt: coerceClock(raw.shutdownWeekdayAt) ?? legacyEvening,
-    shutdownWeekdayOn: bool(raw.shutdownWeekdayOn, d.shutdownWeekdayOn),
-    shutdownWeekendAt: coerceClock(raw.shutdownWeekendAt) ?? legacyEvening,
-    shutdownWeekendOn: bool(raw.shutdownWeekendOn, d.shutdownWeekendOn),
   };
 }
 

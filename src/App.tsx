@@ -180,7 +180,6 @@ import { presenceSnapshot } from "./store/presence";
 import { isRunning, workingOn } from "./store/work";
 import { useWorkAwake } from "./ui/useWorkAwake";
 import { SidebarWork } from "./components/WorkClock";
-import { parseClock, shutdownScheduleLabel } from "./store/shutdownTime";
 import { currentRun } from "./store/streak";
 import { suggestedCapacityBlocks } from "./store/capacity";
 import { DayStreak } from "./components/DayStreak";
@@ -948,7 +947,7 @@ export function App() {
   const activeCurrentTask = useMemo(() => workingOn(state.tasks), [state.tasks]);
   // ── Presence (desktop shell) ──────────────────────────────────────
   // Push what's left today down to the main process, which turns it into a
-  // menu-bar count, a dock badge and the two daily nudges. Renderer counts,
+  // menu-bar count and a dock badge. Renderer counts,
   // shell renders — so there is exactly one definition of "left today".
   useEffect(() => {
     if (!loaded) return;
@@ -2717,42 +2716,6 @@ export function App() {
     ];
   };
 
-  // "shutdown 14:15", "shutdown weekends 11am", "close the day at 2:15pm": a
-  // time typed after the word sets the schedule — the kind of day it names
-  // first, the others after. Desktop only, like the rest of Presence.
-  const shutdownTimeCommands = (raw: string): Command[] => {
-    if (window.execute?.isElectron !== true) return [];
-    const m = /^\s*(?:shut\s*down|shutdown|close(?: the day)?)\s+(?:(weekdays?|weekends?|every\s*day|daily)\s+)?(?:at\s+)?(.+)$/i.exec(raw);
-    if (m == null) return [];
-    const at = parseClock(m[2] ?? "");
-    if (at == null) return [];
-    const scope = (m[1] ?? "").toLowerCase();
-    const all: Command[] = [
-      {
-        id: `shutdown-at-weekdays:${at}`,
-        label: `Shutdown time: weekdays at ${at}`,
-        ephemeral: true,
-        run: () => setPresence({ shutdownWeekdayAt: at, shutdownWeekdayOn: true }),
-      },
-      {
-        id: `shutdown-at-weekends:${at}`,
-        label: `Shutdown time: weekends at ${at}`,
-        ephemeral: true,
-        run: () => setPresence({ shutdownWeekendAt: at, shutdownWeekendOn: true }),
-      },
-      {
-        id: `shutdown-at-daily:${at}`,
-        label: `Shutdown time: every day at ${at}`,
-        ephemeral: true,
-        run: () =>
-          setPresence({ shutdownWeekdayAt: at, shutdownWeekdayOn: true, shutdownWeekendAt: at, shutdownWeekendOn: true }),
-      },
-    ];
-    if (scope.startsWith("weekend")) return [all[1], all[0], all[2]];
-    if (scope.startsWith("every") || scope === "daily") return [all[2], all[0], all[1]];
-    return all;
-  };
-
   const commands: Command[] = [
     { id: "search", label: "Search all tasks", aliases: ["find"], hint: "⌘⇧f", run: openSearch },
     { id: "filter", label: "Filter this view", aliases: ["search", "narrow"], hint: "⌘f", run: openFilter },
@@ -3075,38 +3038,10 @@ export function App() {
             run: () => setPresence({ tray: !state.presence.tray }),
           },
           {
-            id: "presence-nudges",
-            label: state.presence.nudges
-              ? `Daily nudges: off (now ${state.presence.morningHour}:00 and shutdown ${shutdownScheduleLabel(state.presence)})`
-              : "Daily nudges: on (a morning plan, a shutdown)",
-            aliases: ["nudge", "notification", "remind", "reminder", "alert", "notify"],
-            run: () => setPresence({ nudges: !state.presence.nudges }),
-          },
-          // The shutdown time: one switch per kind of day here, and the time
-          // itself typed straight into ⌘k ("shutdown 14:15", see below).
-          {
-            id: "shutdown-weekdays",
-            label: state.presence.shutdownWeekdayOn
-              ? `Shutdown on weekdays at ${state.presence.shutdownWeekdayAt}: turn off`
-              : `Shutdown on weekdays: turn on (at ${state.presence.shutdownWeekdayAt})`,
-            aliases: ["shutdown time", "shutdown notification", "close the day time", "weekday"],
-            hint: "type “shutdown 14:15” to change",
-            run: () => setPresence({ shutdownWeekdayOn: !state.presence.shutdownWeekdayOn }),
-          },
-          {
-            id: "shutdown-weekends",
-            label: state.presence.shutdownWeekendOn
-              ? `Shutdown on weekends at ${state.presence.shutdownWeekendAt}: turn off`
-              : `Shutdown on weekends: turn on (at ${state.presence.shutdownWeekendAt})`,
-            aliases: ["shutdown time", "shutdown notification", "close the day time", "weekend", "saturday", "sunday"],
-            hint: "type “shutdown weekends 11:00” to change",
-            run: () => setPresence({ shutdownWeekendOn: !state.presence.shutdownWeekendOn }),
-          },
-          {
             id: "presence-login",
             label: state.presence.openAtLogin
               ? "Launch at login: off"
-              : "Launch at login: on (the ritual can't run if it never opens)",
+              : "Launch at login: on (the menu bar count needs the app running)",
             aliases: ["login", "startup", "start up", "autostart", "launch", "boot"],
             run: () => setPresence({ openAtLogin: !state.presence.openAtLogin }),
           },
@@ -3463,11 +3398,7 @@ export function App() {
       {showPalette && (
         <CommandPalette
           commands={commands}
-          dynamic={(q) => {
-            const time = shutdownTimeCommands(q);
-            if (time.length > 0) return { lead: time };
-            return scheduleQueryCommands(q);
-          }}
+          dynamic={scheduleQueryCommands}
           usage={state.commandUsage}
           onUse={recordCommandUse}
           onResetRanking={resetCommandRanking}
