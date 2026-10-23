@@ -1,5 +1,5 @@
 import type { Habit, HabitId, HabitMark, ISODate, ProjectId, Task, TaskId } from "../types";
-import { markStamped } from "../store/habits";
+import { markStamped, noteStamped } from "../store/habits";
 import { deferralOf } from "../core/commands";
 import { stampTask } from "../store/clocks";
 import { todayISO } from "../store/dates";
@@ -109,3 +109,23 @@ export function setHabitMark(
   return changed ? next : habits;
 }
 
+/**
+ * Set one habit's note for one day (empty clears it) — idempotent, and stamped
+ * on that day alone, like a mark: the note travels with its day in the merge.
+ */
+export function setHabitNote(
+  habits: Habit[],
+  id: HabitId,
+  date: ISODate,
+  note: string,
+  now: number = Date.now(),
+): Habit[] {
+  let changed = false;
+  const next = habits.map((h) => {
+    if (h.id !== id) return h;
+    const noted = noteStamped(h, date, note, now);
+    if (noted !== h) changed = true;
+    return noted;
+  });
+  return changed ? next : habits;
+}

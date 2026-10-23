@@ -188,7 +188,8 @@ and reading them back over time is the point.
 - **Reading it from outside:** `notes: { "YYYY-MM-DD": "…" }` on
   `users/{uid}/habits/{id}`.
 
-Not yet: notes from the phone.
+On the phone, ✎ beside a habit's chip writes today's note, and today's notes
+show under the chips (yes/no habits only, like the rest of the phone's habits).
 
 ## Known limits
 

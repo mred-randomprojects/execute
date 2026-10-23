@@ -129,7 +129,8 @@ costs nothing. `c` adds a note to the picked day ("Steamed broccoli!"), and the
 focused row lists them all. The sidebar badge and the menu bar count what's
 still unlogged today; chips under Today's tabs, "Check in: …" and "Log habits:
 today / yesterday" in `⌘k` work from anywhere, and the phone has the same
-chips, plus a yes/no for anything left unlogged yesterday. The design, the lessons behind it
+chips (with ✎ for today's note), plus a yes/no for anything left unlogged
+yesterday. The design, the lessons behind it
 and what comes next: [`docs/habits.md`](docs/habits.md).
 
 **KPIs** sit in the same view, under the habits: a number to log instead of a

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { ReadOnlyApp } from "./ReadOnlyApp";
 import { makeTask } from "../store/tasks";
 import { todayISO, addDays } from "../store/dates";
@@ -115,6 +115,30 @@ describe("habits on the phone", () => {
     expect(screen.getByText("Yesterday’s habits?")).toBeTruthy();
     fireEvent.click(screen.getByLabelText("Stretch: not yesterday"));
     expect(onHabit).toHaveBeenLastCalledWith("Stretch", addDays(today, -1), "missed");
+  });
+
+  it("✎ writes today's note on a habit, and today's notes read back under the chips", () => {
+    const onHabitNote = vi.fn();
+    const today = todayISO(null);
+    renderApp({ ...emptyState(), habits: [habit("Veggies", 5)] }, { onHabitNote });
+
+    fireEvent.click(screen.getByLabelText("Veggies: add a note for today"));
+    const field = screen.getByPlaceholderText(/A line about today/);
+    fireEvent.change(field, { target: { value: "Steamed broccoli!" } });
+    fireEvent.keyDown(field, { key: "Enter" });
+    expect(onHabitNote).toHaveBeenLastCalledWith("Veggies", today, "Steamed broccoli!");
+
+    // Esc backs out without saving.
+    fireEvent.click(screen.getByLabelText("Veggies: add a note for today"));
+    const again = screen.getByPlaceholderText(/A line about today/);
+    fireEvent.change(again, { target: { value: "never mind" } });
+    fireEvent.keyDown(again, { key: "Escape" });
+    expect(onHabitNote).toHaveBeenCalledTimes(1);
+
+    cleanup();
+    renderApp({ ...emptyState(), habits: [{ ...habit("Veggies", 5), notes: { [today]: "Carrots" } }] });
+    expect(screen.getByLabelText("Veggies: edit today’s note")).toBeTruthy();
+    expect(within(screen.getByRole("list", { name: "Today’s habit notes" })).getByText("Carrots")).toBeTruthy();
   });
 
   it("a habit born today isn't asked about yesterday", () => {

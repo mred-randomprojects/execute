@@ -99,6 +99,7 @@ export function ReadOnlyApp({
   onAdd,
   onUpdate,
   onHabit = () => {},
+  onHabitNote = () => {},
 }: {
   state: AppState;
   /** When any client last wrote the cloud document — how fresh this view is. */
@@ -110,6 +111,7 @@ export function ReadOnlyApp({
   onAdd: (text: string, today: boolean) => void;
   onUpdate: (id: TaskId, patch: TaskPatch) => void;
   onHabit?: (id: HabitId, date: ISODate, mark: HabitMark | null) => void;
+  onHabitNote?: (id: HabitId, date: ISODate, note: string) => void;
 }) {
   const captureRef = useRef<HTMLInputElement>(null);
   const today = todayISO(state.devDateOverride);
@@ -323,7 +325,7 @@ export function ReadOnlyApp({
           />
         </div>
 
-        {view === "today" && <PhoneHabits habits={state.habits} today={today} onMark={onHabit} />}
+        {view === "today" && <PhoneHabits habits={state.habits} today={today} onMark={onHabit} onNote={onHabitNote} />}
 
         <EditorProvider value={editor}>
           <div className="-mx-2 flex-1">

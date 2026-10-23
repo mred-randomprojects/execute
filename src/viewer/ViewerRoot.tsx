@@ -4,7 +4,7 @@ import { AuthProvider, useAuth } from "../auth";
 import { LoginPage } from "../components/LoginPage";
 import type { HabitId, HabitMark, ISODate, Task, TaskId } from "../types";
 import { findById, makeTask } from "../store/tasks";
-import { setCompleted, setHabitMark, updateTask } from "./intents";
+import { setCompleted, setHabitMark, setHabitNote, updateTask } from "./intents";
 import type { TaskPatch } from "./TaskSheet";
 import { parseCapture } from "../store/capture";
 import { todayISO } from "../store/dates";
@@ -202,6 +202,10 @@ function AuthedViewer({ user, onSignOut }: { user: User; onSignOut: () => void }
     run((s) => ({ ...s, habits: setHabitMark(s.habits, id, date, mark) }));
   };
 
+  const onHabitNote = (id: HabitId, date: ISODate, note: string) => {
+    run((s) => ({ ...s, habits: setHabitNote(s.habits, id, date, note) }));
+  };
+
   return (
     <ReadOnlyApp
       state={state}
@@ -219,6 +223,7 @@ function AuthedViewer({ user, onSignOut }: { user: User; onSignOut: () => void }
       onAdd={onAdd}
       onUpdate={onUpdate}
       onHabit={onHabit}
+      onHabitNote={onHabitNote}
     />
   );
 }

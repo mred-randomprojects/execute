@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { setCompleted, updateTask } from "./intents";
+import { setCompleted, setHabitNote, updateTask } from "./intents";
 import { makeTask } from "../store/tasks";
-import type { ProjectId, Task } from "../types";
+import type { Habit, HabitId, ProjectId, Task } from "../types";
 
 const task = (over: Partial<Task> = {}): Task => ({ ...makeTask("t"), updatedAt: 100, ...over });
 
@@ -56,5 +56,17 @@ describe("phone edit intents", () => {
     // A retry on the already-moved task is a no-op, so it can't count twice.
     const moved = updateTask(late, late[0].id, { plannedFor: "2026-10-30" }, today);
     expect(updateTask(moved, moved[0].id, { plannedFor: "2026-10-30" }, today)).toBe(moved);
+  });
+
+  it("a habit note is stamped on its day alone, and re-applying it changes nothing", () => {
+    const h: Habit = {
+      id: "h" as HabitId, name: "Veggies", cue: "", perWeek: 7, checks: {}, checkedAt: {}, measure: null,
+      values: {}, notes: {}, archivedAt: null, rank: 0, createdAt: 1, updatedAt: 1,
+    };
+    const noted = setHabitNote([h], h.id, "2026-10-23", "  Steamed broccoli! ", 500);
+    expect(noted[0].notes).toEqual({ "2026-10-23": "Steamed broccoli!" });
+    expect(noted[0].checkedAt["2026-10-23"]).toBe(500);
+    expect(noted[0].updatedAt).toBe(1);
+    expect(setHabitNote(noted, h.id, "2026-10-23", "Steamed broccoli!", 600)).toBe(noted);
   });
 });
