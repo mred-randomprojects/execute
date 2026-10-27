@@ -232,6 +232,7 @@ import { ConfirmModal, type ConfirmRequest } from "./components/ConfirmModal";
 import { BackupPicker } from "./components/BackupPicker";
 import { backupKind, backupWhen } from "./ui/backups";
 import { coerceState, type BackupFile } from "./store/persistence";
+import { runAgentRequest } from "./store/agent";
 
 const THEMES: ThemeName[] = ["slate", "ivory", "carbon", "bordeaux"];
 
@@ -958,6 +959,8 @@ export function App() {
   // The global capture shortcut lands here: the window is already shown by the
   // main process, all that's left is to put the cursor where a thought can go.
   useEffect(() => window.execute?.onFocusCapture?.(() => captureRef.current?.focus()), []);
+  // Commands from a local script (Claude in a task review): store/agent.ts.
+  useEffect(() => window.execute?.onAgentRequest?.(runAgentRequest), []);
   const focusedTask =
     focusedTaskId != null ? findById(state.tasks, focusedTaskId) ?? null : null;
   const focusedProjectId =

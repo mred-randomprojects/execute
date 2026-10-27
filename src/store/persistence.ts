@@ -95,6 +95,8 @@ interface ExecuteBridge {
   readBackup?: (name: string) => Promise<unknown>;
   /** Keep `data` in backups/ before a restore; resolves with the file's name (desktop only). */
   keepCopyBeforeRestore?: (data: AppState) => Promise<string>;
+  /** Subscribe to requests from the agent socket (desktop only). Returns an unsubscribe. */
+  onAgentRequest?: (fn: (request: unknown) => Promise<object>) => () => void;
 }
 
 /** A file in the desktop's backups/ folder (electron/backups.cjs listBackups). */

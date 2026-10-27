@@ -44,4 +44,15 @@ contextBridge.exposeInMainWorld("execute", {
   listBackups: () => ipcRenderer.invoke("backups:list"),
   readBackup: (name) => ipcRenderer.invoke("backups:read", name),
   keepCopyBeforeRestore: (data) => ipcRenderer.invoke("backups:keepCopy", data),
+  // The agent socket (electron/agent.cjs): a request from a local script runs
+  // in the renderer, and its result goes back to the main process to answer.
+  onAgentRequest: (fn) => {
+    const handler = (_event, { reqId, request }) => {
+      Promise.resolve(fn(request))
+        .catch((error) => ({ ok: false, error: String(error) }))
+        .then((result) => ipcRenderer.invoke("agent:result", { reqId, result }));
+    };
+    ipcRenderer.on("agent:run", handler);
+    return () => ipcRenderer.removeListener("agent:run", handler);
+  },
 });

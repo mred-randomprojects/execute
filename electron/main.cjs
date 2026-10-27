@@ -18,6 +18,7 @@ const { readStoreFile } = require("./storeFile.cjs");
 const { backUpDaily, keepCopyBeforeRestore, listBackups, localDate, readBackup } = require("./backups.cjs");
 const { isAppNavigation, isExternalUrlAllowed } = require("./navigation.cjs");
 const { createAwake } = require("./awake.cjs");
+const { createAgentSocket } = require("./agent.cjs");
 
 if (require("electron-squirrel-startup")) {
   app.quit();
@@ -501,6 +502,42 @@ function startAwake() {
   powerMonitor.on("unlock-screen", back);
 }
 
+// ── The agent socket (electron/agent.cjs) ───────────────────────────
+// Commands from a local script reach the renderer, which owns the store, and
+// its reply comes back here. With no window open there is nothing to run them.
+const AGENT_SOCKET = path.join(app.getPath("userData"), "agent.sock");
+const AGENT_TIMEOUT_MS = 10_000;
+let agent = null;
+const agentPending = new Map();
+
+function startAgent() {
+  ipcMain.handle("agent:result", (_event, { reqId, result }) => {
+    agentPending.get(reqId)?.(result);
+    agentPending.delete(reqId);
+  });
+  agent = createAgentSocket({
+    socketPath: AGENT_SOCKET,
+    handle: (request) =>
+      new Promise((resolve) => {
+        if (mainWindow == null || mainWindow.isDestroyed()) {
+          resolve({ ok: false, error: "Execute's window is closed: open it and retry." });
+          return;
+        }
+        const reqId = crypto.randomUUID();
+        const timer = setTimeout(() => {
+          agentPending.delete(reqId);
+          resolve({ ok: false, error: "The window didn't answer in time." });
+        }, AGENT_TIMEOUT_MS);
+        agentPending.set(reqId, (result) => {
+          clearTimeout(timer);
+          resolve(result);
+        });
+        mainWindow.webContents.send("agent:run", { reqId, request });
+      }),
+  });
+  agent.ready.catch((error) => console.error("Agent socket failed:", error));
+}
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1120,
@@ -573,6 +610,7 @@ if (!gotLock) {
     }
     startAwake();
     registerIpc();
+    startAgent();
     createWindow();
     startPresence();
     app.on("activate", () => {
@@ -584,6 +622,7 @@ if (!gotLock) {
     awake?.beat(); // the moment it stopped watching, for the next launch
     if (awakeTimer != null) clearInterval(awakeTimer);
     globalShortcut.unregisterAll();
+    agent?.close();
     if (clockTimer != null) clearInterval(clockTimer);
   });
 
