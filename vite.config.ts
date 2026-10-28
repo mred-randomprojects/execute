@@ -1,4 +1,4 @@
-import { defineConfig } from "vitest/config";
+import { configDefaults, defineConfig } from "vitest/config";
 import { loadEnv, type PluginOption } from "vite";
 import react from "@vitejs/plugin-react";
 
@@ -82,6 +82,9 @@ export default defineConfig(({ command, mode }) => {
     test: {
       environment: "jsdom",
       setupFiles: ["./src/test-setup.ts"],
+      // Claude Code puts session worktrees in .claude/worktrees: other checkouts
+      // of this repo, whose tests aren't this one's.
+      exclude: [...configDefaults.exclude, ".claude/**"],
     },
   };
 });
