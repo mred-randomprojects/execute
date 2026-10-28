@@ -143,8 +143,8 @@ function dayWord(d: ISODate, today: ISODate): string {
 }
 
 /**
- * Under the focused row: the picked day's note (or the way to write one) and
- * every earlier note, newest first — the diary of the habit, read back.
+ * The picked day's note (or the way to write one) and every earlier note,
+ * newest first — the diary of the habit, read back.
  */
 function DayNotes({
   habit,
@@ -164,11 +164,11 @@ function DayNotes({
   const note = noteOn(habit, day);
   const others = notedDays(habit).filter((d) => d !== day);
   return (
-    <div className="mt-2 flex flex-col gap-1 pl-[30px] text-[12px]">
-      <div className="flex min-w-0 items-baseline gap-2">
-        <span className="w-[120px] shrink-0 text-ink-soft">{dayWord(day, today)}</span>
+    <div className="flex flex-col gap-3 text-[12px]">
+      <div className="flex min-w-0 flex-col gap-0.5">
+        <span className="text-ink-soft">{dayWord(day, today)}</span>
         {editing ? (
-          <span className="min-w-0 flex-1 text-ink">
+          <span className="min-w-0 text-ink">
             <InlineInput
               initial={note}
               placeholder="A line about the day — “Steamed broccoli!”"
@@ -188,22 +188,80 @@ function DayNotes({
             Add a note <span className="kbd ml-1">c</span>
           </button>
         ) : (
-          <span className="min-w-0 flex-1 whitespace-pre-wrap break-words text-ink" onDoubleClick={onEdit}>
+          <span className="min-w-0 whitespace-pre-wrap break-words text-ink" onDoubleClick={onEdit}>
             {note}
           </span>
         )}
       </div>
       {others.length > 0 && (
-        <ul className="flex max-h-[132px] flex-col gap-1 overflow-auto" aria-label="Earlier notes">
+        <ul className="flex flex-col gap-2" aria-label="Earlier notes">
           {others.map((d) => (
-            <li key={d} className="flex min-w-0 items-baseline gap-2">
-              <span className="w-[120px] shrink-0 text-ink-faint">{dayWord(d, today)}</span>
-              <span className="min-w-0 flex-1 whitespace-pre-wrap break-words text-ink-soft">{habit.notes[d]}</span>
+            <li key={d} className="flex min-w-0 flex-col gap-0.5">
+              <span className="text-ink-faint">{dayWord(d, today)}</span>
+              <span className="min-w-0 whitespace-pre-wrap break-words text-ink-soft">{habit.notes[d]}</span>
             </li>
           ))}
         </ul>
       )}
     </div>
+  );
+}
+
+/**
+ * The right sidebar: what doesn't fit on one line of the focused row — the
+ * KPI's value being typed and the habit's notes. The rows keep one height;
+ * only this column fills up, and it scrolls on its own.
+ */
+function HabitAside({
+  habit,
+  today,
+  day,
+  editing,
+  onEdit,
+  onCommit,
+  onValue,
+}: {
+  habit: Habit | null;
+  today: ISODate;
+  day: ISODate;
+  editing: HabitField | null;
+  onEdit: (field: HabitField) => void;
+  onCommit: (field: HabitField, value: string, then: HabitField | null) => void;
+  onValue: (date: ISODate, value: number | null) => void;
+}) {
+  return (
+    <aside
+      aria-label="Habit notes"
+      className="w-[220px] shrink-0 overflow-auto border-l border-line pl-4 lg:w-[280px] lg:pl-5"
+    >
+      {habit == null ? (
+        <div className="text-[12px] text-ink-faint">Pick a habit to read its notes.</div>
+      ) : (
+        <div className="flex flex-col gap-4">
+          <div className="eyebrow">{habit.measure != null && editing === "value" ? "Value & notes" : "Notes"}</div>
+          {habit.measure != null && editing === "value" && (
+            <div className="flex flex-col gap-1 text-[12px] text-ink-soft">
+              <span>{day === today ? "Today" : formatLong(day)}:</span>
+              <KpiValueInput
+                measure={habit.measure}
+                value={valueOn(habit, day)}
+                autoFocus
+                onCommit={(v) => onValue(day, v)}
+                onCancel={() => onCommit("value", "", null)}
+              />
+            </div>
+          )}
+          <DayNotes
+            habit={habit}
+            today={today}
+            day={day}
+            editing={editing === "note"}
+            onEdit={() => onEdit("note")}
+            onCommit={(v) => onCommit("note", v, null)}
+          />
+        </div>
+      )}
+    </aside>
   );
 }
 
@@ -412,16 +470,6 @@ function HabitRow({
         {streakLabel(run)}
       </span>
       </div>
-      {((focused && notedDays(habit).length > 0) || editing === "note") && cursorDay != null && (
-        <DayNotes
-          habit={habit}
-          today={today}
-          day={cursorDay}
-          editing={editing === "note"}
-          onEdit={() => onEdit("note")}
-          onCommit={(v) => onCommit("note", v, null)}
-        />
-      )}
     </div>
   );
 }
@@ -495,10 +543,8 @@ function KpiRow({
   editing,
   onSelect,
   onSelectDay,
-  onValue,
   onCommit,
   onEdit,
-  onCancelValue,
 }: {
   habit: Habit;
   measure: HabitMeasure;
@@ -509,10 +555,8 @@ function KpiRow({
   editing: HabitField | null;
   onSelect: () => void;
   onSelectDay: (date: ISODate) => void;
-  onValue: (date: ISODate, value: number | null) => void;
   onCommit: (field: HabitField, value: string, then: HabitField | null) => void;
   onEdit: (field: HabitField) => void;
-  onCancelValue: () => void;
 }) {
   const archived = habit.archivedAt != null;
   const start = habitStart(habit);
@@ -629,28 +673,6 @@ function KpiRow({
           {summary.aside}
         </span>
       </div>
-      {editing === "value" && (
-        <div className="mt-2 flex items-center gap-2 pl-[30px] text-[12px] text-ink-soft">
-          <span className="shrink-0">{cursorDay === today ? "Today" : formatLong(cursorDay)}:</span>
-          <KpiValueInput
-            measure={measure}
-            value={valueOn(habit, cursorDay)}
-            autoFocus
-            onCommit={(v) => onValue(cursorDay, v)}
-            onCancel={onCancelValue}
-          />
-        </div>
-      )}
-      {editing !== "value" && ((focused && notedDays(habit).length > 0) || editing === "note") && (
-        <DayNotes
-          habit={habit}
-          today={today}
-          day={cursorDay}
-          editing={editing === "note"}
-          onEdit={() => onEdit("note")}
-          onCommit={(v) => onCommit("note", v, null)}
-        />
-      )}
     </div>
   );
 }
@@ -693,6 +715,7 @@ export function HabitsView({
 }) {
   const days = recentDays(today, HABIT_STRIP_DAYS);
   const cursorDay = days[days.length - 1 - dayOffset] ?? today;
+  const focused = habits.find((h) => h.id === cursorId) ?? null;
   const active = habits.filter((h) => h.archivedAt == null && h.measure == null);
   const kpis = habits.filter((h) => h.archivedAt == null && h.measure != null);
   const archived = habits.filter((h) => h.archivedAt != null);
@@ -712,10 +735,8 @@ export function HabitsView({
         editing={editing?.id === h.id ? editing.field : null}
         onSelect={() => onSelect(h.id)}
         onSelectDay={(d) => onSelectDay(h.id, d)}
-        onValue={(d, v) => onValue(h.id, d, v)}
         onCommit={(field, value, then) => onCommit(h.id, field, value, then)}
         onEdit={(field) => onEdit(h.id, field)}
-        onCancelValue={() => onCommit(h.id, "value", "", null)}
       />
     ) : (
     <HabitRow
@@ -735,7 +756,7 @@ export function HabitsView({
   );
 
   return (
-    <div className="mx-auto flex h-full w-full max-w-5xl flex-col px-6 py-10 lg:px-10">
+    <div className="mx-auto flex h-full w-full max-w-6xl flex-col px-6 py-10 lg:px-10">
       <header className="mb-5 flex items-end justify-between gap-4 border-b border-line pb-5">
         <div>
           <div className="eyebrow mb-1.5 text-accent">Habits &amp; KPIs</div>
@@ -772,6 +793,8 @@ export function HabitsView({
         </div>
       </header>
 
+      <div className="flex min-h-0 flex-1 gap-4 lg:gap-6">
+      <div className="flex min-w-0 flex-1 flex-col">
       {active.length > 0 && (
         <div className="mb-1 flex items-center gap-3 px-3 text-[10px] text-ink-faint" aria-hidden="true">
           <span className="w-[18px] shrink-0" />
@@ -834,6 +857,17 @@ export function HabitsView({
             {archived.map(row)}
           </div>
         )}
+      </div>
+      </div>
+      <HabitAside
+        habit={focused}
+        today={today}
+        day={cursorDay}
+        editing={focused != null && editing?.id === focused.id ? editing.field : null}
+        onEdit={(field) => focused != null && onEdit(focused.id, field)}
+        onCommit={(field, value, then) => focused != null && onCommit(focused.id, field, value, then)}
+        onValue={(d, v) => focused != null && onValue(focused.id, d, v)}
+      />
       </div>
     </div>
   );
