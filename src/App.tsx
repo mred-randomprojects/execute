@@ -373,6 +373,13 @@ export function App() {
   const [workNoteSignal, setWorkNoteSignal] = useState(0);
   // Read by DetailPanel only when it mounts: whether that open was a → dive.
   const [panelEditOnOpen, setPanelEditOnOpen] = useState(false);
+  // One-shot: true only for the commit that mounts the panel (DetailPanel seeds
+  // its ref then). Left on, any later remount — the cursor passing over a
+  // project row and `n` making a task — would dive into the notes and steal the
+  // focus from the new task's title.
+  useEffect(() => {
+    if (panelEditOnOpen) setPanelEditOnOpen(false);
+  }, [panelEditOnOpen]);
   const [breakingDownId, setBreakingDownId] = useState<TaskId | null>(null);
   // The task review: every task waiting on a decision, opened from ⌘k or the
   // overdue banner — never on its own.

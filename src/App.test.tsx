@@ -1210,6 +1210,32 @@ describe("Detail panel", () => {
     expect(again.selectionEnd).toBe("first line".length);
   });
 
+  it("n after a → dive puts the caret in the new task's title, not the notes", async () => {
+    render(<App />);
+    await addTask("dived");
+    blurActive();
+    fireEvent.keyDown(document.body, { key: "3" }); // All: the project row sits above the task
+    fireEvent.click(await screen.findByText("dived"));
+    blurActive();
+
+    fireEvent.keyDown(document.body, { key: "ArrowRight" }); // panel, straight into notes
+    const notes = await screen.findByPlaceholderText(NOTES_PLACEHOLDER);
+    fireEvent.keyDown(notes, { key: "Escape" }); // back to preview
+    fireEvent.keyDown(document.body, { key: "ArrowUp" }); // project row: the panel closes
+
+    // Passing back over a task remounts the panel; it must not dive again.
+    fireEvent.keyDown(document.body, { key: "ArrowDown" });
+    await screen.findByPlaceholderText(NOTES_PLACEHOLDER);
+    expect(document.activeElement?.tagName).not.toBe("TEXTAREA");
+
+    fireEvent.keyDown(document.body, { key: "ArrowUp" });
+    await waitFor(() => expect(screen.queryByPlaceholderText(NOTES_PLACEHOLDER)).toBeNull());
+    fireEvent.keyDown(document.body, { key: "n" }); // new task from the project row
+    const title = await screen.findByPlaceholderText("Task…");
+    await screen.findByPlaceholderText(NOTES_PLACEHOLDER); // the panel follows the new task…
+    expect(document.activeElement).toBe(title); // …but the caret is in its title
+  });
+
   it("opens in preview from ⌘K, then Tab dives into the notes editor", async () => {
     render(<App />);
     await addTask("previewed");
