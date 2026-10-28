@@ -2614,7 +2614,7 @@ describe("Habits", () => {
     await waitFor(() => expect(getState().habits[0].checks[addDays(today, -1)]).toBeUndefined());
   });
 
-  it("c writes a note on the picked day, the row reads it back, and an emptied note clears", async () => {
+  it("c writes a note on the picked day, the sidebar reads it back, and an emptied note clears", async () => {
     render(<App />);
     await screen.findByPlaceholderText("Add a task for today…");
     act(() => {
@@ -2632,7 +2632,9 @@ describe("Habits", () => {
     fireEvent.keyDown(note, { key: "Enter" });
     await waitFor(() => expect(getState().habits[0].notes).toEqual({ [today]: "Steamed broccoli!" }));
     expect(getState().habits[0].checks[today]).toBe("done");
-    expect(await screen.findByText("Steamed broccoli!")).toBeTruthy();
+    // In the right sidebar, never under the row: the rows keep one height.
+    const aside = screen.getByRole("complementary", { name: "Habit notes" });
+    expect(await within(aside).findByText("Steamed broccoli!")).toBeTruthy();
 
     // A note on yesterday too: today's stays listed beneath it.
     blurActive();
