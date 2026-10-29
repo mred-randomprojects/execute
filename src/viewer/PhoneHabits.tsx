@@ -65,15 +65,17 @@ export function PhoneHabits({
       )}
 
       {todayList.length > 0 && (
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="eyebrow mr-1">Habits</span>
+        // One line that scrolls sideways: wrapped, five habits took five rows
+        // (a long name fills one) before the first task.
+        <div className="-mx-4 flex items-center gap-2 overflow-x-auto px-4 [scrollbar-width:none] sm:-mx-10 sm:px-10">
+          <span className="eyebrow mr-1 shrink-0">Habits</span>
           {todayList.map((h) => {
             const mark = markOn(h, today);
             const done = mark === "done";
             const name = h.name || "Untitled habit";
             const note = noteOn(h, today);
             return (
-              <span key={h.id} className="flex items-center">
+              <span key={h.id} className="flex shrink-0 items-center">
                 <button
                   type="button"
                   aria-pressed={done}
@@ -88,7 +90,7 @@ export function PhoneHabits({
                   ].join(" ")}
                 >
                   <span aria-hidden="true">{done ? "✓" : mark === "skip" ? "–" : mark === "missed" ? "×" : "○"}</span>
-                  <span className="max-w-[180px] truncate">{name}</span>
+                  <span className="max-w-[140px] truncate">{name}</span>
                 </button>
                 <button
                   type="button"
@@ -130,8 +132,9 @@ export function PhoneHabits({
             .filter((h) => noteOn(h, today) !== "")
             .map((h) => (
               <li key={h.id} className="flex min-w-0 gap-2">
-                <span className="shrink-0 text-ink-faint">{h.name || "Untitled habit"}</span>
-                <span className="min-w-0 break-words text-ink-soft">{noteOn(h, today)}</span>
+                {/* Capped: a long habit name squeezed the note into a column one word wide. */}
+                <span className="max-w-[40%] shrink-0 truncate text-ink-faint">{h.name || "Untitled habit"}</span>
+                <span className="min-w-0 flex-1 break-words text-ink-soft">{noteOn(h, today)}</span>
               </li>
             ))}
         </ul>
@@ -161,7 +164,7 @@ function NoteField({
   };
   return (
     <label className="mt-2 flex items-center gap-2 text-[13px]">
-      <span className="shrink-0 text-ink-faint">{name}</span>
+      <span className="max-w-[40%] shrink-0 truncate text-ink-faint">{name}</span>
       <input
         autoFocus
         {...NO_SPELLCHECK}
