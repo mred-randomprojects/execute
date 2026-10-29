@@ -278,7 +278,7 @@ export interface WeekProgress {
   daysLeft: number;
 }
 
-function weekProgressOf(h: Habit, key: string, today: ISODate): WeekProgress {
+export function weekProgressOf(h: Habit, key: string, today: ISODate): WeekProgress {
   const start = habitStart(h);
   const monday = weekStart(key);
   let done = 0;
@@ -316,17 +316,35 @@ export function weekProgress(h: Habit, today: ISODate): WeekProgress {
  * roughly how long a new behaviour takes to start feeling automatic.
  */
 export function strength(h: Habit, today: ISODate): number {
+  const series = strengthSeries(h, today);
+  return series.length === 0 ? 0 : series[series.length - 1].value;
+}
+
+export interface DatedValue {
+  date: ISODate;
+  value: number;
+}
+
+/**
+ * Strength at the end of every day from the habit's start through `today` —
+ * the one pass {@link strength} reads its last point from, so the row's number
+ * and the trend chart's line can't disagree. An unmarked today carries
+ * yesterday's score (it isn't over yet).
+ */
+export function strengthSeries(h: Habit, today: ISODate): DatedValue[] {
   const rate = h.perWeek / 7;
   const keep = Math.pow(0.5, Math.sqrt(rate) / 13);
+  const out: DatedValue[] = [];
   let score = 0;
   for (let d = habitStart(h); d <= today; d = addDays(d, 1)) {
     const mark = markOn(h, d);
-    if (d === today && mark == null) break; // today isn't over yet
-    if (mark === "skip") continue;
-    const value = mark === "done" ? 1 / rate : 0;
-    score = Math.min(1, score * keep + (1 - keep) * value);
+    // Rest days, and today while it's still open, leave the score alone.
+    if (mark === "done" || mark === "missed" || (mark == null && d !== today)) {
+      score = Math.min(1, score * keep + (1 - keep) * (mark === "done" ? 1 / rate : 0));
+    }
+    out.push({ date: d, value: score });
   }
-  return score;
+  return out;
 }
 
 // ─── Streak ──────────────────────────────────────────────────────────
