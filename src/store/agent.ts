@@ -8,8 +8,8 @@ import { dispatch, getLoaded, getState, saveNow } from "./store";
 // list of commands through electron/agent.cjs. They run through the same
 // `dispatch` as the keyboard — so each one shows on screen, is one ⌘Z step,
 // and syncs like any edit — but only the review's verbs are allowed: editing,
-// scheduling, completing and dropping tasks. Nothing that purges, empties the
-// trash or touches habits and settings.
+// scheduling, completing and dropping tasks, and creating a repeating task.
+// Nothing that purges, empties the trash or touches habits and settings.
 
 const ALLOWED = new Set<Command["type"]>([
   "setText",
@@ -36,10 +36,25 @@ const ALLOWED = new Set<Command["type"]>([
   "setProjectForMany",
   "moveAsChild",
   "logBreakdown",
+  "createRecurrence",
 ]);
 
-/** Commands that create a task: the id is the caller's, or a fresh one. */
-const CREATES = new Set<string>(["addChild", "addTaskAfter", "addTaskAtProjectStart"]);
+/** Commands that create something, and the id fields the app fills when the caller leaves them out. */
+const CREATES: Record<string, readonly string[]> = {
+  addChild: ["id"],
+  addTaskAfter: ["id"],
+  addTaskAtProjectStart: ["id"],
+  createRecurrence: ["id", "taskId"],
+};
+
+/** The request item with a fresh id in every missing id field of a creating command. */
+export function withFreshIds(item: unknown): unknown {
+  if (typeof item !== "object" || item == null || !("type" in item)) return item;
+  const fields = CREATES[String(item.type)] ?? [];
+  const missing = fields.filter((field) => !(field in item));
+  if (missing.length === 0) return item;
+  return { ...item, ...Object.fromEntries(missing.map((field) => [field, nanoid()])) };
+}
 
 function isAllowedCommand(x: unknown): x is Command {
   if (typeof x !== "object" || x == null || !("type" in x)) return false;
@@ -51,8 +66,10 @@ export interface AgentStep {
   type: string;
   /** False when the command changed nothing (an unknown id, already true). */
   changed: boolean;
-  /** The new task's id, for commands that create one. */
+  /** The new task's id, or the new recurrence's, for commands that create one. */
   id?: string;
+  /** A new recurrence's template task id. */
+  taskId?: string;
 }
 
 export type AgentResult =
@@ -69,10 +86,7 @@ export async function runAgentRequest(request: unknown): Promise<AgentResult> {
   if (!Array.isArray(raw)) return { ok: false, error: "Expected { commands: [...] }." };
   const commands: Command[] = [];
   for (const item of raw) {
-    const withId =
-      typeof item === "object" && item != null && "type" in item && CREATES.has(String(item.type)) && !("id" in item)
-        ? { ...item, id: nanoid() }
-        : item;
+    const withId = withFreshIds(item);
     if (!isAllowedCommand(withId)) {
       const type = typeof item === "object" && item != null && "type" in item ? String(item.type) : "?";
       return { ok: false, error: `Command not allowed: ${type}. Nothing ran.` };
@@ -83,7 +97,8 @@ export async function runAgentRequest(request: unknown): Promise<AgentResult> {
     const before = getState();
     dispatch(command);
     const step: AgentStep = { type: command.type, changed: getState() !== before };
-    if ("id" in command && CREATES.has(command.type)) step.id = command.id;
+    if (command.type in CREATES && "id" in command) step.id = command.id;
+    if (command.type === "createRecurrence") step.taskId = command.taskId;
     return step;
   });
   return { ok: true, steps, saved: await saveNow() };
