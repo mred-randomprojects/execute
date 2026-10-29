@@ -210,6 +210,7 @@ import { TaskReviewView, type ReviewRow } from "./views/TaskReviewView";
 import { BreakdownPanel } from "./components/BreakdownPanel";
 import { TrashView } from "./views/TrashView";
 import { HABIT_STRIP_DAYS, HabitsView, type HabitEditing, type HabitField } from "./views/HabitsView";
+import { nextTrendRange, type TrendRange } from "./store/habitTrend";
 import { RepeatPicker } from "./components/RepeatPicker";
 import { DetailPanel, type DetailHandlers } from "./components/DetailPanel";
 import { HelpOverlay } from "./components/HelpOverlay";
@@ -818,6 +819,10 @@ export function App() {
   // so ↑/↓ keep the column — checking a week of backfill down a list is fast.
   const [habitDayOffset, setHabitDayOffset] = useState(0);
   const [habitEditing, setHabitEditing] = useState<HabitEditing | null>(null);
+  // How many days the strip shows (it grows with the window): ←/→ reach that far.
+  const [habitStripDays, setHabitStripDays] = useState(HABIT_STRIP_DAYS);
+  useEffect(() => setHabitDayOffset((o) => Math.min(o, habitStripDays - 1)), [habitStripDays]);
+  const [habitTrendRange, setHabitTrendRange] = useState<TrendRange>("3m");
   const habitsActive = view === "habits" && !reviewActive;
   // The order the view shows them in: habits, then KPIs, then the archive.
   const habitList = useMemo(
@@ -2139,7 +2144,7 @@ export function App() {
     "view.trash": cmd.gotoView("trash"),
     "habits.down": () => moveHabitCursor(1),
     "habits.up": () => moveHabitCursor(-1),
-    "habits.dayPrev": () => setHabitDayOffset((o) => Math.min(HABIT_STRIP_DAYS - 1, o + 1)),
+    "habits.dayPrev": () => setHabitDayOffset((o) => Math.min(habitStripDays - 1, o + 1)),
     "habits.dayNext": () => setHabitDayOffset((o) => Math.max(0, o - 1)),
     "habits.toggle": () => {
       if (focusedHabit == null) return;
@@ -2161,6 +2166,7 @@ export function App() {
     },
     "habits.newKpi": newKpi,
     "habits.archive": archiveOrDeleteHabit,
+    "habits.trendRange": () => setHabitTrendRange(nextTrendRange),
     "trash.down": () => moveTrashCursor(1),
     "trash.up": () => moveTrashCursor(-1),
     "trash.first": () => moveTrashCursor("first"),
@@ -3242,6 +3248,9 @@ export function App() {
                 }}
                 onNew={newHabit}
                 onNewKpi={newKpi}
+                trendRange={habitTrendRange}
+                onTrendRange={setHabitTrendRange}
+                onStripDays={setHabitStripDays}
               />
             ) : view === "trash" ? (
               <TrashView

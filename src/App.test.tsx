@@ -2764,6 +2764,26 @@ describe("KPIs", () => {
     await waitFor(() => expect(getState().habits[0].values[today()]).toBe(3));
     expect(await screen.findByText("All logged.")).toBeTruthy();
   });
+
+  it("the trend follows the cursor, g steps its range, and habits and KPIs share the day columns", async () => {
+    render(<App />);
+    await screen.findByPlaceholderText("Add a task for today…");
+    act(() => {
+      createHabit("Floss", 7);
+      createHabit("Dizzy spells", 7, { min: 0, max: 3, openTop: true, every: "day" });
+    });
+    blurActive();
+    fireEvent.keyDown(document.body, { key: "6" });
+    expect(await screen.findByText("Trend · Floss")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "3M" }).getAttribute("aria-pressed")).toBe("true");
+    fireEvent.keyDown(document.body, { key: "g" });
+    expect(screen.getByRole("button", { name: "6M" }).getAttribute("aria-pressed")).toBe("true");
+    fireEvent.keyDown(document.body, { key: "ArrowDown" });
+    expect(await screen.findByText("Trend · Dizzy spells")).toBeTruthy();
+    // One strip for both kinds of row: the same days, in the same slots.
+    const day = formatLong(today());
+    expect(screen.getAllByTitle(new RegExp(`^${day} — `))).toHaveLength(2);
+  });
 });
 
 describe("Not forgetting to log habits", () => {

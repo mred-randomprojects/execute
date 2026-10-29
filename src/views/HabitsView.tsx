@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import type { Habit, HabitId, HabitMark, HabitMeasure, ISODate } from "../types";
 import {
   cadenceLabel,
@@ -23,9 +23,17 @@ import {
 import { WEEKDAY_SHORT, addDays, formatLong, isoWeekday } from "../store/dates";
 import { NO_SPELLCHECK } from "../ui/noSpellcheck";
 import { KpiValueInput } from "../components/KpiValueInput";
+import { HabitTrendPanel } from "../components/HabitTrendChart";
+import { useElementWidth } from "../ui/useElementWidth";
+import type { TrendRange } from "../store/habitTrend";
 
-/** How many days the check-in strip shows (and ←/→ can reach): two weeks. */
+/**
+ * How many days the check-in strip shows (and ←/→ can reach) before the view
+ * has measured itself: two weeks. Measured, it shows as many whole weeks as
+ * fit, up to {@link MAX_STRIP_WEEKS} (see stripDaysFor).
+ */
 export const HABIT_STRIP_DAYS = 14;
+const MAX_STRIP_WEEKS = 8;
 
 /**
  * Past this many active habits the header says so. Not a cap — a nudge. Every
@@ -41,15 +49,129 @@ export interface HabitEditing {
   field: HabitField;
 }
 
+// ─── The grid every row shares ───────────────────────────────────────
+//
+// A habit row, a KPI row and both column heads are the same four slots — a
+// lead (the check-in button), the name, the day strip, the trailing numbers —
+// at the same widths, so a day sits in the same column on every row whatever
+// the row draws in it. Change a width here and every row moves together.
+
+/** One day's column: wide enough for a KPI's number; a habit's square sits centered in it. */
+const DAY_SLOT = 22;
+const DAY_GAP = 3;
+/** The extra space before each Monday, so the weeks read as weeks. */
+const WEEK_GAP = 6;
+const LEAD_W = 24;
+/** The trailing numbers' slot at its widest (lg); see {@link Trail}. */
+const TRAIL_W = 184;
+const ROW_GAP = 12;
+const ROW_PAD = 24;
+/** The name keeps at least this much before the strip grows another week. */
+const NAME_MIN = 200;
+
 /**
- * A strip column: a little gap before each Monday, and the older of the two
- * weeks hidden on a narrow window so the habit's name keeps its room.
+ * How many days of strip fit a list `width` px wide, the name keeping its
+ * room: whole weeks while at least one fits, fewer days on a narrow window
+ * (never under three).
  */
-function stripCellClass(d: ISODate, index: number, days: ISODate[]): string {
-  const older = index < days.length - 7;
-  const gap = isoWeekday(d) === 1 && index > 0 && !(older || index === days.length - 7) ? "ml-[5px]" : "";
-  const gapWide = isoWeekday(d) === 1 && index > 0 ? "lg:ml-[5px]" : "";
-  return [older ? "hidden lg:flex" : "flex", gap, gapWide].join(" ");
+function stripDaysFor(width: number): number {
+  if (width <= 0) return HABIT_STRIP_DAYS;
+  const week = 7 * (DAY_SLOT + DAY_GAP) + WEEK_GAP;
+  const room = width - ROW_PAD - LEAD_W - TRAIL_W - 3 * ROW_GAP - NAME_MIN;
+  if (room >= week) return 7 * Math.min(MAX_STRIP_WEEKS, Math.floor(room / week));
+  return Math.max(3, Math.floor((room + NAME_MIN / 2) / (DAY_SLOT + DAY_GAP)));
+}
+
+function Lead({ children }: { children: ReactNode }) {
+  return (
+    <span className="flex shrink-0 items-center" style={{ width: LEAD_W }}>
+      {children}
+    </span>
+  );
+}
+
+/** The day strip: one slot per day, a gap before each Monday. Rows and heads alike. */
+function DayStrip({ days, children }: { days: ISODate[]; children: (d: ISODate) => ReactNode }) {
+  return (
+    <div className="flex shrink-0 items-center" style={{ gap: DAY_GAP }}>
+      {days.map((d, i) => (
+        <span
+          key={d}
+          className="flex justify-center"
+          style={{ width: DAY_SLOT, marginLeft: i > 0 && isoWeekday(d) === 1 ? WEEK_GAP : 0 }}
+        >
+          {children(d)}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+/** The trailing numbers: one width for every row, right-aligned inside it. */
+function Trail({ children }: { children: ReactNode }) {
+  return <div className="flex w-[132px] shrink-0 items-center justify-end gap-3 lg:w-[184px]">{children}</div>;
+}
+
+/** A column head: the strip's weekday letters over the same slots the rows use. */
+function ColumnHead({
+  days,
+  today,
+  label,
+  trail,
+  className = "",
+}: {
+  days: ISODate[];
+  today: ISODate;
+  label: ReactNode;
+  trail: ReactNode;
+  className?: string;
+}) {
+  return (
+    <div className={`mb-1 flex items-center gap-3 px-3 text-[10px] text-ink-faint ${className}`}>
+      <Lead>{null}</Lead>
+      <span className="min-w-0 flex-1">{label}</span>
+      <div className="mono" aria-hidden="true">
+        <DayStrip days={days}>
+          {(d) => (
+            <span className={d === today ? "text-accent" : ""} title={formatLong(d)}>
+              {WEEKDAY_SHORT[isoWeekday(d)][0]}
+            </span>
+          )}
+        </DayStrip>
+      </div>
+      <Trail>{trail}</Trail>
+    </div>
+  );
+}
+
+/** A row's frame: the focus bar, the click target, the keep-in-view scroll. */
+function RowFrame({
+  rowRef,
+  focused,
+  archived,
+  onSelect,
+  children,
+}: {
+  rowRef: RefObject<HTMLDivElement>;
+  focused: boolean;
+  archived: boolean;
+  onSelect: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <div
+      ref={rowRef}
+      onClick={onSelect}
+      className={[
+        "relative flex flex-col rounded px-3 py-2.5 select-none",
+        focused ? "bg-surface-2" : "cursor-default hover:bg-surface-2/60",
+        archived ? "opacity-60" : "",
+      ].join(" ")}
+    >
+      {focused && <span className="absolute left-0 top-2 bottom-2 w-[2px] bg-accent" />}
+      <div className="flex items-center gap-3">{children}</div>
+    </div>
+  );
 }
 
 const NEXT_MARK: Record<"none" | HabitMark, HabitMark | null> = {
@@ -104,7 +226,7 @@ function DayCell({
       title={`${formatLong(date)} — ${state}${note === "" ? "" : `\n${note}`}`}
       aria-label={`${formatLong(date)}: ${state}${note === "" ? "" : `, note: ${note}`}`}
       className={[
-        "relative grid h-[14px] w-[14px] shrink-0 place-items-center rounded-[3px] text-[9px] leading-none transition-colors",
+        "relative grid h-[16px] w-[16px] shrink-0 place-items-center rounded-[3px] text-[9px] leading-none transition-colors",
         mark === "done"
           ? "bg-accent"
           : mark === "skip"
@@ -232,7 +354,7 @@ function HabitAside({
   return (
     <aside
       aria-label="Habit notes"
-      className="w-[220px] shrink-0 overflow-auto border-l border-line pl-4 lg:w-[280px] lg:pl-5"
+      className="w-[220px] shrink-0 overflow-auto border-l border-line pl-4 lg:w-[280px] lg:pl-5 xl:w-[320px]"
     >
       {habit == null ? (
         <div className="text-[12px] text-ink-faint">Pick a habit to read its notes.</div>
@@ -357,17 +479,8 @@ function HabitRow({
   }, [focused, habit.rank]); // ⌥↑/↓ moves the row: keep it in view
 
   return (
-    <div
-      ref={rowRef}
-      onClick={onSelect}
-      className={[
-        "relative flex flex-col rounded px-3 py-2.5 select-none",
-        focused ? "bg-surface-2" : "cursor-default hover:bg-surface-2/60",
-        archived ? "opacity-60" : "",
-      ].join(" ")}
-    >
-      {focused && <span className="absolute left-0 top-2 bottom-2 w-[2px] bg-accent" />}
-      <div className="flex items-center gap-3">
+    <RowFrame rowRef={rowRef} focused={focused} archived={archived} onSelect={onSelect}>
+      <Lead>
       <button
         tabIndex={-1}
         onClick={(e) => {
@@ -385,6 +498,7 @@ function HabitRow({
       >
         ✓
       </button>
+      </Lead>
 
       <div className="min-w-0 flex-1">
         <div className="truncate text-[14px] text-ink">
@@ -401,7 +515,7 @@ function HabitRow({
             </span>
           )}
         </div>
-        <div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-[12px] text-ink-faint">
+        <div className="mt-0.5 flex min-w-0 items-center gap-1.5 overflow-hidden whitespace-nowrap text-[12px] text-ink-faint">
           {editing === "cue" ? (
             <span className="min-w-0 flex-1 italic">
               <InlineInput
@@ -440,25 +554,24 @@ function HabitRow({
         </div>
       </div>
 
-      <div className="flex shrink-0 items-center gap-[3px]">
-        {days.map((d, i) => (
-          <span key={d} className={stripCellClass(d, i, days)}>
-            <DayCell
-              date={d}
-              mark={markOn(habit, d)}
-              note={noteOn(habit, d)}
-              beforeStart={d < start}
-              isToday={d === today}
-              isCursor={focused && cursorDay === d}
-              onClick={() => {
-                onSelectDay(d);
-                onMark(d, NEXT_MARK[markOn(habit, d) ?? "none"]);
-              }}
-            />
-          </span>
-        ))}
-      </div>
+      <DayStrip days={days}>
+        {(d) => (
+          <DayCell
+            date={d}
+            mark={markOn(habit, d)}
+            note={noteOn(habit, d)}
+            beforeStart={d < start}
+            isToday={d === today}
+            isCursor={focused && cursorDay === d}
+            onClick={() => {
+              onSelectDay(d);
+              onMark(d, NEXT_MARK[markOn(habit, d) ?? "none"]);
+            }}
+          />
+        )}
+      </DayStrip>
 
+      <Trail>
       <span
         className="mono w-[36px] shrink-0 text-right text-[11px] text-ink-soft"
         title="Done this week, of this week's target"
@@ -469,8 +582,8 @@ function HabitRow({
       <span className="mono w-[40px] shrink-0 whitespace-nowrap text-right text-[11px] text-ink-soft" title={run.unit === "day" ? "Done days in a row — one miss is forgiven, two in a row end it" : "Weeks in a row that met the target"}>
         {streakLabel(run)}
       </span>
-      </div>
-    </div>
+      </Trail>
+    </RowFrame>
   );
 }
 
@@ -569,17 +682,8 @@ function KpiRow({
   }, [focused, habit.rank]); // ⌥↑/↓ moves the row: keep it in view
 
   return (
-    <div
-      ref={rowRef}
-      onClick={onSelect}
-      className={[
-        "relative flex flex-col rounded px-3 py-2.5 select-none",
-        focused ? "bg-surface-2" : "cursor-default hover:bg-surface-2/60",
-        archived ? "opacity-60" : "",
-      ].join(" ")}
-    >
-      {focused && <span className="absolute left-0 top-2 bottom-2 w-[2px] bg-accent" />}
-      <div className="flex items-center gap-3">
+    <RowFrame rowRef={rowRef} focused={focused} archived={archived} onSelect={onSelect}>
+      <Lead>
         <button
           tabIndex={-1}
           onClick={(e) => {
@@ -597,6 +701,7 @@ function KpiRow({
         >
           {todayValue == null ? "#" : formatValue(measure, todayValue)}
         </button>
+      </Lead>
 
         <div className="min-w-0 flex-1">
           <div className="truncate text-[14px] text-ink">
@@ -613,7 +718,7 @@ function KpiRow({
               </span>
             )}
           </div>
-          <div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-[12px] text-ink-faint">
+          <div className="mt-0.5 flex min-w-0 items-center gap-1.5 overflow-hidden whitespace-nowrap text-[12px] text-ink-faint">
             {editing === "cue" ? (
               <span className="min-w-0 flex-1 italic">
                 <InlineInput
@@ -646,34 +751,33 @@ function KpiRow({
           </div>
         </div>
 
-        <div className="flex shrink-0 items-center gap-[3px]">
-          {days.map((d, i) => (
-            <span key={d} className={stripCellClass(d, i, days)}>
-              <ValueCell
-                date={d}
-                measure={measure}
-                value={valueOn(habit, d)}
-                note={noteOn(habit, d)}
-                beforeStart={d < start}
-                isToday={d === today}
-                isCursor={focused && cursorDay === d}
-                onClick={() => {
-                  onSelectDay(d);
-                  onEdit("value");
-                }}
-              />
-            </span>
-          ))}
-        </div>
+        <DayStrip days={days}>
+          {(d) => (
+            <ValueCell
+              date={d}
+              measure={measure}
+              value={valueOn(habit, d)}
+              note={noteOn(habit, d)}
+              beforeStart={d < start}
+              isToday={d === today}
+              isCursor={focused && cursorDay === d}
+              onClick={() => {
+                onSelectDay(d);
+                onEdit("value");
+              }}
+            />
+          )}
+        </DayStrip>
 
+        <Trail>
         <span className="mono w-[44px] shrink-0 text-right text-[12px] text-ink" title={summary.title}>
           {summary.main}
         </span>
         <span className="mono w-[64px] shrink-0 text-right text-[11px] text-ink-soft" title={summary.title}>
           {summary.aside}
         </span>
-      </div>
-    </div>
+        </Trail>
+    </RowFrame>
   );
 }
 
@@ -696,6 +800,9 @@ export function HabitsView({
   onNew,
   onNewKpi,
   onValue,
+  trendRange,
+  onTrendRange,
+  onStripDays,
 }: {
   /** Active habits, then active KPIs, then the archive — the order the cursor walks. */
   habits: Habit[];
@@ -712,8 +819,15 @@ export function HabitsView({
   onNew: () => void;
   onNewKpi: () => void;
   onValue: (id: HabitId, date: ISODate, value: number | null) => void;
+  trendRange: TrendRange;
+  onTrendRange: (r: TrendRange) => void;
+  /** How many days the strip shows now that it has measured itself — what ←/→ can reach. */
+  onStripDays: (n: number) => void;
 }) {
-  const days = recentDays(today, HABIT_STRIP_DAYS);
+  const listRef = useRef<HTMLDivElement>(null);
+  const stripDays = stripDaysFor(useElementWidth(listRef));
+  useEffect(() => onStripDays(stripDays), [stripDays, onStripDays]);
+  const days = recentDays(today, stripDays);
   const cursorDay = days[days.length - 1 - dayOffset] ?? today;
   const focused = habits.find((h) => h.id === cursorId) ?? null;
   const active = habits.filter((h) => h.archivedAt == null && h.measure == null);
@@ -756,7 +870,7 @@ export function HabitsView({
   );
 
   return (
-    <div className="mx-auto flex h-full w-full max-w-6xl flex-col px-6 py-10 lg:px-10">
+    <div className="flex h-full w-full flex-col px-6 py-10 lg:px-10">
       <header className="mb-5 flex items-end justify-between gap-4 border-b border-line pb-5">
         <div>
           <div className="eyebrow mb-1.5 text-accent">Habits &amp; KPIs</div>
@@ -794,31 +908,26 @@ export function HabitsView({
       </header>
 
       <div className="flex min-h-0 flex-1 gap-4 lg:gap-6">
-      <div className="flex min-w-0 flex-1 flex-col">
+      <div ref={listRef} className="flex min-w-0 flex-1 flex-col overflow-auto">
       {active.length > 0 && (
-        <div className="mb-1 flex items-center gap-3 px-3 text-[10px] text-ink-faint" aria-hidden="true">
-          <span className="w-[18px] shrink-0" />
-          <span className="flex-1" />
-          <div className="mono flex shrink-0 items-center gap-[3px]">
-            {days.map((d, i) => (
-              <span
-                key={d}
-                className={[stripCellClass(d, i, days), "w-[14px] justify-center", d === today ? "text-accent" : ""].join(" ")}
-              >
-                {WEEKDAY_SHORT[isoWeekday(d)][0]}
+        <ColumnHead
+          days={days}
+          today={today}
+          label={null}
+          trail={
+            <>
+              <span className="w-[36px] shrink-0 text-right">week</span>
+              <span className="w-[32px] shrink-0 text-right lg:w-[84px]">
+                <span className="hidden lg:inline">strength</span>
+                <span className="lg:hidden" title="strength">str</span>
               </span>
-            ))}
-          </div>
-          <span className="w-[36px] shrink-0 text-right">week</span>
-          <span className="w-[32px] shrink-0 text-right lg:w-[84px]">
-            <span className="hidden lg:inline">strength</span>
-            <span className="lg:hidden" title="strength">str</span>
-          </span>
-          <span className="w-[40px] shrink-0 text-right">streak</span>
-        </div>
+              <span className="w-[40px] shrink-0 text-right">streak</span>
+            </>
+          }
+        />
       )}
 
-      <div className="flex flex-1 flex-col overflow-auto">
+      <div className="flex flex-col">
         {habits.length === 0 ? (
           <div className="rounded-lg border border-dashed border-line px-4 py-10 text-center text-[13px] text-ink-faint">
             Press <span className="kbd">n</span> to add a habit, or <span className="kbd">k</span> for a KPI — a number to
@@ -829,25 +938,24 @@ export function HabitsView({
             {active.map(row)}
             {kpis.length > 0 && (
               <>
-                <div className={`${active.length > 0 ? "mt-6" : ""} mb-1 flex items-center gap-3 px-3 text-[10px] text-ink-faint`}>
-                  <span className="eyebrow flex-1" title="Measured, not kept: one number per day (or week, or month). No streaks, no strength.">
-                    KPIs
-                  </span>
-                  <div className="mono flex shrink-0 items-center gap-[3px]" aria-hidden="true">
-                    {days.map((d, i) => (
-                      <span
-                        key={d}
-                        className={[stripCellClass(d, i, days), "w-[20px] justify-center", d === today ? "text-accent" : ""].join(" ")}
-                      >
-                        {WEEKDAY_SHORT[isoWeekday(d)][0]}
+                <ColumnHead
+                  days={days}
+                  today={today}
+                  className={active.length > 0 ? "mt-6" : ""}
+                  label={
+                    <span className="eyebrow" title="Measured, not kept: one number per day (or week, or month). No streaks, no strength.">
+                      KPIs
+                    </span>
+                  }
+                  trail={
+                    <>
+                      <span className="w-[44px] shrink-0 text-right" title="Daily: the 7-day average. Weekly/monthly: the latest value.">
+                        7d / last
                       </span>
-                    ))}
-                  </div>
-                  <span className="w-[44px] shrink-0 text-right" title="Daily: the 7-day average. Weekly/monthly: the latest value.">
-                    7d / last
-                  </span>
-                  <span className="w-[64px] shrink-0 text-right">vs</span>
-                </div>
+                      <span className="w-[64px] shrink-0 text-right">vs</span>
+                    </>
+                  }
+                />
                 {kpis.map(row)}
               </>
             )}
@@ -858,6 +966,9 @@ export function HabitsView({
           </div>
         )}
       </div>
+      {habits.length > 0 && (
+        <HabitTrendPanel habit={focused} today={today} range={trendRange} onRange={onTrendRange} />
+      )}
       </div>
       <HabitAside
         habit={focused}

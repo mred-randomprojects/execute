@@ -87,7 +87,7 @@ export const keymap: KeyBinding[] = [
   { key: "ArrowUp", action: "habits.up", context: "habits" },
   { key: "Alt+ArrowUp", action: "habits.moveUp", context: "habits", displayKey: "⌥ ↑ / ⌥ ↓", description: "move it up / down its list", section: "Habits" },
   { key: "Alt+ArrowDown", action: "habits.moveDown", context: "habits" },
-  { key: "ArrowLeft", action: "habits.dayPrev", context: "habits", displayKey: "← / →", description: "pick a day (the last two weeks)", section: "Habits" },
+  { key: "ArrowLeft", action: "habits.dayPrev", context: "habits", displayKey: "← / →", description: "pick a day (as far back as the strip shows)", section: "Habits" },
   { key: "ArrowRight", action: "habits.dayNext", context: "habits" },
   { key: " ", action: "habits.toggle", context: "habits", displayKey: "space", description: "check in / undo, on the picked day · on a KPI, log its number", section: "Habits" },
   { key: "Meta+Enter", action: "habits.toggle", context: "habits" },
@@ -95,6 +95,7 @@ export const keymap: KeyBinding[] = [
   { key: "Enter", action: "habits.rename", context: "habits", displayKey: "↵", description: "rename · tab moves on to the cue", section: "Habits" },
   { key: "n", action: "habits.new", context: "habits", displayKey: "n", description: "new habit", section: "Habits" },
   { key: "k", action: "habits.newKpi", context: "habits", displayKey: "k", description: "new KPI — a number to log (“Dizzy spells 0-3+”, “DHI 0-100 monthly”)", section: "Habits" },
+  { key: "g", action: "habits.trendRange", context: "habits", displayKey: "g", description: "trend chart: next range (3 months, 6, a year, all)", section: "Habits" },
   { key: "Backspace", action: "habits.archive", context: "habits", displayKey: "⌫", description: "archive · on an archived habit, delete it", section: "Habits", noRepeat: true },
 
   // ── trash (deleted tasks, kept until you restore or delete them) ─
