@@ -57,7 +57,7 @@ import {
   withNote,
   withValue,
 } from "../store/habits";
-import { horizonWords } from "../selectors";
+import { horizonWords, recurrenceInstanceId, recurrencesToCreate } from "../selectors";
 import { buryTrashed, commit, todayFor } from "./commit";
 
 // ─── Commands: every change to the state, as data ───────────────────
@@ -164,6 +164,7 @@ export type Command =
   | { type: "outdentRecurrenceNode"; taskId: TaskId }
   | { type: "removeRecurrenceNode"; taskId: TaskId }
   | { type: "acceptRecurrence"; recurrenceId: RecurrenceId; id: TaskId; today: ISODate }
+  | { type: "autoAcceptRecurrences"; today: ISODate }
   // Habits
   | { type: "createHabit"; id: HabitId; name: string; perWeek: number; measure: HabitMeasure | null }
   | { type: "renameHabit"; id: HabitId; name: string }
@@ -323,8 +324,17 @@ function mapRecurrenceOfNode(recurrences: Recurrence[], taskId: TaskId, fn: (tem
   return recurrences.map((r) => (findById([r.template], taskId) != null ? { ...r, template: fn(r.template) } : r));
 }
 
-/** Deep-copy a template with fresh ids (the root gets `rootId`): new work, with no history. */
-function cloneFresh(task: Task, id: TaskId, ctx: CommandContext): Task {
+/**
+ * Deep-copy a template with fresh ids (the root gets `id`): new work, with no
+ * history. `childId` names each child from its parent's id and its position;
+ * by default every child gets a random id.
+ */
+function cloneFresh(
+  task: Task,
+  id: TaskId,
+  ctx: CommandContext,
+  childId: (parentId: TaskId, index: number) => TaskId = () => ctx.newId() as TaskId,
+): Task {
   return {
     ...task,
     id,
@@ -333,12 +343,18 @@ function cloneFresh(task: Task, id: TaskId, ctx: CommandContext): Task {
     inProgress: null,
     sessions: [],
     progress: [],
-    children: task.children.map((c) => cloneFresh(c, ctx.newId() as TaskId, ctx)),
+    children: task.children.map((c, i) => cloneFresh(c, childId(id, i), ctx, childId)),
   };
 }
 
 /** Clone a recurrence's template into a concrete, dated-for-today commitment. */
-function materialize(rec: Recurrence, id: TaskId, today: ISODate, ctx: CommandContext): Task {
+function materialize(
+  rec: Recurrence,
+  id: TaskId,
+  today: ISODate,
+  ctx: CommandContext,
+  childId?: (parentId: TaskId, index: number) => TaskId,
+): Task {
   const planAll = (t: Task): Task => ({
     ...t,
     plannedFor: today,
@@ -348,7 +364,7 @@ function materialize(rec: Recurrence, id: TaskId, today: ISODate, ctx: CommandCo
     wontDo: null,
     children: t.children.map(planAll),
   });
-  const planned = planAll(cloneFresh(rec.template, id, ctx));
+  const planned = planAll(cloneFresh(rec.template, id, ctx, childId));
   return { ...planned, recurrenceId: rec.id, occurrenceDate: today };
 }
 
@@ -817,6 +833,24 @@ export function applyCommand(s: AppState, cmd: Command, ctx: CommandContext): Ap
       const instance = materialize(rec, cmd.id, cmd.today, ctx);
       return withTasks(s, insertAtProjectStart(s.tasks, s.projects, instance.projectId, instance));
     }
+    case "autoAcceptRecurrences": {
+      // Ids come from the recurrence and the day, not from chance, so two
+      // devices opening the same day make the same task and the merge keeps one.
+      const due = recurrencesToCreate(s, cmd.today);
+      if (due.length === 0) return s;
+      let tasks = s.tasks;
+      for (const rec of due) {
+        const instance = materialize(
+          rec,
+          recurrenceInstanceId(rec.id, cmd.today),
+          cmd.today,
+          ctx,
+          (parentId, i) => `${parentId}-${i}` as TaskId,
+        );
+        tasks = insertAtProjectStart(tasks, s.projects, instance.projectId, instance);
+      }
+      return withTasks(s, tasks);
+    }
 
     // Habits — their own array, like recurrences: nothing here reaches `tasks`.
     case "createHabit": {
@@ -1074,6 +1108,9 @@ export function describeCommand(s: AppState, cmd: Command, now: number): string 
       return "Delete a recurring step";
     case "acceptRecurrence":
       return `Take on today’s ${recurrence(cmd.recurrenceId)}`;
+    // Automatic, like markOpened: not a step of the owner's to undo.
+    case "autoAcceptRecurrences":
+      return null;
 
     case "createHabit": {
       const noun = cmd.measure == null ? "habit" : "KPI";

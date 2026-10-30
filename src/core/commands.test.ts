@@ -159,6 +159,37 @@ describe("the core (no UI)", () => {
     expect(instance?.children.map((c) => c.id)).toEqual(["id1"]);
   });
 
+  it("recurrences create their own task on the days they fire, once, with ids fixed by the day", () => {
+    const rule: RecurrenceRule = { freq: "week", interval: 1, weekdays: [5], anchor: "2026-10-09", ends: { kind: "never" } };
+    const rec = "rec" as RecurrenceId;
+    const base = run(
+      emptyState(),
+      { type: "createRecurrence", id: rec, taskId: "tpl" as TaskId, text: "Compra COTO", rule, projectId: emptyState().projects[0].id },
+      { type: "addRecurrenceStep", taskId: "tpl" as TaskId, stepId: "step" as TaskId, mode: "child" },
+    );
+    const friday = "2026-10-30";
+    const id = `rec-${rec}-${friday}` as TaskId;
+
+    // Not on a Thursday.
+    expect(run(base, { type: "autoAcceptRecurrences", today: "2026-10-29" })).toBe(base);
+
+    const s = run(base, { type: "autoAcceptRecurrences", today: friday });
+    expect(findById(s.tasks, id)).toMatchObject({ text: "Compra COTO", plannedFor: friday, recurrenceId: rec, occurrenceDate: friday });
+    expect(findById(s.tasks, id)?.children.map((c) => c.id)).toEqual([`${id}-0`]);
+    // Twice the same day, done or not, changes nothing.
+    expect(run(s, { type: "autoAcceptRecurrences", today: friday })).toBe(s);
+    const done = run(s, { type: "toggleComplete", id });
+    expect(run(done, { type: "autoAcceptRecurrences", today: friday })).toBe(done);
+    // Deleted today, it stays deleted.
+    const deleted = run(s, { type: "trashTask", id, reason: null, log: false });
+    expect(run(deleted, { type: "autoAcceptRecurrences", today: friday }).tasks).toEqual(deleted.tasks);
+    // Still open from last Friday: no second one piles up.
+    expect(run(s, { type: "autoAcceptRecurrences", today: "2026-11-06" })).toBe(s);
+    // Done: next Friday gets its own.
+    const next = run(done, { type: "autoAcceptRecurrences", today: "2026-11-06" });
+    expect(findById(next.tasks, `rec-${rec}-2026-11-06` as TaskId)).toBeDefined();
+  });
+
   it("habits: created, checked in, and deleted with a tombstone", () => {
     const h = "h" as HabitId;
     const s = run(

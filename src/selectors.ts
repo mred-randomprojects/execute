@@ -1,4 +1,5 @@
 import type {
+  AppState,
   Horizon,
   ISODate,
   OutlineId,
@@ -738,6 +739,31 @@ export function recurringForToday(
 ): Recurrence[] {
   const suppressed = suppressedRecurrenceIds(tasks, today);
   return recurrences.filter((r) => !suppressed.has(r.id) && ruleFiresOn(r.rule, today));
+}
+
+/**
+ * The id of a recurrence's task for `date`. Fixed by the two, so every device
+ * that creates it creates the same task.
+ */
+export function recurrenceInstanceId(recId: RecurrenceId, date: ISODate): TaskId {
+  return `rec-${recId}-${date}` as TaskId;
+}
+
+/**
+ * Recurrences whose task for today should be created now: they fire today,
+ * aren't suppressed (an earlier task of theirs is still open, or today's was
+ * already taken on), and today's task was never made — not even one since
+ * trashed or deleted for good, which must stay gone.
+ */
+export function recurrencesToCreate(
+  s: Pick<AppState, "recurrences" | "tasks" | "trash" | "tombstones">,
+  today: ISODate
+): Recurrence[] {
+  const gone = new Set<string>([...s.trash.map((t) => t.task.id), ...s.tombstones.map((t) => t.id)]);
+  return recurringForToday(s.recurrences, s.tasks, today).filter((r) => {
+    const id = recurrenceInstanceId(r.id, today);
+    return !gone.has(id) && findById(s.tasks, id) == null;
+  });
 }
 
 export function horizonLabel(task: Task, today: ISODate): string | null {

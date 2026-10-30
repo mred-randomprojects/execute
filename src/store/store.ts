@@ -904,6 +904,14 @@ export function acceptRecurrence(recId: RecurrenceId, today: ISODate): TaskId | 
   return id;
 }
 
+/**
+ * Create today's task for every recurrence that fires today and doesn't have
+ * one yet. Automatic, so not undoable: delete the task to drop one day.
+ */
+export function autoAcceptRecurrences(today: ISODate): void {
+  dispatch({ type: "autoAcceptRecurrences", today });
+}
+
 // ─── Habits ─────────────────────────────────────────────────────────
 //
 // Their own array, like recurrences: nothing there reaches `tasks`, so a habit

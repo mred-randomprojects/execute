@@ -17,6 +17,7 @@ import {
 } from "./types";
 import {
   acceptRecurrence,
+  autoAcceptRecurrences,
   addChild,
   addRecurrenceStep,
   addTaskAfter,
@@ -445,6 +446,13 @@ export function App() {
     setDaysAway(last == null || last >= today ? 0 : daysBetween(last, today) - 1);
     markOpened(today);
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loaded, today]);
+  // Recurring tasks are real tasks: on each day one fires, its task is created.
+  // Only on load and day change — a repeat made today starts out untitled, so
+  // it stays a "Recurring today" suggestion (`t` takes it on) until tomorrow.
+  useEffect(() => {
+    if (!loaded) return;
+    autoAcceptRecurrences(today);
   }, [loaded, today]);
 
   // ── Overdue ───────────────────────────────────────────────────────
