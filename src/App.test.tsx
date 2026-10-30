@@ -1140,6 +1140,45 @@ describe("Multi-select", () => {
   });
 });
 
+describe("Priority tint", () => {
+  const row = (text: string): HTMLElement => {
+    // The title can show elsewhere too (the in-progress task is in the status bar).
+    const rows = screen
+      .getAllByText(text)
+      .map((el) => el.closest("[draggable]"))
+      .filter((el): el is HTMLElement => el instanceof HTMLElement);
+    if (rows.length !== 1) throw new Error(`expected one row for ${text}, got ${rows.length}`);
+    return rows[0];
+  };
+
+  // Priority is always set on the focused task (⌘k or the details panel), and
+  // the focused task is always in the selection. The selection's grey used to
+  // replace the red, so it showed only once focus moved to another row.
+  it("shows on the focused row as soon as the priority is set", async () => {
+    render(<App />);
+    await addTask("urgent thing");
+    blurActive();
+
+    await runCommand(/^Priority: Urgent$/);
+    await waitFor(() => expect(row("urgent thing").className).toContain("bg-bad-soft"));
+
+    await runCommand(/^Priority: None$/);
+    await waitFor(() => expect(row("urgent thing").className).not.toContain("bg-bad-soft"));
+  });
+
+  it("shows on the task in progress too", async () => {
+    render(<App />);
+    await addTask("urgent and started");
+    blurActive();
+    await runCommand(/^Priority: Urgent$/);
+    await runCommand(CMD.work);
+    await addTask("something else"); // focus leaves; the started task stays current
+    await waitFor(() =>
+      expect(row("urgent and started").className).toContain("bg-bad-soft")
+    );
+  });
+});
+
 describe("Select all (⌘a)", () => {
   /** A task row is "done" when its title carries the strikethrough. */
   const isStruck = (text: string) =>

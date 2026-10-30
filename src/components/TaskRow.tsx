@@ -505,10 +505,16 @@ export function TaskRow({ task, depth }: { task: Task; depth: number }) {
           "group relative flex gap-2 rounded-sm pr-2 cursor-default select-none [container-type:inline-size]",
           ed.touch ? "py-2" : "py-[5px]",
           peeking || ed.touch ? "items-start" : "items-center",
+          // The priority tint wins over the current and selected backgrounds,
+          // which mark themselves with a ring instead: priority is set on the
+          // focused row, and the focused row is always selected, so a grey that
+          // replaced the red hid it until focus moved elsewhere.
           isCurrent
-            ? "bg-accent-soft/40 ring-1 ring-inset ring-accent/40"
+            ? `${priorityBg || "bg-accent-soft/40"} ring-1 ring-inset ring-accent/40`
             : inSelection && !editing
-              ? "bg-surface-2"
+              ? priorityBg
+                ? `${priorityBg} ring-1 ring-inset ring-line-strong`
+                : "bg-surface-2"
               : priorityBg
                 ? `${priorityBg} hover:bg-surface-2/60`
                 : "hover:bg-surface-2/60",
