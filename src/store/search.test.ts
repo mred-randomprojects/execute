@@ -110,6 +110,7 @@ describe("searchTasks", () => {
     const skipped = { ...makeTask("Milk the schedule"), wontDo: { reason: null, at: 1 } };
     expect(searchTasks([done], projects, "milk")).toHaveLength(1);
     expect(searchTasks([skipped], projects, "milk")).toHaveLength(1);
+    expect(searchTasks([done, skipped], projects, "milk", 50, true)).toEqual([]);
   });
 
   it("falls back to notes when the title doesn't match, and ranks it below a title hit", () => {

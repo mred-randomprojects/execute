@@ -3445,6 +3445,7 @@ export function App() {
         <SearchPalette
           tasks={state.tasks}
           projects={state.projects}
+          hideResolved={hideCompleted}
           onPick={jumpToTask}
           onClose={() => setShowSearch(false)}
         />

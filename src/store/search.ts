@@ -174,7 +174,8 @@ const NOTES_FIELD_PENALTY = 40;
  * Every task in `tasks` (at any depth) whose title — or, failing that, notes —
  * matches `query` as a subsequence, best matches first. Trashed tasks live in a
  * separate array and are intentionally not searched. An empty/blank query
- * returns nothing.
+ * returns nothing. With `hideResolved`, done and won't-do tasks are left out
+ * (their open children are still searched).
  *
  * Ranking: title matches over notes matches, then by match score, then most
  * recently touched, then shorter title — so the closest, freshest thing wins
@@ -185,6 +186,7 @@ export function searchTasks(
   projects: Project[],
   query: string,
   limit = 50,
+  hideResolved = false,
 ): TaskSearchResult[] {
   const trimmed = query.trim();
   if (trimmed === "") return [];
@@ -193,6 +195,7 @@ export function searchTasks(
   const results: TaskSearchResult[] = [];
 
   const visit = (node: Task, ancestors: Task[]): void => {
+    const resolved = node.completed || node.wontDo != null;
     const textMatch = subsequenceMatch(trimmed, node.text);
     let field: MatchField | null = null;
     let match: SubseqMatch | null = null;
@@ -206,7 +209,7 @@ export function searchTasks(
         match = notesMatch;
       }
     }
-    if (field != null && match != null) {
+    if (field != null && match != null && !(hideResolved && resolved)) {
       const score = match.score - (field === "notes" ? NOTES_FIELD_PENALTY : 0);
       results.push({
         task: node,

@@ -12,6 +12,8 @@ import {
  * subsequence-based ("byml" → "Buy milk"), searching every task's title and,
  * failing that, its notes — across all projects, dates, and completion states.
  * Picking a result hands its id back so the app can reveal and select it.
+ * Done and won't-do tasks can be left out (Tab, or the footer button); it
+ * starts the way the outline is set (`h`).
  *
  * Modeled on the schedule/project pickers so it feels like the rest of the app:
  * a search field over a keyboard-navigable list. Every keystroke stops here
@@ -20,22 +22,25 @@ import {
 export function SearchPalette({
   tasks,
   projects,
+  hideResolved: hideResolvedAtOpen,
   onPick,
   onClose,
 }: {
   tasks: Task[];
   projects: Project[];
+  hideResolved: boolean;
   onPick: (id: TaskId) => void;
   onClose: () => void;
 }) {
   const [query, setQuery] = useState("");
   const [sel, setSel] = useState(0);
+  const [hideResolved, setHideResolved] = useState(hideResolvedAtOpen);
   const inputRef = useRef<HTMLInputElement>(null);
   const selRef = useRef<HTMLButtonElement>(null);
 
   const results = useMemo(
-    () => searchTasks(tasks, projects, query),
-    [tasks, projects, query],
+    () => searchTasks(tasks, projects, query, 50, hideResolved),
+    [tasks, projects, query, hideResolved],
   );
 
   useEffect(() => {
@@ -46,7 +51,7 @@ export function SearchPalette({
   // pointing at a row that just moved out from under it.
   useEffect(() => {
     setSel(0);
-  }, [query]);
+  }, [query, hideResolved]);
 
   // The list scrolls; keep the cursor in view as it walks past the fold.
   useEffect(() => {
@@ -89,6 +94,9 @@ export function SearchPalette({
             } else if (e.key === "Enter") {
               e.preventDefault();
               pick(results[sel]);
+            } else if (e.key === "Tab") {
+              e.preventDefault();
+              setHideResolved((h) => !h);
             } else if (e.key === "Escape") {
               e.preventDefault();
               onClose();
@@ -124,11 +132,24 @@ export function SearchPalette({
 
         <div className="flex items-center justify-between border-t border-line px-4 py-1.5 text-[11px] text-ink-faint">
           <span>↑↓ to navigate · ↵ to jump</span>
-          {results.length > 0 && (
-            <span>
-              {results.length} match{results.length === 1 ? "" : "es"}
-            </span>
-          )}
+          <span className="flex items-center gap-3">
+            {results.length > 0 && (
+              <span>
+                {results.length} match{results.length === 1 ? "" : "es"}
+              </span>
+            )}
+            <button
+              type="button"
+              onClick={() => {
+                setHideResolved((h) => !h);
+                inputRef.current?.focus();
+              }}
+              className="mono uppercase tracking-wide hover:text-ink"
+              title="Show or hide done and won't-do tasks (Tab)"
+            >
+              {hideResolved ? "✓ resolved hidden" : "resolved shown"} · ⇥
+            </button>
+          </span>
         </div>
       </div>
     </div>
