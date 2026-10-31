@@ -135,8 +135,8 @@ practice.
 - **`t` / `Shift+T`** step the schedule one tier later / sooner along the
   picker's ladder (Today → Tomorrow → week → … → Someday → Inbox), wrapping at
   the ends — so `t` on an inbox task still means "today", and `Shift+T` on a
-  today task unplans it. Accept flows stay special: `t` on a recurrence or a
-  "Suggested for today" row accepts it for today. (As built 2026-07-07;
+  today task unplans it. In the Recurring view `t` takes on today's occurrence.
+  (As built 2026-07-07; the "Suggested for today" band went on 2026-10-31;
   supersedes the original "t toggles Today" + demote-key sketch.)
 - **Capture tokens** (later): `~week`, `~month`, `~someday`, `@2026-06-30` parsed
   in `store/capture.ts` alongside the existing completion token.

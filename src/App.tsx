@@ -156,11 +156,9 @@ import {
   groupTasksByDay,
   PERIOD_LABELS,
   PERIODS,
-  recurringForToday,
   resolveZoom,
   scheduleStep,
   stepSchedule,
-  suggestedForToday,
   waitingOnOthers,
   taskBucket,
   todayCapacity,
@@ -268,8 +266,7 @@ interface OutlineTaskRow {
    * order, so a reorder can bubble a task through it and have the screen agree.
    *
    * `null` marks rows that belong to no order at all: the passive bands that
-   * trail the outline ("Suggested for today", waiting-on, today's recurrences)
-   * and the Recurring view's templates. They're focusable, but their tasks were
+   * trail the outline (waiting-on) and the Recurring view's templates. They're focusable, but their tasks were
    * filtered *out* of their group and re-listed at the foot of the view.
    *
    * Reorder has to know the difference. A task in a band is still a sibling in
@@ -449,7 +446,7 @@ export function App() {
   }, [loaded, today]);
   // Recurring tasks are real tasks: on each day one fires, its task is created.
   // Only on load and day change — a repeat made today starts out untitled, so
-  // it stays a "Recurring today" suggestion (`t` takes it on) until tomorrow.
+  // its first task comes tomorrow (`t` in Recurring takes it on today).
   useEffect(() => {
     if (!loaded) return;
     autoAcceptRecurrences(today);
@@ -576,16 +573,6 @@ export function App() {
       ),
     };
   }, [zoom, state.tasks, state.projects, view, hideCompleted, filtering, filterQuery, editingId]);
-  // Soft-horizon tasks the engine projects onto today — shown as a passive,
-  // passive "Suggested for today" group at the foot of Today. They join the
-  // outline flow so ↑/↓ reach them and `t` (accept) / `s` (reschedule) just work.
-  const suggestedTasks = useMemo(
-    () =>
-      view === "today" && period === "today" && zoom == null
-        ? suggestedForToday(state.tasks, today).filter((t) => matchesFilter(t, filterQuery))
-        : [],
-    [view, period, zoom, state.tasks, today, filterQuery]
-  );
   // Blocked work, trailing Today like the other passive groups. Kept visible so
   // stepping out of the day's maths can't also mean stepping off the screen.
   const waitingTasks = useMemo(
@@ -608,17 +595,6 @@ export function App() {
           )
         : [],
     [view, state.recurrences, filterQuery]
-  );
-  // Recurrences due today that aren't already accepted — passive suggestions in
-  // Today the user can accept (`t`) to materialize as real dated tasks.
-  const recurringToday = useMemo(
-    () =>
-      view === "today" && period === "today" && zoom == null
-        ? recurringForToday(state.recurrences, state.tasks, today).filter(
-            (rec) => filterTree([rec.template], (t) => matchesFilter(t, filterQuery)).length > 0
-          )
-        : [],
-    [view, period, zoom, state.recurrences, state.tasks, today, filterQuery]
   );
   const outlineRows = useMemo<OutlineRow[]>(() => {
     /** Flatten one render section's tasks into rows, all stamped with its key. */
@@ -673,31 +649,21 @@ export function App() {
           : parts.flatMap((part) => sectionRows(part.tasks, part.key))),
       ];
     });
-    // Suggested-for-today rows trail the project groups, matching their render
-    // order. Sectionless from here down: focusable, but in no sibling order.
-    for (const t of suggestedTasks) {
-      rows.push({ kind: "task" as const, id: t.id, taskId: t.id, section: null });
-    }
-    // …then the blocked ones, again matching render order.
+    // Blocked rows trail the project groups, matching their render order.
+    // Sectionless: focusable, but in no sibling order.
     for (const t of waitingTasks) {
       rows.push({ kind: "task" as const, id: t.id, taskId: t.id, section: null });
     }
-    // Recurring-today suggestions trail those, again matching render order. Only
-    // the template root is focusable (its steps render as a static preview).
-    for (const rec of recurringToday) {
-      const id = rec.template.id;
-      rows.push({ kind: "task" as const, id, taskId: id, section: null });
-    }
     return rows;
-  }, [zoomFocus, view, projectIndex, displayGroups, usingBuckets, bucketGroups, collapsed, collapsedProjects, suggestedTasks, waitingTasks, recurrenceGroups, recurringToday]);
+  }, [zoomFocus, view, projectIndex, displayGroups, usingBuckets, bucketGroups, collapsed, collapsedProjects, waitingTasks, recurrenceGroups]);
   const flatIds = useMemo(() => outlineRows.map((r) => r.id), [outlineRows]);
   const flatKey = flatIds.join(",");
   /**
    * The neighbourhood a keyboard reorder may move `anchorId` through: every task
    * rendered in the same section as it (see `section` on OutlineTaskRow), which
    * is exactly the run of rows whose on-screen order matches their tree order.
-   * Empty when the cursor is on a sectionless row — a suggestion, a blocked
-   * task, a recurrence template — where there is no order to move in and the
+   * Empty when the cursor is on a sectionless row — a blocked task, a
+   * recurrence template — where there is no order to move in and the
    * only honest answer is to do nothing.
    *
    * Reorder passes this as its `visible` set, so filtered-out siblings stay
@@ -1003,12 +969,6 @@ export function App() {
     focusedRecurrence != null && focusedTaskId != null
       ? findById([focusedRecurrence.template], focusedTaskId) ?? null
       : null;
-  // In Today, the recurrence suggestion (if any) the cursor is on — its actions
-  // route to "accept", never to mutating the template.
-  const focusedRecurringToday =
-    focusedTaskId != null
-      ? recurringToday.find((r) => r.template.id === focusedTaskId) ?? null
-      : null;
 
   // When the visible set changes, keep the cursor sensible. If the focused row
   // left the view (planned away with `t`, rescheduled, completed+hidden…), land
@@ -1204,17 +1164,12 @@ export function App() {
 
   const openRepeatFor = (recId: RecurrenceId, taskId: TaskId) =>
     setRepeatTarget({ recId, taskId });
-  // `r` / `s` in the Recurring view (or on a Today recurrence suggestion) opens
-  // the repeat picker for whichever recurrence the cursor belongs to.
+  // `r` / `s` in the Recurring view opens the repeat picker for whichever
+  // recurrence the cursor belongs to.
   const openRepeatFocused = () => {
     if (focusedRecurrence != null) {
       openRepeatFor(focusedRecurrence.id, focusedRecurrence.template.id);
-    } else if (focusedRecurringToday != null) {
-      openRepeatFor(focusedRecurringToday.id, focusedRecurringToday.template.id);
     }
-  };
-  const acceptRecurringToday = () => {
-    if (focusedRecurringToday != null) acceptRecurrence(focusedRecurringToday.id, today);
   };
 
   const commitText = (id: TaskId, raw: string) => {
@@ -1349,30 +1304,22 @@ export function App() {
   const applySchedule = (choice: ScheduleChoice) => applyScheduleAsking(actionTargets(), choice);
 
   // t / ⇧t walk the schedule ladder (the s-picker's options in order, wrapping).
-  // Accept flows stay special: on a recurrence suggestion (or in Recurring) t
-  // still accepts today's occurrence, and on a "Suggested for today" row t
-  // accepts the suggestion — a real today commitment — instead of stepping the
-  // fuzzy horizon it came from. Steppers never prompt about subtasks; they're
-  // rapid-fire keys, and the picker is the deliberate path.
+  // In Recurring, t takes on today's occurrence instead. Steppers never
+  // prompt about subtasks; they're rapid-fire keys, and the picker is the
+  // deliberate path.
   const stepFocusedSchedule = (dir: 1 | -1) => {
-    if (focusedRecurringToday != null) {
-      if (dir === 1) acceptRecurringToday();
-      return;
-    }
     if (view === "recurring") {
       if (dir === 1 && focusedRecurrence != null) acceptRecurrence(focusedRecurrence.id, today);
       return;
     }
     const ids = actionTargets();
     if (ids.length === 0) return;
-    const suggested = new Set(suggestedTasks.map((t) => t.id));
     // Group by destination rung so a multi-selection stays one update per rung.
     const groups = new Map<ScheduleStep, TaskId[]>();
     for (const id of ids) {
       const t = findById(state.tasks, id);
       if (t == null) continue;
-      const next =
-        dir === 1 && suggested.has(id) ? "today" : stepSchedule(scheduleStep(t, today), dir);
+      const next = stepSchedule(scheduleStep(t, today), dir);
       const g = groups.get(next);
       if (g != null) g.push(id);
       else groups.set(next, [id]);
@@ -1414,11 +1361,11 @@ export function App() {
   };
 
   // ── Filing under a project (the ⌘k "File under a project…" picker) ──
-  // The cursor can be sitting on a recurrence *template* rather than a task —
-  // in the Recurring view, or on a "Recurring today" suggestion. Filing there
+  // The cursor can be sitting on a recurrence *template* rather than a task,
+  // in the Recurring view. Filing there
   // moves the whole definition, so every occurrence it spawns lands in that
   // project too. Everywhere else it files the selected tasks.
-  const filingRecurrence = focusedRecurrence ?? focusedRecurringToday;
+  const filingRecurrence = focusedRecurrence;
   const filingTargetCount = filingRecurrence != null ? 1 : actionTargets().length;
   const filingCurrentProjectId =
     filingRecurrence != null
@@ -1580,7 +1527,6 @@ export function App() {
       // else: at the top of the zoom — use Esc to back out.
     },
     editStart: () => {
-      if (focusedRecurringToday != null) return acceptRecurringToday();
       if (focusedId != null) startEditingOutlineId(focusedId);
     },
     taskNew: () => {
@@ -1609,7 +1555,6 @@ export function App() {
       beginEdit(withPeriodSchedule(addTaskAfter(null, "", defaultPlannedFor())));
     },
     taskToggle: () => {
-      if (focusedRecurringToday != null) return acceptRecurringToday();
       if (view === "recurring") return; // recurrence templates aren't completable
       const ids = actionTargets();
       if (ids.length === 0) return;
@@ -1624,7 +1569,6 @@ export function App() {
       setPeekId((p) => (p === focusedTaskId ? null : focusedTaskId));
     },
     taskIndent: () => {
-      if (focusedRecurringToday != null) return; // don't restructure a suggestion
       if (view === "recurring") {
         if (focusedTaskId != null) indentRecurringInView(focusedTaskId);
         return;
@@ -1638,7 +1582,6 @@ export function App() {
       if (focusedTaskId != null) indentInView(focusedTaskId);
     },
     taskOutdent: () => {
-      if (focusedRecurringToday != null) return;
       if (view === "recurring") {
         if (focusedTaskId != null) outdentRecurrenceNode(focusedTaskId);
         return;
@@ -1646,7 +1589,6 @@ export function App() {
       if (focusedTaskId != null) outdent(focusedTaskId);
     },
     taskTrash: () => {
-      if (focusedRecurringToday != null) return; // never trash a template from Today
       if (view === "recurring") {
         const id = focusedTaskId;
         if (id == null) return;
@@ -1728,8 +1670,8 @@ export function App() {
     // `s`: start work on the focused task, resume it when paused, stop it when
     // running. Starting one stops whatever else was in progress.
     taskWork: () => {
-      // Definitions and Today suggestions aren't real tasks — nothing to time.
-      if (view === "recurring" || focusedRecurringToday != null) return;
+      // Definitions aren't real tasks — nothing to time.
+      if (view === "recurring") return;
       if (focusedTaskId == null) return;
       toggleWorking(focusedTaskId);
     },
@@ -1744,7 +1686,7 @@ export function App() {
     // first marks it won't-do (a reason presupposes the state); on a completed or
     // non-task row it's inert.
     taskReason: () => {
-      if (view === "recurring" || focusedRecurringToday != null) return;
+      if (view === "recurring") return;
       if (focusedTaskId == null) return;
       const t = findById(state.tasks, focusedTaskId);
       if (t == null) return;
@@ -1757,9 +1699,9 @@ export function App() {
     },
     // `b` = blocked. On an open task it marks it waiting and opens the inline
     // "on whom?" field; on an already-blocked one it unblocks. Inert on
-    // definitions, suggestions and resolved tasks — none of them can be waiting.
+    // definitions and resolved tasks — none of them can be waiting.
     taskWaiting: () => {
-      if (view === "recurring" || focusedRecurringToday != null) return;
+      if (view === "recurring") return;
       if (focusedTaskId == null) return;
       const t = findById(state.tasks, focusedTaskId);
       if (t == null || !isOpen(t)) return;
@@ -1782,8 +1724,8 @@ export function App() {
     helpToggle: () => setShowHelp((v) => !v),
     paletteOpen: () => setShowPalette(true),
     scheduleOpen: () => {
-      // In the Recurring view (or on a Today recurrence), `s` sets the repeat.
-      if (view === "recurring" || focusedRecurringToday != null) return openRepeatFocused();
+      // In the Recurring view, `s` sets the repeat.
+      if (view === "recurring") return openRepeatFocused();
       if (actionTargets().length > 0) setShowSchedule(true);
     },
     projectOpen: () => {
@@ -2532,17 +2474,12 @@ export function App() {
 
   // Copy every task shown in the current outline to the clipboard as markdown:
   // one `## ` section per project (or Later bucket when the by-date layout is on),
-  // each task recursing through its (visible) subtree. `includeSuggested` also
-  // appends the passive "Suggested for today" / "Recurring today" blocks that
-  // trail the Today outline. Silent, matching the other copy-* commands.
-  const copyView = (includeSuggested: boolean) => {
+  // each task recursing through its (visible) subtree. Silent, matching the
+  // other copy-* commands.
+  const copyView = () => {
     const sections: MarkdownSection[] = usingBuckets
       ? bucketGroups.map((g) => ({ heading: g.meta.label, tasks: g.tasks }))
       : displayGroups.map((g) => ({ heading: g.project.name, tasks: g.tasks }));
-    if (includeSuggested) {
-      sections.push({ heading: "Suggested for today", tasks: suggestedTasks });
-      sections.push({ heading: "Recurring today", tasks: recurringToday.map((r) => r.template) });
-    }
     const body = sectionsToMarkdown(sections, { includeNotes: false });
     if (body.trim() === "") return;
     const title =
@@ -2932,13 +2869,7 @@ export function App() {
       id: "copy-view",
       label: "Copy this view (markdown)",
       aliases: ["copy view", "copy today", "copy list", "copy panel", "copy all tasks", "export view"],
-      run: () => copyView(false),
-    },
-    {
-      id: "copy-view-suggested",
-      label: "Copy this view + suggested (markdown)",
-      aliases: ["copy view suggested", "copy today suggested", "export view suggested"],
-      run: () => copyView(true),
+      run: copyView,
     },
     {
       id: "task-review",
@@ -3318,11 +3249,7 @@ export function App() {
                   period={period}
                   onPeriod={setPeriod}
                   groups={displayGroups}
-                  projects={state.projects}
-                  suggested={suggestedTasks}
                   waiting={waitingTasks}
-                  recurring={recurringToday}
-                  onAcceptRecurring={(recId) => acceptRecurrence(recId, today)}
                   current={activeCurrentTask}
                   onFocusCurrent={() => {
                     if (activeCurrentTask != null) setFocus(activeCurrentTask.id);

@@ -1023,13 +1023,11 @@ describe("Reorder", () => {
     );
   }
 
-  it("⌥↓ clears a whole run of suggested-band siblings in one press", async () => {
+  it("⌥↓ clears a whole run of off-screen siblings in one press", async () => {
     // The reported bug. A parent with four children: two planned for today (in
-    // the outline) and two on soft horizons, which Today re-lists at the foot
-    // under "Suggested for today". All four are on screen, so every one of them
-    // counted as a neighbour — and the two presses that swapped into a suggestion
-    // moved the tree without moving anything visible. ⌥↓ looked broken until the
-    // third press. A month anchor in the past always suggests today.
+    // the outline) and two on soft horizons, which Today doesn't show. Counting
+    // them as neighbours made the two presses that swapped into them move the
+    // tree without moving anything visible. ⌥↓ looked broken until the third.
     render(<App />);
     await screen.findByPlaceholderText("Add a task for today…");
     const today = todayISO(null);
@@ -1042,11 +1040,10 @@ describe("Reorder", () => {
       setHorizonMany([soft1, soft2], { unit: "month", anchor: "2020-01" });
     });
     await screen.findByText("kid-one");
-    // Both soft children render — in the band, below the outline.
-    expect(precedes("kid-two", "soft-one")).toBe(true);
+    expect(screen.queryByText("soft-one")).toBeNull();
     blurActive();
 
-    // Rows top to bottom: the Inbox header, parent, kid-one, kid-two, the band.
+    // Rows top to bottom: the Inbox header, parent, kid-one, kid-two.
     fireEvent.keyDown(document.body, { key: "ArrowUp", metaKey: true }); // → Inbox header
     fireEvent.keyDown(document.body, { key: "ArrowDown" }); // parent
     fireEvent.keyDown(document.body, { key: "ArrowDown" }); // kid-one
@@ -1056,32 +1053,6 @@ describe("Reorder", () => {
     // …and back, in one press too.
     fireEvent.keyDown(document.body, { key: "ArrowUp", altKey: true });
     await waitFor(() => expect(precedes("kid-one", "kid-two")).toBe(true));
-  });
-
-  it("⌥↓ on a suggested-band row moves nothing, rather than shuffling the tree", async () => {
-    // The band is a derived list of soft picks, not an order anyone curated —
-    // and a "move" there lands on the task's real siblings, out of sight. The
-    // honest answer is to do nothing.
-    render(<App />);
-    await screen.findByPlaceholderText("Add a task for today…");
-    const today = todayISO(null);
-    act(() => {
-      const parent = addTaskAfter(null, "parent", null);
-      addChild(parent, "kid-one", today);
-      const soft1 = addChild(parent, "soft-one", null);
-      const soft2 = addChild(parent, "soft-two", null);
-      setHorizonMany([soft1, soft2], { unit: "month", anchor: "2020-01" });
-    });
-    await screen.findByText("soft-one");
-    blurActive();
-
-    // Rows: the Inbox header, parent, kid-one, then soft-one / soft-two in the band.
-    fireEvent.keyDown(document.body, { key: "ArrowUp", metaKey: true }); // → Inbox header
-    for (let i = 0; i < 3; i++) fireEvent.keyDown(document.body, { key: "ArrowDown" });
-    fireEvent.keyDown(document.body, { key: "ArrowDown", altKey: true });
-
-    await waitFor(() => expect(precedes("soft-one", "soft-two")).toBe(true));
-    expect(precedes("kid-one", "soft-one")).toBe(true);
   });
 
   it("⌥↓ in Later's by-date layout moves inside the bucket, not past it", async () => {
@@ -1396,8 +1367,8 @@ describe("Detail panel", () => {
   });
 });
 
-describe("Suggested for today", () => {
-  it("surfaces a this-week task as a suggestion and `t` accepts it into Today", async () => {
+describe("Today without suggestions", () => {
+  it("never re-lists soft-horizon tasks or today's repeats at the foot of Today", async () => {
     render(<App />);
     // Set the date only once init has settled (App's load effect would reset it).
     await screen.findByPlaceholderText("Add a task for today…");
@@ -1405,23 +1376,27 @@ describe("Suggested for today", () => {
     await addTask("water plants");
     blurActive();
 
-    // Schedule "this week": it leaves Today (soft horizon) but its suggested day
-    // is Wednesday === today, so it reappears under "Suggested for today".
+    // Schedule "this week": a soft horizon, so it leaves Today — and stays out,
+    // even on the Wednesday the old "Suggested for today" band picked for it.
     fireEvent.keyDown(document.body, { key: "k", metaKey: true });
     const palette = await screen.findByPlaceholderText("Type a command…");
     fireEvent.change(palette, { target: { value: "this week" } });
     fireEvent.keyDown(palette, { key: "Enter" });
+    await waitFor(() => expect(screen.queryByText("water plants")).toBeNull());
 
-    expect(await screen.findByText("Suggested for today")).toBeTruthy();
-    expect(screen.getByText("water plants")).toBeTruthy();
+    // A repeat made today gets its task tomorrow; Today doesn't offer it either.
+    fireEvent.keyDown(document.body, { key: "5" });
+    const cap = await screen.findByPlaceholderText(/New recurring task/);
+    fireEvent.change(cap, { target: { value: "Standup" } });
+    fireEvent.keyDown(cap, { key: "Enter" });
+    await screen.findByText("Standup");
+    blurActive();
+    fireEvent.keyDown(document.body, { key: "1" });
+    await screen.findByPlaceholderText("Add a task for today…");
 
-    // The task kept focus (still in the outline flow), so `t` accepts it: it
-    // becomes a real Today commitment and the suggestion group disappears.
-    await runCommand(CMD.schedLater);
-    await waitFor(() =>
-      expect(screen.queryByText("Suggested for today")).toBeNull()
-    );
-    expect(screen.getByText("water plants")).toBeTruthy();
+    expect(screen.queryByText("Standup")).toBeNull();
+    expect(screen.queryByText("Suggested for today")).toBeNull();
+    expect(screen.queryByText("Recurring today")).toBeNull();
   });
 });
 
@@ -1637,8 +1612,7 @@ describe("Schedule picker (s)", () => {
   it("takes typed words: “next week” filters to that rung, ↵ picks it", async () => {
     render(<App />);
     await screen.findByPlaceholderText("Add a task for today…");
-    // Pin to a Monday, or the suggested-day engine projects a this/next-week
-    // horizon back onto today and the task never leaves the list.
+    // Pinned to a Monday: a fixed day keeps the week horizons predictable.
     act(() => setDevDateOverride("2026-06-15"));
     await addTask("draft the proposal");
     blurActive();
@@ -1715,8 +1689,7 @@ describe("Command palette", () => {
 
   it("schedules the focused task to a horizon via Cmd+K (leaves Today)", async () => {
     render(<App />);
-    // Pin to a Monday: later in the week, the suggested-day engine would clamp a
-    // "this week" task's suggestion to *today* and resurface it in Today.
+    // Pinned to a Monday: a fixed day keeps the week horizons predictable.
     await screen.findByPlaceholderText("Add a task for today…");
     act(() => setDevDateOverride("2026-06-15"));
     await addTask("groceries"); // captured into Today (plannedFor === today)
@@ -2021,8 +1994,7 @@ describe("Zoom / focus (hoisting)", () => {
 describe("Scheduling (the s picker)", () => {
   it("schedules 'this week' and the task lands in the by-date Later bucket", async () => {
     render(<App />);
-    // Pin to a Monday: later in the week, the suggested-day engine would clamp a
-    // "this week" task's suggestion to *today* and resurface it in Today.
+    // Pinned to a Monday: a fixed day keeps the week horizons predictable.
     await screen.findByPlaceholderText("Add a task for today…");
     act(() => setDevDateOverride("2026-06-15"));
     await addTask("write spec"); // planned today by default
@@ -2100,8 +2072,7 @@ describe("Cascade a schedule change to subtasks", () => {
   // A parent ("big rock") planned today with one subtask ("pebble"), parent focused.
   async function seedParentChild() {
     render(<App />);
-    // Pin to a Monday: later in the week, the suggested-day engine would clamp a
-    // "this week" task's suggestion to *today* and resurface it in Today.
+    // Pinned to a Monday: a fixed day keeps the week horizons predictable.
     await screen.findByPlaceholderText("Add a task for today…");
     act(() => setDevDateOverride("2026-06-15"));
     await addTask("big rock");
@@ -2362,7 +2333,7 @@ describe("Schedule inheritance in the views", () => {
 });
 
 describe("Recurring tasks", () => {
-  it("defines a recurrence with a step, suggests it in Today, and accepts it", async () => {
+  it("defines a recurrence with a step, and `t` in Recurring takes it on today", async () => {
     render(<App />);
     await screen.findByPlaceholderText("Add a task for today…");
     blurActive(); // the Today capture bar auto-focuses on mount
@@ -2383,21 +2354,21 @@ describe("Recurring tasks", () => {
     fireEvent.keyDown(stepInput, { key: "Enter" });
     expect(await screen.findByText("Brush teeth")).toBeTruthy();
 
-    // In Today it surfaces as a passive suggestion (not a committed task yet).
+    // Made today, it has no task yet: Today doesn't show it.
     blurActive();
     fireEvent.keyDown(document.body, { key: "1" });
-    expect(await screen.findByText("Recurring today")).toBeTruthy();
-    expect(screen.getByText("Morning ritual")).toBeTruthy();
-    // No real task exists yet → no completion checkbox for its leaf.
-    expect(screen.queryByLabelText("Mark complete")).toBeNull();
+    await screen.findByPlaceholderText("Add a task for today…");
+    expect(screen.queryByText("Morning ritual")).toBeNull();
 
-    // Accept it: focus the suggestion and press `t`.
+    // Take it on from Recurring: the cursor is on its step, `t` accepts today's.
+    fireEvent.keyDown(document.body, { key: "5" });
+    await screen.findByText("Brush teeth");
     fireEvent.keyDown(document.body, { key: "ArrowDown" });
     await runCommand(CMD.schedLater);
 
-    // The suggestion is now suppressed and a real, checkable task exists.
-    await waitFor(() => expect(screen.queryByText("Recurring today")).toBeNull());
-    expect(screen.getByText("Morning ritual")).toBeTruthy();
+    // Back in Today, a real, checkable task exists.
+    fireEvent.keyDown(document.body, { key: "1" });
+    expect(await screen.findByText("Morning ritual")).toBeTruthy();
     expect(screen.getAllByLabelText("Mark complete").length).toBeGreaterThan(0);
   });
 
@@ -2411,12 +2382,11 @@ describe("Recurring tasks", () => {
     fireEvent.keyDown(cap, { key: "Enter" });
     await screen.findByText("Standup");
 
-    // Back to Today: the daily recurrence surfaces as a suggestion, but it's not
-    // a commitment — "0 to go" (never counted) and no completion checkbox exists.
+    // Back to Today: the template is not a task — "0 to go" (never counted) and
+    // no completion checkbox exists.
     blurActive();
     fireEvent.keyDown(document.body, { key: "1" });
-    expect(await screen.findByText("Recurring today")).toBeTruthy();
-    expect(screen.getByText(/0 to go/)).toBeTruthy();
+    expect(await screen.findByText(/0 to go/)).toBeTruthy();
     expect(screen.queryByLabelText("Mark complete")).toBeNull();
   });
 
@@ -2466,16 +2436,12 @@ describe("Recurring tasks", () => {
     // The row now says where it's filed.
     expect(await screen.findByTitle(/Filed under Health/)).toBeTruthy();
 
-    // In Today the suggestion advertises where taking it on will put it…
+    // Taking it on (`t`, cursor still on it) files the real task under that
+    // project, not the Inbox.
+    await runCommand(CMD.schedLater);
     blurActive();
     fireEvent.keyDown(document.body, { key: "1" });
-    await screen.findByText("Recurring today");
-    expect(screen.getByTitle("Lands in Health")).toBeTruthy();
-
-    // …and accepting it files the real task under that project, not the Inbox.
-    fireEvent.keyDown(document.body, { key: "ArrowDown" });
-    await runCommand(CMD.schedLater);
-    await waitFor(() => expect(screen.queryByText("Recurring today")).toBeNull());
+    expect(await screen.findByText("Stretch")).toBeTruthy();
     expect(screen.getByText("Health")).toBeTruthy(); // its project group header
     expect(screen.queryByText("Inbox")).toBeNull(); // nothing landed there
   });

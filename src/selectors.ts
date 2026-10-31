@@ -27,16 +27,13 @@ import {
   addDays,
   dayHeaderLabel,
   monthElapsed,
-  monthEnd,
   monthKey,
   monthKeyOffset,
   monthLabel,
-  monthStart,
   weekElapsed,
   weekKey,
   weekKeyOffset,
   weekLabel,
-  weekStart,
 } from "./store/dates";
 
 export type ViewKind = "today" | "backlog" | "all" | "projects" | "recurring" | "habits" | "trash";
@@ -619,51 +616,6 @@ export function stepSchedule(step: ScheduleStep, dir: 1 | -1): ScheduleStep {
   return SCHEDULE_LADDER[(SCHEDULE_LADDER.indexOf(step) + dir + n) % n];
 }
 
-// ─── Soft horizons → a suggested concrete day (the AI-swappable heuristic) ──
-//
-// Horizons stay the source of truth and never reckon. This only *projects* a
-// concrete day so a fuzzy task can surface in Today as a suggestion the user can
-// accept (→ a real dated commitment) or dismiss. A later, smarter pass (load
-// balancing, then an AI) can replace `pickSuggested` without touching callers.
-
-/** All days from `start` to `end`, inclusive. */
-function daysInclusive(start: ISODate, end: ISODate): ISODate[] {
-  const days: ISODate[] = [];
-  for (let d = start; d <= end; d = addDays(d, 1)) days.push(d);
-  return days;
-}
-
-/**
- * Pick a day within a horizon's window: aim for the middle (Wed of a week,
- * mid-month), but once that's past, aim for the middle of what's left; if the
- * whole window is behind us, surface today so the stale horizon gets re-triaged.
- */
-function pickSuggested(window: ISODate[], today: ISODate): ISODate {
-  const remaining = window.filter((d) => d >= today);
-  if (remaining.length === 0) return today;
-  const natural = window[Math.floor(window.length / 2)];
-  if (natural >= today) return natural;
-  return remaining[Math.floor(remaining.length / 2)];
-}
-
-/**
- * The concrete day a soft-horizon task is *suggested* for, or null when there's
- * nothing to suggest: completed, already dated (`plannedFor`), Inbox (`horizon`
- * null), or Someday (no clock). Never mutates — purely derived from the horizon.
- */
-export function suggestedDayFor(task: Task, today: ISODate): ISODate | null {
-  if (!isOpen(task) || task.plannedFor != null) return null;
-  const h = task.horizon;
-  if (h == null || h.unit === "someday" || h.anchor == null) return null;
-  const anchor = h.anchor; // narrowed to string by the guard above
-
-  const window =
-    h.unit === "week"
-      ? [0, 1, 2, 3, 4].map((i) => addDays(weekStart(anchor), i)) // Mon–Fri
-      : daysInclusive(monthStart(anchor), monthEnd(anchor));
-  return pickSuggested(window, today);
-}
-
 /**
  * Blocked tasks that would otherwise be nowhere: overdue or undated, so no tab
  * shows them. Oldest wait first, because the whole risk of this state is a task
@@ -683,15 +635,6 @@ export function waitingOnOthers(tasks: Task[], today: ISODate): Task[] {
     out.push(t);
   });
   return out.sort((a, b) => (a.waitingOn?.since ?? 0) - (b.waitingOn?.since ?? 0));
-}
-
-/** Incomplete horizon tasks whose suggested day is today — the "Suggested for today" surface. */
-export function suggestedForToday(tasks: Task[], today: ISODate): Task[] {
-  const out: Task[] = [];
-  walk(tasks, (t) => {
-    if (suggestedDayFor(t, today) === today) out.push(t);
-  });
-  return out;
 }
 
 // ─── Recurrences → the "Recurring" section + today's suggestions ────
@@ -731,7 +674,7 @@ export function suppressedRecurrenceIds(tasks: Task[], today: ISODate): Set<Recu
   return out;
 }
 
-/** Recurrences firing today that aren't suppressed — Today's "Recurring" suggestions. */
+/** Recurrences firing today that aren't suppressed — the ones whose task for today may be due. */
 export function recurringForToday(
   recurrences: Recurrence[],
   tasks: Task[],
