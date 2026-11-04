@@ -114,7 +114,7 @@ function KpiAskRow({
         >
           {value == null ? "#" : formatValue(m, value)}
         </span>
-        <span className={`min-w-0 flex-1 truncate text-[14px] ${value == null ? "text-ink" : "text-ink-soft"}`}>
+        <span className={`min-w-0 flex-1 break-words text-[14px] ${value == null ? "text-ink" : "text-ink-soft"}`}>
           {habit.name === "" ? "Untitled KPI" : habit.name}
           {habit.cue !== "" && <span className="ml-2 text-[12px] italic text-ink-faint">{habit.cue}</span>}
         </span>
@@ -178,7 +178,7 @@ function HabitAskRow({
         >
           {mark === "done" ? "✓" : mark === "skip" ? "–" : mark === "missed" ? "×" : ""}
         </span>
-        <span className={`min-w-0 flex-1 truncate text-[14px] ${mark == null ? "text-ink" : "text-ink-soft"}`}>
+        <span className={`min-w-0 flex-1 break-words text-[14px] ${mark == null ? "text-ink" : "text-ink-soft"}`}>
           {habit.name === "" ? "Untitled habit" : habit.name}
           {habit.cue !== "" && <span className="ml-2 text-[12px] italic text-ink-faint">{habit.cue}</span>}
         </span>

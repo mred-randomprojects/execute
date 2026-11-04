@@ -501,7 +501,7 @@ function HabitRow({
       </Lead>
 
       <div className="min-w-0 flex-1">
-        <div className="truncate text-[14px] text-ink">
+        <div className="break-words text-[14px] text-ink">
           {editing === "name" ? (
             <InlineInput
               initial={habit.name}
@@ -515,7 +515,7 @@ function HabitRow({
             </span>
           )}
         </div>
-        <div className="mt-0.5 flex min-w-0 items-center gap-1.5 overflow-hidden whitespace-nowrap text-[12px] text-ink-faint">
+        <div className={`mt-0.5 min-w-0 text-[12px] text-ink-faint ${editing === "cue" || editing === "category" ? "flex items-center gap-1.5" : "break-words"}`}>
           {editing === "cue" ? (
             <span className="min-w-0 flex-1 italic">
               <InlineInput
@@ -536,25 +536,18 @@ function HabitRow({
             <>
               {habit.cue !== "" && (
                 <>
-                  <span className="truncate italic" onDoubleClick={() => onEdit("cue")}>
+                  <span className="italic" onDoubleClick={() => onEdit("cue")}>
                     {habit.cue}
                   </span>
-                  <span>·</span>
+                  {" · "}
                 </>
               )}
-              <span className="shrink-0">{cadenceLabel(habit.perWeek)}</span>
-              {archived && <span className="shrink-0">· archived</span>}
+              <span className="whitespace-nowrap">{cadenceLabel(habit.perWeek)}</span>
+              {archived && " · archived"}
               {tip != null && (
                 <>
-                  <span>·</span>
-                  <span
-                    className={[
-                      "truncate",
-                      tip.tone === "good" ? "text-good" : tip.tone === "warn" ? "text-mid" : "",
-                    ].join(" ")}
-                  >
-                    {tip.text}
-                  </span>
+                  {" · "}
+                  <span className={tip.tone === "good" ? "text-good" : tip.tone === "warn" ? "text-mid" : ""}>{tip.text}</span>
                 </>
               )}
             </>
@@ -712,7 +705,7 @@ function KpiRow({
       </Lead>
 
         <div className="min-w-0 flex-1">
-          <div className="truncate text-[14px] text-ink">
+          <div className="break-words text-[14px] text-ink">
             {editing === "name" ? (
               <InlineInput
                 initial={kpiEditText(habit.name, measure)}
@@ -726,7 +719,7 @@ function KpiRow({
               </span>
             )}
           </div>
-          <div className="mt-0.5 flex min-w-0 items-center gap-1.5 overflow-hidden whitespace-nowrap text-[12px] text-ink-faint">
+          <div className={`mt-0.5 min-w-0 text-[12px] text-ink-faint ${editing === "cue" || editing === "category" ? "flex items-center gap-1.5" : "break-words"}`}>
             {editing === "cue" ? (
               <span className="min-w-0 flex-1 italic">
                 <InlineInput
@@ -747,19 +740,20 @@ function KpiRow({
               <>
                 {habit.cue !== "" && (
                   <>
-                    <span className="truncate italic" onDoubleClick={() => onEdit("cue")}>
+                    <span className="italic" onDoubleClick={() => onEdit("cue")}>
                       {habit.cue}
                     </span>
-                    <span>·</span>
+                    {" · "}
                   </>
                 )}
-                <span className="mono shrink-0">{rangeLabel(measure)}</span>
-                <span>·</span>
-                <span className="shrink-0">{everyLabel(measure.every)}</span>
-                {archived && <span className="shrink-0">· archived</span>}
+                <span className="mono whitespace-nowrap">{rangeLabel(measure)}</span>
+                {" · "}
+                <span className="whitespace-nowrap">{everyLabel(measure.every)}</span>
+                {archived && " · archived"}
                 {!archived && measure.every !== "day" && (
-                  <span className={periodDone ? "shrink-0 text-good" : "shrink-0"}>
-                    · {periodDone ? `logged this ${measure.every}` : `not logged this ${measure.every} yet`}
+                  <span className={periodDone ? "text-good" : ""}>
+                    {" · "}
+                    {periodDone ? `logged this ${measure.every}` : `not logged this ${measure.every} yet`}
                   </span>
                 )}
               </>
