@@ -191,6 +191,26 @@ and reading them back over time is the point.
 On the phone, ✎ beside a habit's chip writes today's note, and today's notes
 show under the chips (yes/no habits only, like the rest of the phone's habits).
 
+## Categories (v26)
+
+A habit or a KPI can sit in a **category** ("Sprint", "Morning", "Football"),
+a plain string on the habit (`""` = none). Asked for in November 2026 to keep a
+14-day nutrition sprint's habits together and apart from the everyday ones.
+
+- **The list groups by it:** uncategorized rows first, then each category
+  under its own heading, alphabetically. Habits and KPIs keep their own lists;
+  the archive isn't headed.
+- **⌥↑/↓ moves within the category,** never across a heading. To change
+  category, `⌘k` → "Move to “Sprint”" (one command per category in use),
+  "Take it out of “Sprint”", or "Put it in a category…" / "New category…",
+  which types one in the row.
+- **No separate entity.** A category exists while a habit carries it; renaming
+  one means moving its habits. It's one of the habit's own fields, so it syncs
+  and merges newest-`updatedAt`-wins like the name or the cue, and undo
+  restores it. v26 makes older clients stop at outdated instead of dropping it.
+- **The agent socket** can now set habits up (create, rename, cue, category,
+  target) but still can't check in, archive or delete them.
+
 ## Known limits
 
 - An archived habit that comes back counts the archived days as misses.

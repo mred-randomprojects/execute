@@ -10,6 +10,7 @@ function habit(perWeek: number, created: ISODate, checks: Record<ISODate, HabitM
     id: "h1" as HabitId,
     name: "Read",
     cue: "",
+    category: "",
     perWeek,
     checks,
     checkedAt: {},

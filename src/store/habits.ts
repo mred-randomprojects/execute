@@ -22,16 +22,34 @@ import { addDays, monthKey, toISO, weekKey, weekStart } from "./dates";
 export const PER_WEEK_MIN = 1;
 export const PER_WEEK_MAX = 7;
 
-/** By rank, then oldest first, ties by id — one canonical order, so two devices agree on it. */
+/** By category (v26), then rank, then oldest first, ties by id — one canonical order, so two devices agree on it. */
 export function sortHabits(habits: Habit[]): Habit[] {
   return [...habits].sort(
-    (a, b) => a.rank - b.rank || a.createdAt - b.createdAt || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0),
+    (a, b) =>
+      compareCategories(a.category, b.category) ||
+      a.rank - b.rank ||
+      a.createdAt - b.createdAt ||
+      (a.id < b.id ? -1 : a.id > b.id ? 1 : 0),
   );
 }
 
-/** Which list a habit sits in on the view: habits, KPIs, or the archive. */
+/** v26: uncategorized first, then the categories alphabetically (case-insensitive). */
+export function compareCategories(a: string, b: string): number {
+  if (a === b) return 0;
+  if (a === "") return -1;
+  if (b === "") return 1;
+  return a.localeCompare(b, undefined, { sensitivity: "base" }) || (a < b ? -1 : 1);
+}
+
+/** The categories in use, in list order. */
+export function habitCategories(habits: Habit[]): string[] {
+  return [...new Set(habits.map((h) => h.category).filter((c) => c !== ""))].sort(compareCategories);
+}
+
+/** Which list a habit sits in on the view (habits, KPIs, or the archive) and, within it, its category. */
 function habitGroup(h: Habit): string {
-  return h.archivedAt != null ? "archived" : h.measure != null ? "kpi" : "habit";
+  const list = h.archivedAt != null ? "archived" : h.measure != null ? "kpi" : "habit";
+  return `${list}:${h.category}`;
 }
 
 /**
@@ -113,10 +131,11 @@ export function withMark(h: Habit, date: ISODate, mark: HabitMark | null): Habit
 /** The fields `updatedAt` covers. */
 export function habitOwnFields(
   h: Habit,
-): Pick<Habit, "name" | "cue" | "perWeek" | "measure" | "archivedAt" | "rank" | "createdAt"> {
+): Pick<Habit, "name" | "cue" | "category" | "perWeek" | "measure" | "archivedAt" | "rank" | "createdAt"> {
   return {
     name: h.name,
     cue: h.cue,
+    category: h.category,
     perWeek: h.perWeek,
     measure: h.measure,
     archivedAt: h.archivedAt,
@@ -134,6 +153,7 @@ function sameOwn(a: Habit, b: Habit): boolean {
   return (
     a.name === b.name &&
     a.cue === b.cue &&
+    a.category === b.category &&
     a.perWeek === b.perWeek &&
     sameMeasure(a.measure, b.measure) &&
     a.archivedAt === b.archivedAt &&

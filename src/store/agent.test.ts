@@ -18,6 +18,12 @@ describe("withFreshIds", () => {
     });
   });
 
+  it("fills a new habit's missing id", () => {
+    const item = withFreshIds({ type: "createHabit", name: "Kitchen reset", perWeek: 7, measure: null, category: "Sprint" });
+    expect(item).toMatchObject({ type: "createHabit", category: "Sprint" });
+    expect(typeof (item as { id: unknown }).id).toBe("string");
+  });
+
   it("leaves other commands alone", () => {
     const item = { type: "setText", id: "a", text: "x" };
     expect(withFreshIds(item)).toBe(item);

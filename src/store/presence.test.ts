@@ -30,6 +30,7 @@ describe("presenceSnapshot", () => {
       id: name as Habit["id"],
       name,
       cue: "",
+      category: "",
       perWeek: 7,
       checks: {},
       checkedAt: {},

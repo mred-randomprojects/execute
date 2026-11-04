@@ -165,6 +165,7 @@ describe("the phone's view", () => {
       id: "habit-1" as HabitId,
       name: "Stretch",
       cue: "",
+      category: "",
       perWeek: 7,
       checks: {},
       checkedAt: {},

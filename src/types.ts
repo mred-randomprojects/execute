@@ -183,6 +183,14 @@ export interface Habit {
    */
   cue: string;
   /**
+   * v26: the category it's listed under — "Sprint", "Morning", "Football".
+   * `""` = none. The Habits view groups by it (uncategorized first, then the
+   * categories alphabetically), and ⌥↑/↓ moves a habit within its category.
+   * A plain string, not a separate entity: renaming a category means moving
+   * its habits, and an emptied category simply stops existing.
+   */
+  category: string;
+  /**
    * How many days a week this is meant to happen, 1–7. 7 = daily. A weekly
    * count instead of fixed weekdays on purpose: "3× a week" survives a week
    * whose Monday went sideways, "Mon/Wed/Fri" doesn't.
@@ -698,7 +706,7 @@ export interface AppState {
   days: DayRecord[];
 }
 
-export const SCHEMA_VERSION = 25;
+export const SCHEMA_VERSION = 26;
 export const DEFAULT_PROJECT_ID = "project-inbox" as ProjectId;
 export const PROJECT_ROW_PREFIX = "project:";
 

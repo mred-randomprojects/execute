@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
+import { Fragment, useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import type { Habit, HabitId, HabitMark, HabitMeasure, ISODate } from "../types";
 import {
   cadenceLabel,
@@ -42,7 +42,7 @@ const MAX_STRIP_WEEKS = 8;
  */
 const PLENTY = 5;
 
-export type HabitField = "name" | "cue" | "value" | "note";
+export type HabitField = "name" | "cue" | "category" | "value" | "note";
 
 export interface HabitEditing {
   id: HabitId;
@@ -524,6 +524,14 @@ function HabitRow({
                 onCommit={(v) => onCommit("cue", v, null)}
               />
             </span>
+          ) : editing === "category" ? (
+            <span className="min-w-0 flex-1">
+              <InlineInput
+                initial={habit.category}
+                placeholder="Category: “Sprint”, “Morning”… (empty = none)"
+                onCommit={(v) => onCommit("category", v, null)}
+              />
+            </span>
           ) : (
             <>
               {habit.cue !== "" && (
@@ -727,6 +735,14 @@ function KpiRow({
                   onCommit={(v) => onCommit("cue", v, null)}
                 />
               </span>
+            ) : editing === "category" ? (
+              <span className="min-w-0 flex-1">
+                <InlineInput
+                  initial={habit.category}
+                  placeholder="Category: “Sprint”, “Health”… (empty = none)"
+                  onCommit={(v) => onCommit("category", v, null)}
+                />
+              </span>
             ) : (
               <>
                 {habit.cue !== "" && (
@@ -836,6 +852,21 @@ export function HabitsView({
   const doneToday = active.filter((h) => markOn(h, today) === "done").length;
   const kpisLogged = kpis.filter((h) => loggedInPeriod(h, today) != null).length;
 
+  // v26: a heading over each category's rows. Uncategorized rows come first
+  // (the sort puts them there) and need none.
+  const grouped = (list: Habit[]) =>
+    list.map((h, i) => {
+      const heading = h.category !== "" && (i === 0 || list[i - 1].category !== h.category);
+      return heading ? (
+        <Fragment key={`${h.id}-group`}>
+          <div className={["eyebrow mb-1 px-3", i === 0 ? "mt-1" : "mt-4"].join(" ")}>{h.category}</div>
+          {row(h)}
+        </Fragment>
+      ) : (
+        row(h)
+      );
+    });
+
   const row = (h: Habit) =>
     h.measure != null ? (
       <KpiRow
@@ -935,7 +966,7 @@ export function HabitsView({
           </div>
         ) : (
           <div className="flex flex-col gap-0.5">
-            {active.map(row)}
+            {grouped(active)}
             {kpis.length > 0 && (
               <>
                 <ColumnHead
@@ -956,7 +987,7 @@ export function HabitsView({
                     </>
                   }
                 />
-                {kpis.map(row)}
+                {grouped(kpis)}
               </>
             )}
             {archived.length > 0 && (

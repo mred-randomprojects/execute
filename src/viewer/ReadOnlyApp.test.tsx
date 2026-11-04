@@ -92,6 +92,7 @@ describe("habits on the phone", () => {
     id: name as HabitId,
     name,
     cue: "",
+    category: "",
     perWeek: 7,
     checks: {},
     checkedAt: {},

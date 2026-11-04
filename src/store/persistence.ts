@@ -471,6 +471,8 @@ function coerceHabit(raw: unknown): Habit {
     id: (str(o.id) || nanoid()) as HabitId,
     name: str(o.name),
     cue: str(o.cue),
+    // v26: pre-v26 habits have no category.
+    category: str(o.category).trim(),
     perWeek: normalizePerWeek(num(o.perWeek, 7)),
     checks: coerceChecks(o.checks),
     measure: coerceMeasure(o.measure),

@@ -42,6 +42,7 @@ type HabitOwnKey = Exclude<keyof Habit, "id" | "checks" | "values" | "notes" | "
 const HABIT_OWN: Record<HabitOwnKey, true> = {
   name: true,
   cue: true,
+  category: true,
   perWeek: true,
   measure: true,
   archivedAt: true,

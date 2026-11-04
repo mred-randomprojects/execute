@@ -60,7 +60,7 @@ describe("phone edit intents", () => {
 
   it("a habit note is stamped on its day alone, and re-applying it changes nothing", () => {
     const h: Habit = {
-      id: "h" as HabitId, name: "Veggies", cue: "", perWeek: 7, checks: {}, checkedAt: {}, measure: null,
+      id: "h" as HabitId, name: "Veggies", cue: "", category: "", perWeek: 7, checks: {}, checkedAt: {}, measure: null,
       values: {}, notes: {}, archivedAt: null, rank: 0, createdAt: 1, updatedAt: 1,
     };
     const noted = setHabitNote([h], h.id, "2026-10-23", "  Steamed broccoli! ", 500);

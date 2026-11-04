@@ -98,6 +98,7 @@ import {
   renameHabit,
   setHabitArchived,
   setHabitCue,
+  setHabitCategory,
   setHabitMeasure,
   setHabitNote,
   moveHabit,
@@ -113,6 +114,7 @@ import {
   cadenceLabel,
   everyLabel,
   formatValue,
+  habitCategories,
   habitsToLog,
   parseHabitName,
   parseKpiName,
@@ -859,6 +861,8 @@ export function App() {
       // Values are committed by the value field itself (commitKpiValue).
     } else if (field === "note") {
       if (value.trim() !== noteOn(habit, habitDay)) setHabitNote(id, habitDay, value);
+    } else if (field === "category") {
+      if (value.trim() !== habit.category) setHabitCategory(id, value);
     } else if (value.trim() !== habit.cue) {
       setHabitCue(id, value);
     }
@@ -2580,6 +2584,7 @@ export function App() {
         aliases: ["cue", "trigger", "after", "when", "stack"],
         run: () => setHabitEditing({ id: h.id, field: "cue" }),
       },
+      ...categoryCommands(h),
       ...targets,
       {
         id: "habit-archive",
@@ -2600,6 +2605,35 @@ export function App() {
             onConfirm: () => deleteHabit(h.id),
           }),
       },
+    ];
+  };
+
+  // v26: categories. "Move to" each category already in use, out of it, or a new one typed in the row.
+  const categoryCommands = (h: Habit): Command[] => {
+    const noun = h.measure == null ? "Habit" : "KPI";
+    return [
+      {
+        id: "habit-category",
+        label: h.category === "" ? `${noun}: put it in a category…` : `${noun}: new category (now “${h.category}”)…`,
+        aliases: ["category", "group", "section", "folder", "tag"],
+        run: () => setHabitEditing({ id: h.id, field: "category" }),
+      },
+      ...habitCategories(state.habits)
+        .filter((c) => c !== h.category)
+        .map((c) => ({
+          id: `habit-category-${c}`,
+          label: `${noun}: move to “${c}”`,
+          aliases: ["category", "group", "move", c],
+          run: () => setHabitCategory(h.id, c),
+        })),
+      ...(h.category !== ""
+        ? [{
+            id: "habit-category-none",
+            label: `${noun}: take it out of “${h.category}”`,
+            aliases: ["category", "uncategorize", "no category", "ungroup"],
+            run: () => setHabitCategory(h.id, ""),
+          }]
+        : []),
     ];
   };
 
@@ -2637,6 +2671,7 @@ export function App() {
         aliases: ["cue", "trigger", "after", "when"],
         run: () => setHabitEditing({ id: h.id, field: "cue" }),
       },
+      ...categoryCommands(h),
       {
         id: "kpi-range",
         label: `KPI: change the range (now ${rangeLabel(m)}) — type it after the name…`,

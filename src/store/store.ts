@@ -932,6 +932,10 @@ export function setHabitCue(id: HabitId, cue: string): void {
   dispatch({ type: "setHabitCue", id, cue });
 }
 
+export function setHabitCategory(id: HabitId, category: string): void {
+  dispatch({ type: "setHabitCategory", id, category });
+}
+
 export function setHabitPerWeek(id: HabitId, perWeek: number): void {
   dispatch({ type: "setHabitPerWeek", id, perWeek });
 }

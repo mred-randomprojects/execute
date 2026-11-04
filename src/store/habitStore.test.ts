@@ -7,6 +7,7 @@ import {
   initStore,
   markHabit,
   renameHabit,
+  setHabitCategory,
   setHabitMeasure,
   moveHabit,
   setHabitPerWeek,
@@ -120,6 +121,30 @@ describe("habits in the store", () => {
     expect(ba).toEqual(ab);
   });
 
+  it("category (v26): re-sorts the list, undoes, merges newest-wins and round-trips", async () => {
+    const a = createHabit("A");
+    const b = createHabit("B");
+    setHabitCategory(a, "  Sprint ");
+    expect(habitOf(getState(), a)?.category).toBe("Sprint");
+    // Uncategorized first: B now sits before A.
+    expect(getState().habits.map((h) => h.name)).toEqual(["B", "A"]);
+    const older = getState();
+    await tick();
+    setHabitCategory(a, "Health");
+    const newer = getState();
+    expect(habitOf(mergeStates(older, newer), a)?.category).toBe("Health");
+    expect(habitOf(mergeStates(newer, older), a)?.category).toBe("Health");
+    expect(jsonEqual(fromDocs(asRaw(toDocs(newer)), newer).habits, newer.habits)).toBe(true);
+    undo();
+    expect(habitOf(getState(), a)?.category).toBe("Sprint");
+    expect(habitOf(getState(), b)?.category).toBe("");
+  });
+
+  it("category (v26): a pre-v26 habit reads back with none", () => {
+    const raw = { ...getState(), habits: [{ id: "old", name: "Old", perWeek: 7, rank: 0, createdAt: 1, updatedAt: 1 }] };
+    expect(coerceState(raw).habits[0].category).toBe("");
+  });
+
   it("reads back from cloud documents exactly", () => {
     const id = createHabit("Journal", 5);
     markHabit(id, "2026-10-01", "done");
@@ -133,6 +158,7 @@ describe("per-day check-in merge (v20)", () => {
     id: "hx" as HabitId,
     name: "Run",
     cue: "",
+    category: "",
     perWeek: 7,
     checks: {},
     checkedAt: {},
@@ -211,6 +237,7 @@ describe("KPIs (v21)", () => {
     id: "kx" as HabitId,
     name: "Dizzy spells",
     cue: "",
+    category: "",
     perWeek: 7,
     checks: {},
     checkedAt: {},
@@ -296,6 +323,7 @@ describe("notes on a day (v25)", () => {
     id: "nx" as HabitId,
     name: "Veggies",
     cue: "",
+    category: "",
     perWeek: 7,
     checks: {},
     checkedAt: {},

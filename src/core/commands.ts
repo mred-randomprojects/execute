@@ -166,9 +166,10 @@ export type Command =
   | { type: "acceptRecurrence"; recurrenceId: RecurrenceId; id: TaskId; today: ISODate }
   | { type: "autoAcceptRecurrences"; today: ISODate }
   // Habits
-  | { type: "createHabit"; id: HabitId; name: string; perWeek: number; measure: HabitMeasure | null }
+  | { type: "createHabit"; id: HabitId; name: string; perWeek: number; measure: HabitMeasure | null; category?: string }
   | { type: "renameHabit"; id: HabitId; name: string }
   | { type: "setHabitCue"; id: HabitId; cue: string }
+  | { type: "setHabitCategory"; id: HabitId; category: string }
   | { type: "setHabitPerWeek"; id: HabitId; perWeek: number }
   | { type: "markHabit"; id: HabitId; date: ISODate; mark: HabitMark | null }
   | { type: "setHabitMeasure"; id: HabitId; measure: HabitMeasure }
@@ -858,6 +859,7 @@ export function applyCommand(s: AppState, cmd: Command, ctx: CommandContext): Ap
         id: cmd.id,
         name: cmd.name.trim(),
         cue: "",
+        category: (cmd.category ?? "").trim(),
         perWeek: normalizePerWeek(cmd.perWeek),
         checks: {},
         measure: cmd.measure,
@@ -880,6 +882,12 @@ export function applyCommand(s: AppState, cmd: Command, ctx: CommandContext): Ap
     case "setHabitCue": {
       const cue = cmd.cue.trim();
       return mapHabit(s, cmd.id, (h) => (h.cue === cue ? h : { ...h, cue }));
+    }
+    case "setHabitCategory": {
+      const category = cmd.category.trim();
+      if (!s.habits.some((h) => h.id === cmd.id && h.category !== category)) return s;
+      // Re-sorted: the category is part of the canonical order.
+      return { ...s, habits: sortHabits(s.habits.map((h) => (h.id === cmd.id ? { ...h, category } : h))) };
     }
     case "setHabitPerWeek": {
       const n = normalizePerWeek(cmd.perWeek);
@@ -1121,6 +1129,10 @@ export function describeCommand(s: AppState, cmd: Command, now: number): string 
     case "setHabitCue": {
       const clean = cmd.cue.trim();
       return clean === "" ? `Clear the cue of ${habit(cmd.id)}` : `Cue ${habit(cmd.id)}: ${quoteText(clean)}`;
+    }
+    case "setHabitCategory": {
+      const clean = cmd.category.trim();
+      return clean === "" ? `Take ${habit(cmd.id)} out of its category` : `Move ${habit(cmd.id)} to ${quoteText(clean)}`;
     }
     case "setHabitPerWeek": {
       const n = normalizePerWeek(cmd.perWeek);

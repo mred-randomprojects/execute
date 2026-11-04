@@ -3,7 +3,11 @@ import type { Habit, HabitId, HabitMark, ISODate } from "../types";
 import { addDays, parseISO } from "./dates";
 import {
   cadenceLabel,
+  habitCategories,
+  habitOwnFields,
   habitStart,
+  moveHabitRank,
+  sortHabits,
   normalizePerWeek,
   nudge,
   parseHabitName,
@@ -28,6 +32,7 @@ function habit(perWeek: number, created: ISODate, checks: Record<ISODate, HabitM
     id: "h1" as HabitId,
     name: "Read",
     cue: "",
+    category: "",
     perWeek,
     checks,
     checkedAt: {},
@@ -338,5 +343,39 @@ describe("KPIs", () => {
 
   it("a KPI's start counts its earliest value, like a habit's earliest mark", () => {
     expect(habitStart(kpi("day", { "2026-08-20": 1 }))).toBe("2026-08-20");
+  });
+});
+
+describe("categories (v26)", () => {
+  const h = (id: string, category: string, rank: number, archived = false): Habit => ({
+    ...habit(7, "2026-09-07"),
+    id: id as HabitId,
+    category,
+    rank,
+    archivedAt: archived ? 1 : null,
+  });
+
+  it("sorts uncategorized first, then categories alphabetically, then by rank", () => {
+    const sorted = sortHabits([h("a", "sprint", 1), h("b", "", 5), h("c", "Morning", 2), h("d", "Sprint", 0), h("e", "", 3)]);
+    expect(sorted.map((x) => x.id)).toEqual(["e", "b", "c", "d", "a"]);
+  });
+
+  it("lists the categories in use, once each, in list order", () => {
+    expect(habitCategories([h("a", "Sprint", 0), h("b", "", 0), h("c", "Morning", 0), h("d", "Sprint", 1)])).toEqual([
+      "Morning",
+      "Sprint",
+    ]);
+  });
+
+  it("moves a habit only within its category", () => {
+    const list = sortHabits([h("a", "", 0), h("b", "Sprint", 1), h("c", "Sprint", 2)]);
+    // b is first in Sprint: it can't move up into the uncategorized rows.
+    expect(moveHabitRank(list, "b", -1)).toBe(list);
+    const moved = sortHabits(moveHabitRank(list, "c", -1));
+    expect(moved.map((x) => x.id)).toEqual(["a", "c", "b"]);
+  });
+
+  it("counts the category among the habit's own fields", () => {
+    expect(habitOwnFields(h("a", "Sprint", 0)).category).toBe("Sprint");
   });
 });

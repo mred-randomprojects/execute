@@ -8,8 +8,10 @@ import { dispatch, getLoaded, getState, saveNow } from "./store";
 // list of commands through electron/agent.cjs. They run through the same
 // `dispatch` as the keyboard — so each one shows on screen, is one ⌘Z step,
 // and syncs like any edit — but only the review's verbs are allowed: editing,
-// scheduling, completing and dropping tasks, and creating a repeating task.
-// Nothing that purges, empties the trash or touches habits and settings.
+// scheduling, completing and dropping tasks, creating a repeating task, and
+// setting habits up (create, rename, cue, category, target). Nothing that
+// purges, empties the trash, checks in, archives or deletes habits, or touches
+// settings.
 
 const ALLOWED = new Set<Command["type"]>([
   "setText",
@@ -37,6 +39,12 @@ const ALLOWED = new Set<Command["type"]>([
   "moveAsChild",
   "logBreakdown",
   "createRecurrence",
+  // Setting habits up (not checking in, archiving or deleting them).
+  "createHabit",
+  "renameHabit",
+  "setHabitCue",
+  "setHabitCategory",
+  "setHabitPerWeek",
 ]);
 
 /** Commands that create something, and the id fields the app fills when the caller leaves them out. */
@@ -45,6 +53,7 @@ const CREATES: Record<string, readonly string[]> = {
   addTaskAfter: ["id"],
   addTaskAtProjectStart: ["id"],
   createRecurrence: ["id", "taskId"],
+  createHabit: ["id"],
 };
 
 /** The request item with a fresh id in every missing id field of a creating command. */
