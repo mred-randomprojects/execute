@@ -32,7 +32,8 @@ const sections = { today: [], overdue: [], week: [] };
 
 (function walk(tasks, trail, inherited) {
   for (const t of tasks) {
-    const planned = t.plannedFor ?? inherited;
+    // Una subtarea con horizonte propio (Someday, una semana, un mes) no hereda la fecha del padre.
+    const planned = t.plannedFor ?? (t.horizon ? null : inherited);
     const openKids = (t.children ?? []).filter(live);
     if (live(t) && openKids.length === 0) {
       const row = { t, planned, trail };
