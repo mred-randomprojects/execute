@@ -107,6 +107,7 @@ import {
   toggleHabitDone,
   toggleHabitSkip,
   toggleHabitMissed,
+  cycleHabitMark,
   type PostponeTarget,
 } from "./store/store";
 import {
@@ -2103,7 +2104,13 @@ export function App() {
     "habits.toggle": () => {
       if (focusedHabit == null) return;
       if (focusedHabit.measure != null) setHabitEditing({ id: focusedHabit.id, field: "value" });
-      else toggleHabitDone(focusedHabit.id, habitDay);
+      else cycleHabitMark(focusedHabit.id, habitDay);
+    },
+    "habits.missed": () => {
+      if (focusedHabit != null && focusedHabit.measure == null) toggleHabitMissed(focusedHabit.id, habitDay);
+    },
+    "habits.rest": () => {
+      if (focusedHabit != null && focusedHabit.measure == null) toggleHabitSkip(focusedHabit.id, habitDay);
     },
     "habits.note": () => {
       if (focusedHabit != null) setHabitEditing({ id: focusedHabit.id, field: "note" });
@@ -2562,19 +2569,21 @@ export function App() {
         id: "habit-check",
         label: marked === "done" ? `Habit: undo the check-in for ${day}` : `Habit: check in for ${day}`,
         aliases: ["done", "check", "tick", "complete"],
-        hint: "space",
+        ...(marked == null ? { hint: "space" } : {}),
         run: () => toggleHabitDone(h.id, habitDay),
       },
       {
         id: "habit-missed",
         label: marked === "missed" ? `Habit: clear the “not today” on ${day}` : `Habit: not today on ${day} (didn’t do it)`,
         aliases: ["missed", "not today", "didn't", "no", "fail", "x"],
+        hint: "x",
         run: () => toggleHabitMissed(h.id, habitDay),
       },
       {
         id: "habit-skip",
         label: marked === "skip" ? `Habit: clear the rest day on ${day}` : `Habit: rest day on ${day} (skip, no penalty)`,
         aliases: ["skip", "rest", "excuse", "sick", "vacation", "day off"],
+        hint: "r",
         run: () => toggleHabitSkip(h.id, habitDay),
       },
       noteCommand(h, day),

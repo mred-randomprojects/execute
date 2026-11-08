@@ -20,7 +20,9 @@ trackers behind each choice, and the ideas still to build, roughly in order.
   **strength** and **streak**. Under the name: the cue, the cadence and a
   single line of coaching about today.
 - **Keys:** `↑/↓` move · `←/→` move the day cursor back through the last two
-  weeks · `space` (or `⌘↵`) checks in on that day · `↵` renames, then `tab`
+  weeks · `space` (or `⌘↵`) cycles that day the way a click does (done →
+  not today → rest day → unlogged), so space twice is "didn't do it" · `x`
+  marks not today and `r` a rest day (again clears it) · `↵` renames, then `tab`
   moves on to the cue · `n` adds a habit · `⌫` archives (on an archived habit
   it deletes, after a confirm). `⌘k` has the rest: not today, rest day, target
   (every day … once a week), cue, archive or restore, delete. Clicking a day

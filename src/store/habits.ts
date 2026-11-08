@@ -112,6 +112,14 @@ export function markOn(h: Habit, date: ISODate): HabitMark | null {
   return h.checks[date] ?? null;
 }
 
+/**
+ * What a click on a day, or space on the picked day, turns a mark into:
+ * unlogged → done → not today → rest day → unlogged.
+ */
+export function nextMark(mark: HabitMark | null): HabitMark | null {
+  return mark == null ? "done" : mark === "done" ? "missed" : mark === "missed" ? "skip" : null;
+}
+
 /** The habit with `date` set to `mark` (or cleared, for null). */
 export function withMark(h: Habit, date: ISODate, mark: HabitMark | null): Habit {
   if (markOn(h, date) === mark) return h;

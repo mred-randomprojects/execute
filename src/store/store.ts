@@ -18,6 +18,7 @@ import type {
 } from "../types";
 import { ACTION_LOG_LIMIT, DEFAULT_PROJECT_ID, emptyState } from "../types";
 import { findById } from "./tasks";
+import { nextMark } from "./habits";
 import { rebaseStep } from "./rebase";
 import { restoreOnto } from "./restore";
 import { jsonEqual } from "../sync/json";
@@ -950,6 +951,13 @@ export function toggleHabitDone(id: HabitId, date: ISODate): void {
   const h = state.habits.find((x) => x.id === id);
   if (h == null) return;
   markHabit(id, date, h.checks[date] === "done" ? null : "done");
+}
+
+/** The next mark in the cycle (nextMark), as a click on the day gives. */
+export function cycleHabitMark(id: HabitId, date: ISODate): void {
+  const h = state.habits.find((x) => x.id === id);
+  if (h == null) return;
+  markHabit(id, date, nextMark(h.checks[date] ?? null));
 }
 
 /** Rest day ↔ unmarked for that day. */

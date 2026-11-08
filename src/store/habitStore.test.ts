@@ -14,6 +14,7 @@ import {
   setHabitNote,
   setKpiValue,
   toggleHabitDone,
+  cycleHabitMark,
   toggleHabitSkip,
   undo,
 } from "./store";
@@ -58,6 +59,15 @@ describe("habits in the store", () => {
     expect(getState().tasks).toEqual([]);
     toggleHabitDone(id, "2026-10-01");
     expect(habitOf(getState(), id)?.checks).toEqual({ "2026-10-02": "skip" });
+  });
+
+  it("space cycles a day like a click: done → not today → rest day → unlogged", () => {
+    const id = createHabit("Floss");
+    const marks = [1, 2, 3, 4].map(() => {
+      cycleHabitMark(id, "2026-10-01");
+      return habitOf(getState(), id)?.checks["2026-10-01"] ?? null;
+    });
+    expect(marks).toEqual(["done", "missed", "skip", null]);
   });
 
   it("names each change in the history, and undo reverses it with a newer stamp", async () => {

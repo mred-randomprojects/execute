@@ -19,6 +19,7 @@ import {
   streakLabel,
   strength,
   weekProgress,
+  nextMark,
 } from "../store/habits";
 import { WEEKDAY_SHORT, addDays, formatLong, isoWeekday } from "../store/dates";
 import { NO_SPELLCHECK } from "../ui/noSpellcheck";
@@ -173,13 +174,6 @@ function RowFrame({
     </div>
   );
 }
-
-const NEXT_MARK: Record<"none" | HabitMark, HabitMark | null> = {
-  none: "done",
-  done: "missed",
-  missed: "skip",
-  skip: null,
-};
 
 /**
  * One day in the strip. Click cycles: unlogged → done → not today → rest day →
@@ -566,7 +560,7 @@ function HabitRow({
             isCursor={focused && cursorDay === d}
             onClick={() => {
               onSelectDay(d);
-              onMark(d, NEXT_MARK[markOn(habit, d) ?? "none"]);
+              onMark(d, nextMark(markOn(habit, d)));
             }}
           />
         )}

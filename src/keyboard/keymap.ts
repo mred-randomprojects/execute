@@ -80,7 +80,7 @@ export const keymap: KeyBinding[] = [
   { key: "Alt+Enter", action: "zoom.in", context: "normal", displayKey: "⌥ ↵", description: "zoom in / focus (esc backs out)", section: "Tasks" },
 
   // ── habits (its own view, its own keys) ──────────────────────────
-  // Space is the one mutating bare key, and the reason this view has a context
+  // Space (and x / r) are mutating bare keys, and the reason this view has a context
   // of its own: a check-in has to cost one keystroke or it stops happening. It
   // can't land on a task — there are none here — and ⌘z takes it back.
   { key: "ArrowDown", action: "habits.down", context: "habits", displayKey: "↑ / ↓", description: "next / previous habit", section: "Habits" },
@@ -89,7 +89,9 @@ export const keymap: KeyBinding[] = [
   { key: "Alt+ArrowDown", action: "habits.moveDown", context: "habits" },
   { key: "ArrowLeft", action: "habits.dayPrev", context: "habits", displayKey: "← / →", description: "pick a day (as far back as the strip shows)", section: "Habits" },
   { key: "ArrowRight", action: "habits.dayNext", context: "habits" },
-  { key: " ", action: "habits.toggle", context: "habits", displayKey: "space", description: "check in / undo, on the picked day · on a KPI, log its number", section: "Habits" },
+  { key: " ", action: "habits.toggle", context: "habits", displayKey: "space", description: "on the picked day: done → not today → rest day → unlogged, like a click · on a KPI, log its number", section: "Habits" },
+  { key: "x", action: "habits.missed", context: "habits", displayKey: "x", description: "not today on the picked day (again: clear it)", section: "Habits" },
+  { key: "r", action: "habits.rest", context: "habits", displayKey: "r", description: "rest day on the picked day (again: clear it)", section: "Habits" },
   { key: "Meta+Enter", action: "habits.toggle", context: "habits" },
   { key: "c", action: "habits.note", context: "habits", displayKey: "c", description: "note on the picked day — “Steamed broccoli!” · ↵ saves, emptied clears it", section: "Habits" },
   { key: "Enter", action: "habits.rename", context: "habits", displayKey: "↵", description: "rename · tab moves on to the cue", section: "Habits" },

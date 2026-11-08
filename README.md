@@ -124,8 +124,8 @@ task tree, so a habit can't go overdue or change the day's counts. Each habit ha
 weekly target ("Run 3x" when you name it sets 3× a week), an optional cue
 ("after my morning coffee"), a two-week strip, a forgiving **strength** score
 and a streak that survives a single miss (*never miss twice*). `space` checks
-in, `←`/`→` pick an earlier day to backfill, `⌥↑`/`⌥↓` reorder, and `⌘k` marks a rest day, which
-costs nothing. `c` adds a note to the picked day ("Steamed broccoli!"), and the
+in (again: not today, then rest day, then unlogged), `x` marks not today, `r` a rest day,
+which costs nothing, `←`/`→` pick an earlier day to backfill and `⌥↑`/`⌥↓` reorder. `c` adds a note to the picked day ("Steamed broccoli!"), and the
 focused row lists them all. The sidebar badge and the menu bar count what's
 still unlogged today; chips under Today's tabs, "Check in: …" and "Log habits:
 today / yesterday" in `⌘k` work from anywhere, and the phone has the same
